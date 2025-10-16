@@ -4,8 +4,18 @@ require('dotenv').config();
 let sequelize;
 
 if (process.env.DATABASE_URL) {
-  // Use DATABASE_URL with SSL configuration
-  sequelize = new Sequelize(process.env.DATABASE_URL, {
+  // Modify DATABASE_URL to include SSL parameters
+  let databaseUrl = process.env.DATABASE_URL;
+  
+  // Add SSL parameters to the URL if not already present
+  if (!databaseUrl.includes('sslmode=')) {
+    databaseUrl += databaseUrl.includes('?') ? '&' : '?';
+    databaseUrl += 'sslmode=require';
+  }
+  
+  console.log('Using DATABASE_URL with SSL:', databaseUrl.replace(/:[^:@]+@/, ':***@')); // Log without password
+  
+  sequelize = new Sequelize(databaseUrl, {
     dialect: 'postgres',
     logging: process.env.NODE_ENV === 'development' ? console.log : false,
     pool: {
@@ -13,12 +23,6 @@ if (process.env.DATABASE_URL) {
       min: 0,
       acquire: 30000,
       idle: 10000
-    },
-    dialectOptions: {
-      ssl: process.env.NODE_ENV === 'production' ? {
-        require: true,
-        rejectUnauthorized: false
-      } : false
     }
   });
 } else {

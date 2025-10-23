@@ -3,8 +3,46 @@ const { body, validationResult } = require('express-validator');
 const { Chat, Message, User } = require('../models');
 const { authenticateToken } = require('../middleware/auth');
 const https = require('https');
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+const OpenAI = require('openai');
+
+// Initialize OpenAI
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
 const router = express.Router();
+
+// Function to call OpenAI API
+const callOpenAIAPI = async (messages, systemInstructions) => {
+  try {
+    const messagesArray = [];
+    
+    if (systemInstructions && systemInstructions.trim()) {
+      messagesArray.push({
+        role: 'system',
+        content: systemInstructions
+      });
+    }
+
+    messagesArray.push(...messages.map(msg => ({
+      role: msg.role === 'user' ? 'user' : 'assistant',
+      content: msg.content
+    })));
+
+    const response = await openai.chat.completions.create({
+      model: 'gpt-3.5-turbo',
+      messages: messagesArray,
+      max_tokens: 1000,
+      temperature: 0.7
+    });
+
+    return response.choices[0].message.content;
+  } catch (error) {
+    console.error('OpenAI API Error:', error);
+    throw new Error('Failed to get response from OpenAI');
+  }
+};
 
 // Function to call Gemini API directly
 const callGeminiAPI = (prompt) => {
@@ -127,6 +165,48 @@ router.get('/:chatId', authenticateToken, async (req, res) => {
   }
 });
 
+// Update chat settings (system instructions, AI model)
+router.put('/:chatId', authenticateToken, async (req, res) => {
+  try {
+    const { chatId } = req.params;
+    const { systemInstructions, aiModel } = req.body;
+    
+    // Verify chat belongs to user
+    const chat = await Chat.findOne({
+      where: { 
+        id: chatId, 
+        userId: req.user.id 
+      }
+    });
+
+    if (!chat) {
+      return res.status(404).json({ error: 'Chat not found' });
+    }
+
+    // Update chat settings
+    if (systemInstructions !== undefined) {
+      chat.systemInstructions = systemInstructions;
+    }
+    if (aiModel !== undefined) {
+      chat.aiModel = aiModel;
+    }
+    
+    await chat.save();
+
+    res.json({ 
+      message: 'Chat settings updated successfully',
+      chat: {
+        id: chat.id,
+        systemInstructions: chat.systemInstructions,
+        aiModel: chat.aiModel
+      }
+    });
+  } catch (error) {
+    console.error('Error updating chat:', error);
+    res.status(500).json({ error: 'Failed to update chat settings' });
+  }
+});
+
 // Send message and get AI response
 router.post('/:chatId/messages', [
   authenticateToken,
@@ -143,7 +223,7 @@ router.post('/:chatId/messages', [
     }
 
     const { chatId } = req.params;
-    const { content } = req.body;
+    const { content, systemInstructions, aiModel } = req.body;
 
     // Verify chat belongs to user
     const chat = await Chat.findOne({
@@ -156,6 +236,15 @@ router.post('/:chatId/messages', [
     if (!chat) {
       return res.status(404).json({ error: 'Chat not found' });
     }
+
+    // Update chat with system instructions and AI model if provided
+    if (systemInstructions !== undefined) {
+      chat.systemInstructions = systemInstructions;
+    }
+    if (aiModel !== undefined) {
+      chat.aiModel = aiModel;
+    }
+    await chat.save();
 
     // Save user message
     const userMessage = await Message.create({
@@ -174,19 +263,28 @@ router.post('/:chatId/messages', [
     // Check if this is the first message (before we added the user message)
     const isFirstMessage = messages.length === 1; // Only the user message we just created
 
-    // Prepare messages for OpenAI
-    const openaiMessages = messages.map(msg => ({
-      role: msg.role,
-      content: msg.content
-    }));
-
-    // Convert messages to Gemini format
-    const prompt = openaiMessages.map(msg => 
-      `${msg.role === 'user' ? 'Human' : 'Assistant'}: ${msg.content}`
-    ).join('\n\n') + '\n\nAssistant:';
-
-    // Get AI response using direct API call
-    const aiResponse = await callGeminiAPI(prompt);
+    // Get AI response based on selected model
+    let aiResponse;
+    if (chat.aiModel === 'openai') {
+      const openaiMessages = messages.map(msg => ({
+        role: msg.role,
+        content: msg.content
+      }));
+      aiResponse = await callOpenAIAPI(openaiMessages, chat.systemInstructions);
+    } else {
+      // Convert messages to Gemini format
+      const prompt = messages.map(msg => 
+        `${msg.role === 'user' ? 'Human' : 'Assistant'}: ${msg.content}`
+      ).join('\n\n') + '\n\nAssistant:';
+      
+      // Add system instructions to prompt if available
+      let fullPrompt = prompt;
+      if (chat.systemInstructions && chat.systemInstructions.trim()) {
+        fullPrompt = `System Instructions: ${chat.systemInstructions}\n\n${prompt}`;
+      }
+      
+      aiResponse = await callGeminiAPI(fullPrompt);
+    }
     
     // Estimate token count
     const tokensUsed = Math.ceil(aiResponse.length / 4);
@@ -226,7 +324,13 @@ router.post('/:chatId/messages', [
     res.json({
       userMessage: userMessage.toJSON(),
       aiMessage: aiMessage.toJSON(),
-      chat: updatedChat.toJSON()
+      chat: {
+        id: updatedChat.id,
+        title: updatedChat.title,
+        systemInstructions: updatedChat.systemInstructions,
+        aiModel: updatedChat.aiModel,
+        updatedAt: updatedChat.updatedAt
+      }
     });
 
   } catch (error) {

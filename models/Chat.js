@@ -20,6 +20,19 @@ const Chat = sequelize.define('Chat', {
     allowNull: true,
     defaultValue: 'New Chat'
   },
+  systemInstructions: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+    defaultValue: ''
+  },
+  aiModel: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    defaultValue: 'gemini',
+    validate: {
+      isIn: [['gemini', 'openai']]
+    }
+  },
   isActive: {
     type: DataTypes.BOOLEAN,
     defaultValue: true

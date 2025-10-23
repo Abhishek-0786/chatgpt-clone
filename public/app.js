@@ -352,22 +352,34 @@ async function createNewChat() {
             const data = await response.json();
             currentChatId = data.chat.id;
             
+            // Save current chat ID to localStorage
+            localStorage.setItem('currentChatId', currentChatId);
+            
+            // Show the chat container directly
             showChatContainer();
             clearMessages();
             
             // Set the chat title to "New Chat"
             document.getElementById('chat-title').textContent = 'New Chat';
             
+            // Show system instructions input for new chats
+            document.getElementById('system-instructions-container').style.display = 'flex';
+            document.getElementById('system-instructions').value = '';
+            
             loadChatHistory();
             
             // Focus on input
             document.getElementById('message-input').focus();
+        } else {
+            const error = await response.json();
+            showAlert(error.error || 'Failed to create chat', 'danger');
         }
     } catch (error) {
         console.error('Error creating chat:', error);
         showAlert('Failed to create new chat', 'danger');
     }
 }
+
 
 // Load specific chat
 async function loadChat(chatId) {
@@ -384,6 +396,19 @@ async function loadChat(chatId) {
             
             // Save current chat ID to localStorage
             localStorage.setItem('currentChatId', chatId);
+            
+             // Load chat settings
+             if (data.chat.systemInstructions) {
+                 document.getElementById('system-instructions').value = data.chat.systemInstructions;
+                 // Show system instructions as blue box for existing chats
+                 displaySystemInstructionsMessage(data.chat.systemInstructions);
+             } else {
+                 document.getElementById('system-instructions').value = '';
+             }
+             
+             if (data.chat.aiModel) {
+                 document.getElementById('aiModel').value = data.chat.aiModel;
+             }
             
             showChatContainer();
             displayMessages(data.chat.messages);
@@ -587,12 +612,236 @@ function formatMessageContent(content) {
 
   
 
+// Save system instructions
+async function saveSystemInstructions() {
+    const systemInstructions = document.getElementById('system-instructions').value.trim();
+    const saveBtn = document.getElementById('save-instructions-btn');
+    const saveStatus = document.getElementById('save-status');
+    
+    if (!authToken) {
+        showAlert('Please login first', 'warning');
+        return;
+    }
+    
+    if (!currentChatId) {
+        showAlert('Please start a new chat first', 'warning');
+        return;
+    }
+    
+    // Show loading state
+    saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+    saveBtn.disabled = true;
+    
+    try {
+        const response = await fetch(`${API_BASE}/chat/${currentChatId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify({
+                systemInstructions: systemInstructions
+            })
+        });
+        
+        if (response.ok) {
+            // Show success status
+            saveStatus.style.display = 'block';
+            saveBtn.innerHTML = '<i class="fas fa-check"></i> Saved';
+            saveBtn.classList.remove('btn-outline-success');
+            saveBtn.classList.add('btn-success');
+            
+            // Hide the system instructions input and show blue box
+            console.log('Hiding system instructions container...');
+            const container = document.getElementById('system-instructions-container');
+            if (container) {
+                container.style.display = 'none !important';
+                container.style.setProperty('display', 'none', 'important');
+                console.log('System instructions container hidden successfully');
+            } else {
+                console.log('System instructions container not found!');
+            }
+            
+            // Show system instructions as blue box at top
+            displaySystemInstructionsMessage(systemInstructions);
+            
+            // Hide status after 3 seconds
+            setTimeout(() => {
+                saveStatus.style.display = 'none';
+                saveBtn.innerHTML = '<i class="fas fa-save"></i> Save';
+                saveBtn.classList.remove('btn-success');
+                saveBtn.classList.add('btn-outline-success');
+                saveBtn.disabled = false;
+            }, 3000);
+            
+        } else {
+            const error = await response.json();
+            showAlert(error.error || 'Failed to save instructions', 'danger');
+            saveBtn.innerHTML = '<i class="fas fa-save"></i> Save';
+            saveBtn.disabled = false;
+        }
+        
+    } catch (error) {
+        console.error('Error saving instructions:', error);
+        showAlert('Failed to save instructions', 'danger');
+        saveBtn.innerHTML = '<i class="fas fa-save"></i> Save';
+        saveBtn.disabled = false;
+    }
+}
+
+// Display system instructions as a message
+function displaySystemInstructionsMessage(instructions) {
+    const messagesContainer = document.getElementById('messages');
+    
+    // Remove any existing system instructions message
+    const existingSystemMessage = messagesContainer.querySelector('.system-instructions-message');
+    if (existingSystemMessage) {
+        existingSystemMessage.remove();
+    }
+    
+    if (instructions && instructions.trim()) {
+        const systemMessageDiv = document.createElement('div');
+        systemMessageDiv.className = 'system-instructions-message';
+        systemMessageDiv.innerHTML = `
+            <div class="system-label">
+                <i class="fas fa-cog"></i>
+                System Instructions
+            </div>
+            <div class="system-content">${instructions}</div>
+        `;
+        
+        // Insert at the beginning of messages
+        messagesContainer.insertBefore(systemMessageDiv, messagesContainer.firstChild);
+    }
+}
+
+// Display system instructions as a message with edit button
+function displaySystemInstructionsMessage(instructions) {
+    const messagesContainer = document.getElementById('messages');
+    
+    // Remove any existing system instructions message
+    const existingSystemMessage = messagesContainer.querySelector('.system-instructions-message');
+    const existingEditForm = messagesContainer.querySelector('.system-instructions-edit');
+    if (existingSystemMessage) {
+        existingSystemMessage.remove();
+    }
+    if (existingEditForm) {
+        existingEditForm.remove();
+    }
+    
+    if (instructions && instructions.trim()) {
+        const systemMessageDiv = document.createElement('div');
+        systemMessageDiv.className = 'system-instructions-message';
+        systemMessageDiv.innerHTML = `
+            <div class="system-label">
+                <i class="fas fa-cog"></i>
+                System Instructions
+            </div>
+            <div class="system-content">${instructions}</div>
+            <button class="edit-btn" onclick="editSystemInstructions()" title="Edit instructions">
+                <i class="fas fa-edit"></i>
+            </button>
+        `;
+        
+        // Insert at the beginning of messages
+        messagesContainer.insertBefore(systemMessageDiv, messagesContainer.firstChild);
+    }
+}
+
+// Edit system instructions (inline edit)
+function editSystemInstructions() {
+    const systemMessage = document.querySelector('.system-instructions-message');
+    const currentInstructions = systemMessage.querySelector('.system-content').textContent;
+    
+    // Create edit form
+    const editForm = document.createElement('div');
+    editForm.className = 'system-instructions-edit';
+    editForm.innerHTML = `
+        <div class="system-label">
+            <i class="fas fa-cog"></i>
+            Edit System Instructions
+        </div>
+        <div class="edit-form">
+            <div class="input-group mb-2">
+                <input 
+                    type="text" 
+                    id="edit-system-instructions" 
+                    class="form-control" 
+                    value="${currentInstructions}"
+                >
+                <button class="btn btn-success btn-sm" onclick="saveEditedInstructions()">
+                    <i class="fas fa-save"></i> Save
+                </button>
+                <button class="btn btn-secondary btn-sm" onclick="cancelEditInstructions()">
+                    <i class="fas fa-times"></i> Cancel
+                </button>
+            </div>
+        </div>
+    `;
+    
+    // Replace the message with edit form
+    systemMessage.parentNode.replaceChild(editForm, systemMessage);
+    document.getElementById('edit-system-instructions').focus();
+}
+
+// Save edited instructions
+async function saveEditedInstructions() {
+    const newInstructions = document.getElementById('edit-system-instructions').value.trim();
+    
+    if (!newInstructions) {
+        showAlert('Please enter system instructions', 'warning');
+        return;
+    }
+    
+    try {
+        const response = await fetch(`${API_BASE}/chat/${currentChatId}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
+            },
+            body: JSON.stringify({
+                systemInstructions: newInstructions
+            })
+        });
+        
+        if (response.ok) {
+            // Update the system instructions message
+            displaySystemInstructionsMessage(newInstructions);
+            showAlert('System instructions updated successfully!', 'success');
+        } else {
+            const error = await response.json();
+            showAlert(error.error || 'Failed to update instructions', 'danger');
+        }
+    } catch (error) {
+        console.error('Error updating instructions:', error);
+        showAlert('Failed to update instructions', 'danger');
+    }
+}
+
+// Cancel edit instructions
+function cancelEditInstructions() {
+    // Get the current instructions from the input field
+    const currentInstructions = document.getElementById('edit-system-instructions').value;
+    
+    // Show the original blue box with current instructions
+    displaySystemInstructionsMessage(currentInstructions);
+}
+
 // Send message
 async function sendMessage() {
     const input = document.getElementById('message-input');
     const content = input.value.trim();
+    const systemInstructions = document.getElementById('system-instructions').value.trim();
+    const aiModel = document.getElementById('aiModel').value;
     
     if (!content || !authToken) return;
+    
+    // Check if OpenAI is selected but not available
+    if (aiModel === 'openai') {
+        showAlert('OpenAI API is currently not available. Please select Gemini model.', 'warning');
+        return;
+    }
     
     if (!currentChatId) {
         await createNewChat();
@@ -612,7 +861,11 @@ async function sendMessage() {
                 'Content-Type': 'application/json',
                 'Authorization': `Bearer ${authToken}`
             },
-            body: JSON.stringify({ content })
+            body: JSON.stringify({ 
+                content, 
+                systemInstructions, 
+                aiModel 
+            })
         });
         
         if (response.ok) {
@@ -808,3 +1061,4 @@ function formatDate(dateString) {
         return date.toLocaleDateString() + ' ' + date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     }
 }
+

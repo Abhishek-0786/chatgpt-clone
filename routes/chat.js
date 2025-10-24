@@ -19,10 +19,13 @@ const callOpenAIAPI = async (messages, systemInstructions) => {
     const messagesArray = [];
     
     if (systemInstructions && systemInstructions.trim()) {
+      console.log('Adding system instructions to OpenAI:', systemInstructions);
       messagesArray.push({
         role: 'system',
         content: systemInstructions
       });
+    } else {
+      console.log('No system instructions for OpenAI');
     }
 
     messagesArray.push(...messages.map(msg => ({
@@ -30,17 +33,37 @@ const callOpenAIAPI = async (messages, systemInstructions) => {
       content: msg.content
     })));
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-3.5-turbo',
-      messages: messagesArray,
-      max_tokens: 1000,
-      temperature: 0.7
-    });
+    // Try gpt-5-nano first, fallback to gpt-4o-mini
+    let response;
+    try {
+      response = await openai.chat.completions.create({
+        model: 'gpt-5-nano',
+        messages: messagesArray,
+        max_tokens: 1000,
+        temperature: 0.7
+      });
+    } catch (modelError) {
+      console.log('gpt-5-nano not available, trying gpt-4o-mini...');
+      response = await openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: messagesArray,
+        max_tokens: 1000,
+        temperature: 0.7
+      });
+    }
 
     return response.choices[0].message.content;
   } catch (error) {
     console.error('OpenAI API Error:', error);
-    throw new Error('Failed to get response from OpenAI');
+    if (error.code === 'invalid_api_key') {
+      throw new Error('Invalid OpenAI API key. Please check your API key.');
+    } else if (error.code === 'model_not_found') {
+      throw new Error('Model not found. Please check the model name.');
+    } else if (error.code === 'insufficient_quota') {
+      throw new Error('OpenAI API quota exceeded. Please check your billing.');
+    } else {
+      throw new Error(`OpenAI API Error: ${error.message}`);
+    }
   }
 };
 
@@ -48,7 +71,8 @@ const callOpenAIAPI = async (messages, systemInstructions) => {
 const callGeminiAPI = (prompt) => {
   return new Promise((resolve, reject) => {
     const apiKey = process.env.GEMINI_API_KEY;
-    console.log(apiKey);
+    console.log('Gemini API Key:', apiKey ? 'Present' : 'Missing');
+    console.log('Gemini prompt (first 200 chars):', prompt.substring(0, 200) + '...');
     
     const data = JSON.stringify({
       contents: [{
@@ -266,12 +290,14 @@ router.post('/:chatId/messages', [
     // Get AI response based on selected model
     let aiResponse;
     if (chat.aiModel === 'openai') {
+      console.log('Using OpenAI API with system instructions:', chat.systemInstructions);
       const openaiMessages = messages.map(msg => ({
         role: msg.role,
         content: msg.content
       }));
       aiResponse = await callOpenAIAPI(openaiMessages, chat.systemInstructions);
     } else {
+      console.log('Using Gemini API with system instructions:', chat.systemInstructions);
       // Convert messages to Gemini format
       const prompt = messages.map(msg => 
         `${msg.role === 'user' ? 'Human' : 'Assistant'}: ${msg.content}`
@@ -281,6 +307,9 @@ router.post('/:chatId/messages', [
       let fullPrompt = prompt;
       if (chat.systemInstructions && chat.systemInstructions.trim()) {
         fullPrompt = `System Instructions: ${chat.systemInstructions}\n\n${prompt}`;
+        console.log('Full prompt with system instructions:', fullPrompt.substring(0, 200) + '...');
+      } else {
+        console.log('No system instructions provided');
       }
       
       aiResponse = await callGeminiAPI(fullPrompt);

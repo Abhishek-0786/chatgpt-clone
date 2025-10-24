@@ -340,6 +340,11 @@
             padding: 15px 0;
             transition: all 0.3s ease;
         }
+        
+        /* Hide system instructions container by default */
+        #system-instructions-container {
+            display: none !important;
+        }
 
         .system-controls.collapsed {
             padding: 5px 0;
@@ -457,6 +462,74 @@
         .system-controls .form-control:focus {
             border: none;
             box-shadow: none;
+        }
+
+        /* Mobile responsiveness for system instructions */
+        @media (max-width: 768px) {
+            .system-controls {
+                padding: 0 15px !important;
+            }
+            
+            .system-controls .input-group {
+                flex-direction: column !important;
+                width: 100% !important;
+            }
+            
+            .system-controls .form-control {
+                border-radius: 8px !important;
+                margin-bottom: 10px !important;
+                width: 100% !important;
+            }
+            
+            .system-controls .btn {
+                border-radius: 8px !important;
+                width: 48% !important;
+                margin-bottom: 0 !important;
+                margin-right: 2% !important;
+            }
+            
+            .system-controls .btn:last-child {
+                margin-right: 0 !important;
+            }
+            
+            .system-controls .form-label {
+                font-size: 0.9rem !important;
+                margin-bottom: 8px !important;
+            }
+            
+            /* System instructions message mobile */
+            .system-instructions-message {
+                margin: 0 15px 16px 15px !important;
+                padding: 12px !important;
+                font-size: 13px !important;
+            }
+            
+            .system-instructions-message .edit-btn {
+                position: static !important;
+                margin-top: 8px !important;
+                width: 100% !important;
+                text-align: center !important;
+            }
+            
+            /* System instructions edit mobile */
+            .system-instructions-edit {
+                margin: 0 15px 16px 15px !important;
+                padding: 12px !important;
+            }
+            
+            .system-instructions-edit .edit-form .input-group {
+                flex-direction: column !important;
+            }
+            
+            .system-instructions-edit .edit-form .form-control {
+                border-radius: 8px !important;
+                margin-bottom: 10px !important;
+            }
+            
+            .system-instructions-edit .edit-form .btn {
+                border-radius: 8px !important;
+                width: 100% !important;
+            }
         }
 
         /* Save button styling */
@@ -689,6 +762,9 @@
                 </div>
                 <div id="user-info" class="d-flex align-items-center" style="display: none;">
                     <span class="text-light me-3" id="welcome-text"></span>
+                    <a href="/charger-logs.html" class="btn btn-outline-light me-2">
+                        <i class="fas fa-charging-station me-1"></i>Charger Logs
+                    </a>
                     <button class="btn btn-outline-light" onclick="logout()">Logout</button>
                 </div>
             </div>
@@ -733,7 +809,7 @@
                     </div>
                     
                     <!-- System Instructions (Only shown when no messages exist) -->
-                    <div id="system-instructions-container" class="system-controls mb-3 d-flex justify-content-center" style="display: none;">
+                    <div id="system-instructions-container" class="system-controls mb-3 d-flex justify-content-center">
                         <div class="system-input-wrapper">
                             <label for="system-instructions" class="form-label small">System Instructions (Optional)</label>
                             <div class="input-group">
@@ -745,6 +821,9 @@
                                 >
                                 <button id="save-instructions-btn" class="btn btn-outline-success" type="button" onclick="saveSystemInstructions()">
                                     <i class="fas fa-save"></i> Save
+                                </button>
+                                <button id="skip-instructions-btn" class="btn btn-outline-secondary" type="button" onclick="skipSystemInstructions()">
+                                    <i class="fas fa-forward"></i> Skip
                                 </button>
                             </div>
                             <div id="save-status" class="save-status mt-2" style="display: none;">

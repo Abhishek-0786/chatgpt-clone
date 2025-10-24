@@ -6,6 +6,47 @@ let authToken = null;
 // API Base URL
 const API_BASE = '/api';
 
+// Function to clean OpenAI responses (remove markdown characters and extra spaces)
+function cleanOpenAIResponse(text) {
+    if (!text) return text;
+    
+    // Remove markdown headers (###, ##, #)
+    text = text.replace(/^#{1,6}\s+/gm, '');
+    
+    // Remove multiple consecutive newlines (more than 2)
+    text = text.replace(/\n\s*\n\s*\n+/g, '\n\n');
+    
+    // Remove leading/trailing whitespace from each line
+    text = text.replace(/^[ \t]+|[ \t]+$/gm, '');
+    
+    // Remove code block markers (```) and format properly
+    text = text.replace(/```(\w*)\n([\s\S]*?)```/g, function(match, lang, content) {
+        const trimmedContent = content.trim();
+        return `<pre><code class="language-${lang || ''}">${trimmedContent}</code></pre>`;
+    });
+    
+    // Remove inline code markers (``) and format as <code>
+    text = text.replace(/`([^`]+)`/g, '<code>$1</code>');
+    
+    // Replace multiple spaces with single space (but preserve intentional spacing)
+    text = text.replace(/[ \t]{2,}/g, ' ');
+    
+    // Convert line breaks to HTML
+    text = text.replace(/\n/g, '<br>');
+    
+    // Convert bullet points
+    text = text.replace(/^\*\s+/gm, '• ');
+    text = text.replace(/^-\s+/gm, '• ');
+    
+    // Final trim
+    text = text.trim();
+    text = text.replace(/<pre><code><br><\/code><\/pre>/g, '');
+    
+    return text;
+
+    
+}
+
 // Test function for debugging
 window.testButtonVisibility = function() {
     console.log('🧪 Testing button visibility...');
@@ -362,8 +403,10 @@ async function createNewChat() {
             // Set the chat title to "New Chat"
             document.getElementById('chat-title').textContent = 'New Chat';
             
-            // Show system instructions input for new chats
-            document.getElementById('system-instructions-container').style.display = 'flex';
+            // Show system instructions input for new chats only
+            const container = document.getElementById('system-instructions-container');
+            container.style.display = 'flex !important';
+            container.style.setProperty('display', 'flex', 'important');
             document.getElementById('system-instructions').value = '';
             
             loadChatHistory();
@@ -399,11 +442,17 @@ async function loadChat(chatId) {
             
              // Load chat settings
              if (data.chat.systemInstructions) {
+                 console.log('Found system instructions, calling displaySystemInstructionsMessage');
                  document.getElementById('system-instructions').value = data.chat.systemInstructions;
+                 // Hide system instructions input container for existing chats
+                 document.getElementById('system-instructions-container').style.display = 'none';
                  // Show system instructions as blue box for existing chats
                  displaySystemInstructionsMessage(data.chat.systemInstructions);
              } else {
+                 console.log('No system instructions found');
                  document.getElementById('system-instructions').value = '';
+                 // Hide system instructions input for existing chats without instructions
+                 document.getElementById('system-instructions-container').style.display = 'none';
              }
              
              if (data.chat.aiModel) {
@@ -535,6 +584,9 @@ function formatMessageContent(content) {
     // Clean up the content first - remove extra whitespace
     let formatted = content.trim();
     
+    // Clean OpenAI responses (remove markdown characters)
+    formatted = cleanOpenAIResponse(formatted);
+    
     // Remove trailing whitespace from each line
     formatted = formatted.replace(/[ \t]+$/gm, '');
     
@@ -613,6 +665,36 @@ function formatMessageContent(content) {
   
 
 // Save system instructions
+function skipSystemInstructions() {
+    console.log('Skipping system instructions...');
+    
+    // Hide the system instructions container
+    const container = document.getElementById('system-instructions-container');
+    if (container) {
+        container.style.display = 'none !important';
+        container.style.setProperty('display', 'none', 'important');
+        console.log('System instructions container hidden (skipped)');
+    }
+    
+    // Show success message
+    const saveStatus = document.getElementById('save-status');
+    if (saveStatus) {
+        saveStatus.innerHTML = '<i class="fas fa-check-circle"></i> Skipped system instructions. You can start chatting now!';
+        saveStatus.style.display = 'block';
+        saveStatus.style.color = '#28a745';
+        saveStatus.style.backgroundColor = '#d4edda';
+        saveStatus.style.border = '1px solid #c3e6cb';
+        saveStatus.style.borderRadius = '4px';
+        saveStatus.style.padding = '8px 12px';
+        saveStatus.style.marginTop = '10px';
+        
+        // Hide message after 3 seconds
+        setTimeout(() => {
+            saveStatus.style.display = 'none';
+        }, 3000);
+    }
+}
+
 async function saveSystemInstructions() {
     const systemInstructions = document.getElementById('system-instructions').value.trim();
     const saveBtn = document.getElementById('save-instructions-btn');
@@ -650,6 +732,32 @@ async function saveSystemInstructions() {
             saveBtn.innerHTML = '<i class="fas fa-check"></i> Saved';
             saveBtn.classList.remove('btn-outline-success');
             saveBtn.classList.add('btn-success');
+            
+            // Check if instructions are empty
+            if (!systemInstructions || !systemInstructions.trim()) {
+                // Show message for empty instructions
+                saveStatus.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Please enter something then click save';
+                saveStatus.style.display = 'block';
+                saveStatus.style.color = '#ffc107';
+                saveStatus.style.backgroundColor = '#fff3cd';
+                saveStatus.style.border = '1px solid #ffeaa7';
+                saveStatus.style.borderRadius = '4px';
+                saveStatus.style.padding = '8px 12px';
+                saveStatus.style.marginTop = '10px';
+                
+                // Reset button
+                saveBtn.innerHTML = '<i class="fas fa-save"></i> Save';
+                saveBtn.classList.remove('btn-success');
+                saveBtn.classList.add('btn-outline-success');
+                saveBtn.disabled = false;
+                
+                // Hide message after 3 seconds
+                setTimeout(() => {
+                    saveStatus.style.display = 'none';
+                }, 3000);
+                
+                return; // Don't hide container or show blue box
+            }
             
             // Hide the system instructions input and show blue box
             console.log('Hiding system instructions container...');
@@ -689,36 +797,25 @@ async function saveSystemInstructions() {
     }
 }
 
-// Display system instructions as a message
-function displaySystemInstructionsMessage(instructions) {
-    const messagesContainer = document.getElementById('messages');
-    
-    // Remove any existing system instructions message
-    const existingSystemMessage = messagesContainer.querySelector('.system-instructions-message');
-    if (existingSystemMessage) {
-        existingSystemMessage.remove();
-    }
-    
-    if (instructions && instructions.trim()) {
-        const systemMessageDiv = document.createElement('div');
-        systemMessageDiv.className = 'system-instructions-message';
-        systemMessageDiv.innerHTML = `
-            <div class="system-label">
-                <i class="fas fa-cog"></i>
-                System Instructions
-            </div>
-            <div class="system-content">${instructions}</div>
-        `;
-        
-        // Insert at the beginning of messages
-        messagesContainer.insertBefore(systemMessageDiv, messagesContainer.firstChild);
-    }
-}
-
 // Display system instructions as a message with edit button
 function displaySystemInstructionsMessage(instructions) {
-    const messagesContainer = document.getElementById('messages');
+    console.log('displaySystemInstructionsMessage called with:', instructions);
     
+    // Wait for DOM to be ready
+    setTimeout(() => {
+        const messagesContainer = document.getElementById('messages');
+        
+        if (!messagesContainer) {
+            console.log('Messages container not found!');
+            return;
+        }
+        
+        console.log('Messages container found, creating blue box...');
+        createBlueBox(messagesContainer, instructions);
+    }, 100);
+}
+
+function createBlueBox(messagesContainer, instructions) {
     // Remove any existing system instructions message
     const existingSystemMessage = messagesContainer.querySelector('.system-instructions-message');
     const existingEditForm = messagesContainer.querySelector('.system-instructions-edit');
@@ -730,6 +827,7 @@ function displaySystemInstructionsMessage(instructions) {
     }
     
     if (instructions && instructions.trim()) {
+        console.log('Creating system instructions message...');
         const systemMessageDiv = document.createElement('div');
         systemMessageDiv.className = 'system-instructions-message';
         systemMessageDiv.innerHTML = `
@@ -745,6 +843,27 @@ function displaySystemInstructionsMessage(instructions) {
         
         // Insert at the beginning of messages
         messagesContainer.insertBefore(systemMessageDiv, messagesContainer.firstChild);
+        console.log('System instructions message added to DOM');
+        
+        // Force show the element with inline styles
+        systemMessageDiv.style.cssText = `
+            background-color: #e3f2fd !important;
+            border: 1px solid #bbdefb !important;
+            border-radius: 12px !important;
+            padding: 12px 16px !important;
+            margin-bottom: 16px !important;
+            font-size: 14px !important;
+            color: #1565c0 !important;
+            position: relative !important;
+            display: block !important;
+            visibility: visible !important;
+            opacity: 1 !important;
+            height: auto !important;
+            width: 100% !important;
+        `;
+        console.log('Blue box styles applied with !important');
+    } else {
+        console.log('No instructions or empty instructions');
     }
 }
 
@@ -828,6 +947,33 @@ function cancelEditInstructions() {
     displaySystemInstructionsMessage(currentInstructions);
 }
 
+// Initialize page - hide system instructions input by default
+function initializePage() {
+    console.log('Initializing page...');
+    
+    // Hide system instructions input container by default
+    document.getElementById('system-instructions-container').style.display = 'none';
+    console.log('System instructions container hidden');
+    
+    // Check if there's a current chat and load it
+    const savedChatId = localStorage.getItem('currentChatId');
+    const token = localStorage.getItem('authToken');
+    
+    console.log('Saved chat ID:', savedChatId);
+    console.log('Auth token exists:', !!token);
+    
+    if (savedChatId && token) {
+        console.log('Loading saved chat...');
+        authToken = token;
+        loadChat(savedChatId);
+    } else {
+        console.log('No saved chat or no auth token');
+    }
+}
+
+// Call initialization when page loads
+document.addEventListener('DOMContentLoaded', initializePage);
+
 // Send message
 async function sendMessage() {
     const input = document.getElementById('message-input');
@@ -837,11 +983,11 @@ async function sendMessage() {
     
     if (!content || !authToken) return;
     
-    // Check if OpenAI is selected but not available
-    if (aiModel === 'openai') {
-        showAlert('OpenAI API is currently not available. Please select Gemini model.', 'warning');
-        return;
-    }
+    // OpenAI is now available - no need to block it
+    // if (aiModel === 'openai') {
+    //     showAlert('OpenAI API is currently not available. Please select Gemini model.', 'warning');
+    //     return;
+    // }
     
     if (!currentChatId) {
         await createNewChat();
@@ -850,6 +996,14 @@ async function sendMessage() {
     // Add user message to UI
     addMessageToUI(content, 'user');
     input.value = '';
+    
+    // Hide system instructions container if it's visible (first message scenario)
+    const systemContainer = document.getElementById('system-instructions-container');
+    if (systemContainer && systemContainer.style.display !== 'none') {
+        console.log('Hiding system instructions container after first message');
+        systemContainer.style.display = 'none !important';
+        systemContainer.style.setProperty('display', 'none', 'important');
+    }
     
     // Show typing indicator
     showTypingIndicator();

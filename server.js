@@ -6,6 +6,7 @@ require('dotenv').config();
 const { syncDatabase } = require('./models');
 const authRoutes = require('./routes/auth');
 const chatRoutes = require('./routes/chat');
+const chargerRoutes = require('./routes/charger');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -21,6 +22,7 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/charger', chargerRoutes);
 
 // Serve the main HTML file
 app.get('/', (req, res) => {

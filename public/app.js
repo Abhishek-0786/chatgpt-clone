@@ -188,6 +188,82 @@ function setupEventListeners() {
     
     // Register form
     document.getElementById('register-form').addEventListener('submit', handleRegister);
+    
+    // Forgot password form
+    document.getElementById('forgot-password-form').addEventListener('submit', handleForgotPassword);
+    
+    // Password toggle for login
+    document.getElementById('toggle-login-password').addEventListener('click', function() {
+        const passwordInput = document.getElementById('login-password');
+        const eyeIcon = document.getElementById('login-password-eye');
+        
+        if (passwordInput.type === 'password') {
+            passwordInput.type = 'text';
+            eyeIcon.classList.remove('fa-eye');
+            eyeIcon.classList.add('fa-eye-slash');
+        } else {
+            passwordInput.type = 'password';
+            eyeIcon.classList.remove('fa-eye-slash');
+            eyeIcon.classList.add('fa-eye');
+        }
+    });
+    
+    // Password toggle for register
+    document.getElementById('toggle-register-password').addEventListener('click', function() {
+        const passwordInput = document.getElementById('register-password');
+        const eyeIcon = document.getElementById('register-password-eye');
+        
+        if (passwordInput.type === 'password') {
+            passwordInput.type = 'text';
+            eyeIcon.classList.remove('fa-eye');
+            eyeIcon.classList.add('fa-eye-slash');
+        } else {
+            passwordInput.type = 'password';
+            eyeIcon.classList.remove('fa-eye-slash');
+            eyeIcon.classList.add('fa-eye');
+        }
+    });
+}
+
+// Handle forgot password
+async function handleForgotPassword(e) {
+    e.preventDefault();
+    
+    const email = document.getElementById('forgot-email').value;
+    
+    try {
+        showLoading(true);
+        
+        const response = await fetch(`${API_BASE}/auth/forgot-password`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ email })
+        });
+        
+        const data = await response.json();
+        
+        if (response.ok) {
+            showAlert('Password reset link sent to your email!', 'success');
+            
+            // Close modal after 2 seconds
+            setTimeout(() => {
+                const modal = bootstrap.Modal.getInstance(document.getElementById('forgotPasswordModal'));
+                if (modal) {
+                    modal.hide();
+                }
+            }, 2000);
+        } else {
+            showAlert(data.error || 'Failed to send reset link', 'danger');
+        }
+        
+    } catch (error) {
+        console.error('Error:', error);
+        showAlert('Failed to send reset link', 'danger');
+    } finally {
+        showLoading(false);
+    }
 }
 
 // Show login modal
@@ -200,6 +276,20 @@ function showLoginModal() {
 function showRegisterModal() {
     const modal = new bootstrap.Modal(document.getElementById('registerModal'));
     modal.show();
+}
+
+// Show forgot password modal
+function showForgotPasswordModal() {
+    const loginModal = bootstrap.Modal.getInstance(document.getElementById('loginModal'));
+    if (loginModal) {
+        loginModal.hide();
+    }
+    
+    // Wait for login modal to hide, then show forgot password modal
+    setTimeout(() => {
+        const modal = new bootstrap.Modal(document.getElementById('forgotPasswordModal'));
+        modal.show();
+    }, 300);
 }
 
 // Handle login

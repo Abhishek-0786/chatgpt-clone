@@ -44,6 +44,14 @@ const User = sequelize.define('User', {
     validate: {
       len: [1, 50]
     }
+  },
+  resetPasswordToken: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  resetPasswordExpires: {
+    type: DataTypes.DATE,
+    allowNull: true
   }
 }, {
   hooks: {

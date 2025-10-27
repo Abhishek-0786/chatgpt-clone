@@ -221,24 +221,15 @@ router.get('/sync', async (req, res) => {
         recordDate = new Date();
       }
       
-      // Check if record already exists (proper duplicate check)
-      const existingRecord = await ChargerData.findOne({
+      // Use findOrCreate to prevent true duplicates (same message with same messageId and timestamp)
+      const [chargerDataRecord, created] = await ChargerData.findOrCreate({
         where: {
           deviceId: record.deviceId,
           messageId: record.messageId,
-          message: record.message
-        }
-      });
-      
-      if (existingRecord) {
-        skippedCount++;
-        console.log(`⏭️ Skipping existing record ${processedCount}/${externalData.length}: ${record.message} (${record.messageId})`);
-      } else {
-        syncedCount++;
-        console.log(`📝 Creating record ${processedCount}/${externalData.length}: ${record.message} (${record.messageId})`);
-        
-        // Create charger data record
-        await ChargerData.create({
+          message: record.message,
+          timestamp: recordDate
+        },
+        defaults: {
           chargerId: charger.id,
           deviceId: record.deviceId,
           type: record.type,
@@ -249,18 +240,26 @@ router.get('/sync', async (req, res) => {
           raw: record.raw,
           direction: record.direction,
           timestamp: recordDate
-        });
-
-        // Update charger errorCode from StatusNotification messages
-        if (record.message === 'StatusNotification' && record.messageData) {
-          const errorCode = record.messageData.errorCode;
-          if (errorCode !== undefined && errorCode !== null) {
-            await charger.update({ errorCode: errorCode.toString() });
-            console.log(`🔧 Updated errorCode: ${errorCode}`);
-          }
         }
-        
+      });
+      
+      if (created) {
         syncedCount++;
+      } else {
+        skippedCount++;
+        // Only log every 100 skipped records to reduce console spam
+        if (skippedCount % 100 === 0) {
+          console.log(`⏭️ Skipped ${skippedCount} duplicate records so far...`);
+        }
+      }
+
+      // Update charger errorCode from StatusNotification messages
+      if (record.message === 'StatusNotification' && record.messageData) {
+        const errorCode = record.messageData.errorCode;
+        if (errorCode !== undefined && errorCode !== null) {
+          await charger.update({ errorCode: errorCode.toString() });
+          console.log(`🔧 Updated errorCode: ${errorCode}`);
+        }
       }
     }
     

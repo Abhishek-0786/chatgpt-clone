@@ -23,10 +23,10 @@ const Charger = sequelize.define('Charger', {
     allowNull: true,
     comment: 'Physical location of charger'
   },
-  status: {
+  chargerStatus: {
     type: DataTypes.ENUM('active', 'inactive', 'maintenance'),
     defaultValue: 'active',
-    comment: 'Charger status'
+    comment: 'Charger operational status'
   },
   vendor: {
     type: DataTypes.STRING,

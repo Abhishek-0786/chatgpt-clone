@@ -17,8 +17,120 @@ const API_BASE = '/api/charger';
 // Initialize page
 document.addEventListener('DOMContentLoaded', function() {
     console.log('🚀 Charger logs page loaded');
-    initializePage();
+    checkAuthAndInitialize();
 });
+
+// Check authentication before initializing page
+async function checkAuthAndInitialize() {
+    try {
+        console.log('🔐 Checking authentication...');
+        const token = localStorage.getItem('authToken');
+        
+        if (!token) {
+            // User is not logged in - show error and redirect
+            console.log('❌ No token found');
+            showAuthError();
+            return;
+        }
+        
+        console.log('🔑 Token found, verifying...');
+        
+        // Verify token is valid by checking with backend
+        const response = await fetch('/api/auth/me', {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        console.log('📡 Auth response status:', response.status);
+        
+        if (response.ok) {
+            // User is authenticated - proceed with initialization
+            console.log('✅ User authenticated successfully');
+            await initializePage();
+        } else {
+            // Token is invalid - show error and redirect
+            console.log('❌ Invalid token - response not OK');
+            showAuthError();
+        }
+    } catch (error) {
+        console.error('❌ Authentication check error:', error);
+        showAuthError();
+    }
+}
+
+// Show authentication error
+function showAuthError() {
+    // Check if body already has an error message
+    if (document.body.innerHTML.includes('Authentication Required')) {
+        return; // Already showing error, don't replace again
+    }
+    
+    // Hide the entire page content
+    const existingContent = document.body.innerHTML;
+    document.body.innerHTML = `
+        <style>
+            body {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 100vh;
+                background-color: #ffffff;
+                margin: 0;
+                padding: 20px;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            }
+            .error-container {
+                background: white;
+                border-radius: 20px;
+                padding: 50px;
+                max-width: 500px;
+                box-shadow: 0 15px 50px rgba(0,0,0,0.1);
+                text-align: center;
+                border: 1px solid #e5e5e5;
+            }
+            .error-container i {
+                color: #dc3545;
+                margin-bottom: 20px;
+            }
+            .error-container h3 {
+                color: #343541;
+                margin-bottom: 15px;
+                font-weight: 600;
+            }
+            .error-container p {
+                color: #666;
+                margin-bottom: 30px;
+                line-height: 1.5;
+            }
+            .error-container a {
+                background-color: #10a37f;
+                border: none;
+                color: white;
+                padding: 14px 35px;
+                border-radius: 8px;
+                text-decoration: none;
+                display: inline-block;
+                transition: all 0.2s ease;
+                font-weight: 500;
+                font-size: 1rem;
+            }
+            .error-container a:hover {
+                background-color: #0d8a6b;
+                transform: translateY(-2px);
+                box-shadow: 0 5px 15px rgba(16, 163, 127, 0.4);
+            }
+        </style>
+        <div class="error-container">
+            <i class="fas fa-lock fa-3x"></i>
+            <h3>Authentication Required</h3>
+            <p>You need to login first to access charger logs.</p>
+            <a href="/">
+                <i class="fas fa-arrow-left me-2" style="color: white; margin-bottom:0px;"></i>Go to Login
+            </a>
+        </div>
+    `;
+}
 
 // Initialize page
 async function initializePage() {
@@ -273,3 +385,4 @@ setInterval(async () => {
         }
     }
 }, 30000);
+    

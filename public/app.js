@@ -77,10 +77,47 @@ document.addEventListener('DOMContentLoaded', function() {
     setupEventListeners();
 });
 
+// Handle browser back/forward cache restoration
+window.addEventListener('pageshow', function(event) {
+    if (event.persisted) {
+        console.log('🔄 Page restored from bfcache, re-checking authentication status...');
+        // Small delay to ensure DOM is fully ready
+        setTimeout(() => {
+            checkAuthStatus();
+        }, 100);
+    }
+});
+
+// Handle page focus (when returning to tab/window)
+window.addEventListener('focus', function() {
+    console.log('🔄 Page focused, re-checking authentication status...');
+    // Re-check auth status to ensure correct user data is displayed
+    checkAuthStatus();
+});
+
+// Disable browser back/forward cache for this page
+window.addEventListener('beforeunload', function() {
+    console.log('🚪 Page unloading...');
+    // Force the page to reload fresh content (disable bfcache)
+    // This ensures that when user clicks back, page reloads instead of using cache
+});
+
 // Check if user is authenticated
 async function checkAuthStatus() {
     console.log('🔍 Checking authentication status...');
     const token = localStorage.getItem('authToken');
+    
+    // Try to restore currentUser from localStorage first
+    const savedUser = localStorage.getItem('currentUser');
+    if (savedUser) {
+        try {
+            currentUser = JSON.parse(savedUser);
+            console.log('📦 Restored user from localStorage:', currentUser.username);
+        } catch (error) {
+            console.error('❌ Failed to parse saved user:', error);
+        }
+    }
+    
     if (token) {
         console.log('🔑 Token found, validating...');
         try {
@@ -92,9 +129,36 @@ async function checkAuthStatus() {
             
             if (response.ok) {
                 const data = await response.json();
-                currentUser = data.user;
+                const newUser = data.user;
+                
+                // Check if the user has changed
+                if (currentUser && currentUser.id && newUser.id && currentUser.id !== newUser.id) {
+                    console.log('⚠️ User changed detected! Old user:', currentUser.username, 'New user:', newUser.username);
+                    console.log('🔄 Reloading page to clear stale state...');
+                    // Clear everything and reload
+                    localStorage.clear();
+                    currentUser = newUser;
+                    localStorage.setItem('currentUser', JSON.stringify(currentUser));
+                    localStorage.setItem('authToken', token);
+                    window.location.reload();
+                    return;
+                }
+                
+                currentUser = newUser;
                 authToken = token;
+                
+                // Save user data to localStorage
+                localStorage.setItem('currentUser', JSON.stringify(currentUser));
+                
                 console.log('✅ User authenticated:', currentUser.username);
+                
+                // Ensure currentUser is set before showing UI
+                if (!currentUser) {
+                    console.error('❌ No user data returned from API');
+                    showUnauthenticatedUI();
+                    return;
+                }
+                
                 showAuthenticatedUI();
                 loadChatHistory();
                 
@@ -132,6 +196,13 @@ async function checkAuthStatus() {
 function showAuthenticatedUI() {
     console.log('🔐 Showing authenticated UI');
     
+    // Check if currentUser is set
+    if (!currentUser || !currentUser.username) {
+        console.error('❌ Cannot show authenticated UI: currentUser is not set');
+        showUnauthenticatedUI();
+        return;
+    }
+    
     const authButtons = document.getElementById('auth-buttons');
     const userInfo = document.getElementById('user-info');
     const sidebar = document.querySelector('.sidebar');
@@ -150,7 +221,26 @@ function showAuthenticatedUI() {
     console.log('After change - Auth buttons display:', authButtons.style.display);
     console.log('After change - User info display:', userInfo.style.display);
     
-    document.getElementById('welcome-text').textContent = `Welcome, ${currentUser.username}!`;
+    // Get or update currentUser from localStorage to ensure freshness
+    const savedUser = localStorage.getItem('currentUser');
+    if (savedUser) {
+        try {
+            const parsedUser = JSON.parse(savedUser);
+            if (parsedUser && parsedUser.username) {
+                currentUser = parsedUser;
+                console.log('📦 Updated currentUser from localStorage:', currentUser.username);
+            }
+        } catch (error) {
+            console.error('❌ Failed to parse saved user:', error);
+        }
+    }
+    
+    const welcomeText = document.getElementById('welcome-text');
+    if (welcomeText) {
+        welcomeText.textContent = `Welcome, ${currentUser.username}!`;
+        console.log('📝 Updated welcome text with:', currentUser.username);
+    }
+    
     console.log('✅ Auth buttons hidden, user info shown, sidebar shown');
 }
 
@@ -316,6 +406,7 @@ async function handleLogin(e) {
             currentUser = data.user;
             authToken = data.token;
             localStorage.setItem('authToken', authToken);
+            localStorage.setItem('currentUser', JSON.stringify(currentUser));
             
             console.log('✅ Login successful, showing authenticated UI');
             showAuthenticatedUI();
@@ -366,6 +457,7 @@ async function handleRegister(e) {
             currentUser = data.user;
             authToken = data.token;
             localStorage.setItem('authToken', authToken);
+            localStorage.setItem('currentUser', JSON.stringify(currentUser));
             
             showAuthenticatedUI();
             loadChatHistory();
@@ -399,6 +491,7 @@ function logout() {
     currentChatId = null;
     localStorage.removeItem('authToken');
     localStorage.removeItem('currentChatId');
+    localStorage.removeItem('currentUser');
     
     // Force page refresh to clear any cached state
     window.location.reload();

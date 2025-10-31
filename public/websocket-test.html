@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Connection Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .input-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+            box-sizing: border-box;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+        }
+        .btn-connect {
+            background: #10a37f;
+            color: white;
+        }
+        .btn-connect:hover {
+            background: #0d8a6b;
+        }
+        .btn-disconnect {
+            background: #dc3545;
+            color: white;
+        }
+        .btn-disconnect:hover {
+            background: #c82333;
+        }
+        .btn-send {
+            background: #007bff;
+            color: white;
+        }
+        .btn-send:hover {
+            background: #0056b3;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .status.connected {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status.disconnected {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .status.connecting {
+            background: #fff3cd;
+            color: #856404;
+        }
+        #logs {
+            background: #f8f9fa;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            height: 400px;
+            overflow-y: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            margin-top: 20px;
+        }
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+            border-left: 3px solid #007bff;
+            padding-left: 10px;
+        }
+        .log-entry.success {
+            border-left-color: #28a745;
+            color: #155724;
+        }
+        .log-entry.error {
+            border-left-color: #dc3545;
+            color: #721c24;
+        }
+        .log-entry.info {
+            border-left-color: #17a2b8;
+            color: #0c5460;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔌 WebSocket Connection Test</h1>
+        
+        <div class="input-group">
+            <label for="deviceId">Device ID:</label>
+            <input type="text" id="deviceId" value="abc123" placeholder="Enter device ID">
+        </div>
+        
+        <div class="input-group">
+            <label for="wsUrl">WebSocket URL:</label>
+            <input type="text" id="wsUrl" value="ws://localhost:9000/ws/ocpp/16/abc123" placeholder="WebSocket URL">
+        </div>
+        
+        <div>
+            <button class="btn-connect" onclick="connect()">Connect</button>
+            <button class="btn-disconnect" onclick="disconnect()">Disconnect</button>
+            <button class="btn-send" onclick="sendTestMessage()">Send Test Message</button>
+        </div>
+        
+        <div id="status" class="status disconnected">Disconnected</div>
+        
+        <div>
+            <strong>Connection Logs:</strong>
+            <div id="logs"></div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        const logsDiv = document.getElementById('logs');
+        const statusDiv = document.getElementById('status');
+        
+        function addLog(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = `log-entry ${type}`;
+            logEntry.textContent = `[${timestamp}] ${message}`;
+            logsDiv.appendChild(logEntry);
+            logsDiv.scrollTop = logsDiv.scrollHeight;
+        }
+        
+        function updateStatus(status, className) {
+            statusDiv.textContent = status;
+            statusDiv.className = `status ${className}`;
+        }
+        
+        function connect() {
+            const deviceId = document.getElementById('deviceId').value;
+            let wsUrl = document.getElementById('wsUrl').value;
+            
+            // If deviceId is provided and URL doesn't end with it, update URL
+            if (deviceId && !wsUrl.includes(deviceId)) {
+                wsUrl = `ws://localhost:9000/ws/ocpp/16/${deviceId}`;
+                document.getElementById('wsUrl').value = wsUrl;
+            }
+            
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                addLog('Already connected!', 'info');
+                return;
+            }
+            
+            addLog(`Connecting to: ${wsUrl}`, 'info');
+            updateStatus('Connecting...', 'connecting');
+            
+            try {
+                ws = new WebSocket(wsUrl);
+                
+                ws.onopen = function(event) {
+                    addLog('✅ Connection opened successfully!', 'success');
+                    updateStatus('Connected', 'connected');
+                };
+                
+                ws.onmessage = function(event) {
+                    try {
+                        const data = JSON.parse(event.data);
+                        addLog(`📨 Received: ${JSON.stringify(data, null, 2)}`, 'success');
+                    } catch (e) {
+                        addLog(`📨 Received (raw): ${event.data}`, 'success');
+                    }
+                };
+                
+                ws.onerror = function(error) {
+                    addLog(`❌ WebSocket error: ${error.message || 'Unknown error'}`, 'error');
+                    updateStatus('Error', 'disconnected');
+                };
+                
+                ws.onclose = function(event) {
+                    addLog(`🔌 Connection closed. Code: ${event.code}, Reason: ${event.reason || 'No reason'}`, 'info');
+                    updateStatus('Disconnected', 'disconnected');
+                    ws = null;
+                };
+                
+            } catch (error) {
+                addLog(`❌ Connection error: ${error.message}`, 'error');
+                updateStatus('Error', 'disconnected');
+            }
+        }
+        
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                addLog('Disconnecting...', 'info');
+            } else {
+                addLog('Not connected!', 'info');
+            }
+        }
+        
+        function sendTestMessage() {
+            if (!ws || ws.readyState !== WebSocket.OPEN) {
+                addLog('❌ Not connected! Please connect first.', 'error');
+                return;
+            }
+            
+            const testMessage = {
+                messageType: 'Heartbeat',
+                timestamp: new Date().toISOString(),
+                test: true
+            };
+            
+            try {
+                ws.send(JSON.stringify(testMessage));
+                addLog(`📤 Sent: ${JSON.stringify(testMessage, null, 2)}`, 'info');
+            } catch (error) {
+                addLog(`❌ Error sending message: ${error.message}`, 'error');
+            }
+        }
+        
+        // Auto-connect on page load (optional)
+        // connect();
+    </script>
+</body>
+</html>
+

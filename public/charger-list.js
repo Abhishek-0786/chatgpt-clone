@@ -1,22 +1,18 @@
-// Global variables
+// API Base URL
+const API_BASE = '/api/charger';
+const TARGET_CHARGERS = 5; // Show top 5 chargers
+const OFFLINE_THRESHOLD = 5 * 60 * 1000; // 5 minutes in milliseconds
+
+// Global variables for logs
 let currentPage = 1;
 let totalPages = 1;
 let isLoading = false;
 let allLogs = [];
-let filteredLogs = [];
-let currentFilters = {
-    deviceId: '',
-    message: '',
-    direction: '',
-    connectorId: ''
-};
-
-// API Base URL
-const API_BASE = '/api/charger';
+let selectedDeviceId = null;
 
 // Initialize page
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('🚀 Charger logs page loaded');
+    console.log('🚀 Charger list page loaded');
     checkAuthAndInitialize();
 });
 
@@ -27,7 +23,6 @@ async function checkAuthAndInitialize() {
         const token = localStorage.getItem('authToken');
         
         if (!token) {
-            // User is not logged in - show error and redirect
             console.log('❌ No token found');
             showAuthError();
             return;
@@ -35,7 +30,6 @@ async function checkAuthAndInitialize() {
         
         console.log('🔑 Token found, verifying...');
         
-        // Verify token is valid by checking with backend
         const response = await fetch('/api/auth/me', {
             headers: {
                 'Authorization': `Bearer ${token}`
@@ -45,11 +39,11 @@ async function checkAuthAndInitialize() {
         console.log('📡 Auth response status:', response.status);
         
         if (response.ok) {
-            // User is authenticated - proceed with initialization
             console.log('✅ User authenticated successfully');
-            await initializePage();
+            await loadChargers();
+            // Auto-refresh every 30 seconds
+            setInterval(loadChargers, 30000);
         } else {
-            // Token is invalid - show error and redirect
             console.log('❌ Invalid token - response not OK');
             showAuthError();
         }
@@ -61,13 +55,10 @@ async function checkAuthAndInitialize() {
 
 // Show authentication error
 function showAuthError() {
-    // Check if body already has an error message
     if (document.body.innerHTML.includes('Authentication Required')) {
-        return; // Already showing error, don't replace again
+        return;
     }
     
-    // Hide the entire page content
-    const existingContent = document.body.innerHTML;
     document.body.innerHTML = `
         <style>
             body {
@@ -124,7 +115,7 @@ function showAuthError() {
         <div class="error-container">
             <i class="fas fa-lock fa-3x"></i>
             <h3>Authentication Required</h3>
-            <p>You need to login first to access charger logs.</p>
+            <p>You need to login first to access charger list.</p>
             <a href="/">
                 <i class="fas fa-arrow-left me-2" style="color: white; margin-bottom:0px;"></i>Go to Login
             </a>
@@ -132,100 +123,192 @@ function showAuthError() {
     `;
 }
 
-// Initialize page
-async function initializePage() {
+// Load chargers
+async function loadChargers() {
     try {
-        // Load existing data first (if any)
-        console.log('🔄 Loading existing data...');
-        await loadLogs();
-        
-        // Setup event listeners
-        setupEventListeners();
-        
-        // Optional: background import only when explicitly requested via URL (?import=1)
-        const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.get('import') === '1') {
-            console.log('🔄 Starting background import...');
-            autoImportData(); // Don't await - run in background
+        console.log('📥 Loading chargers...');
+        const refreshIcon = document.getElementById('refresh-icon');
+        if (refreshIcon) {
+            refreshIcon.classList.add('fa-spin');
         }
         
-        console.log('✅ Page initialized successfully');
-    } catch (error) {
-        console.error('❌ Initialization error:', error);
-        showAlert('Failed to initialize page', 'danger');
-    }
-}
-
-// Auto-import data function (background)
-async function autoImportData() {
-    try {
-        console.log('🔄 Starting background import...');
-        showAlert('🔄 Background import started... New data will appear as it loads.', 'info');
-        
-        const response = await fetch(`${API_BASE}/sync`);
+        const response = await fetch(`${API_BASE}/chargers`);
         const data = await response.json();
         
+        if (refreshIcon) {
+            refreshIcon.classList.remove('fa-spin');
+        }
+        
         if (data.success) {
-            console.log(`✅ Background import completed: ${data.syncedRecords} records imported`);
-            if (data.syncedRecords > 0) {
-                showAlert(`✅ Background import completed: ${data.syncedRecords} new records added!`, 'success');
-                // Reload data to show new records
-                allLogs = [];
-                currentPage = 1;
-                await loadLogs();
-            } else {
-                showAlert(`ℹ️ All data already imported: ${data.totalRecords} records available`, 'info');
-            }
+            console.log(`📊 Received ${data.data.length} chargers from API`);
+            console.log(`📋 Charger IDs from API:`, data.data.map(c => c.deviceId));
+            
+            // Get latest activity for each charger and sort
+            const chargersWithActivity = await Promise.all(
+                data.data.map(async (charger) => {
+                    // Get latest log timestamp
+                    const latestLogResponse = await fetch(`${API_BASE}/data?deviceId=${encodeURIComponent(charger.deviceId)}&page=1&limit=1`);
+                    const latestLogData = await latestLogResponse.json();
+                    
+                    const latestLog = latestLogData.success && latestLogData.data.length > 0 
+                        ? latestLogData.data[0] 
+                        : null;
+                    
+                    // Use charger.lastSeen as primary source (updated by Heartbeat), fallback to latest log
+                    const lastActiveTime = charger.lastSeen 
+                        ? new Date(charger.lastSeen) 
+                        : (latestLog ? new Date(latestLog.timestamp) : null);
+                    const now = new Date();
+                    const timeDiff = lastActiveTime ? (now - lastActiveTime) : Infinity;
+                    const isOnline = timeDiff <= OFFLINE_THRESHOLD;
+                    
+                    return {
+                        ...charger,
+                        lastActiveTime: lastActiveTime,
+                        isOnline: isOnline
+                    };
+                })
+            );
+            
+            // Sort: Online first only; keep original relative order otherwise
+            chargersWithActivity.sort((a, b) => (b.isOnline - a.isOnline));
+
+            console.log(`📊 After sorting (online first): ${chargersWithActivity.length} chargers`);
+
+            // Show all chargers (no top-5 cap)
+            displayChargers(chargersWithActivity);
+            updateLastUpdated();
+            console.log(`✅ Loaded ${chargersWithActivity.length} chargers`);
         } else {
-            console.log('⚠️ Background import failed:', data.error);
-            showAlert(`⚠️ Background import failed: ${data.error}`, 'warning');
+            throw new Error(data.error || 'Failed to load chargers');
         }
     } catch (error) {
-        console.error('❌ Background import error:', error);
-        showAlert('❌ Background import failed: Please refresh page', 'danger');
+        console.error('❌ Error loading chargers:', error);
+        showAlert('Failed to load chargers', 'danger');
+        document.getElementById('chargers-container').innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-exclamation-triangle"></i>
+                <h5>Error loading chargers</h5>
+                <p>Please try refreshing the page</p>
+            </div>
+        `;
     }
 }
 
-// Setup event listeners
-function setupEventListeners() {
-    // Infinite scroll
-    window.addEventListener('scroll', handleScroll);
-}
-
-// Load statistics (simplified - no stats display needed)
-async function loadStats() {
-    try {
-        // Just check if data is available, no need to display stats
-        const response = await fetch(`${API_BASE}/data?page=1&limit=1`);
-        const data = await response.json();
-        
-        if (data.success) {
-            console.log(`📊 Total logs available: ${data.pagination.total}`);
-        }
-    } catch (error) {
-        console.error('❌ Error loading stats:', error);
+// Display chargers
+function displayChargers(chargers) {
+    const container = document.getElementById('chargers-container');
+    
+    if (chargers.length === 0) {
+        container.innerHTML = `
+            <div class="empty-state">
+                <i class="fas fa-charging-station"></i>
+                <h5>No chargers found</h5>
+                <p>No chargers are currently available</p>
+            </div>
+        `;
+        return;
     }
+    
+    const chargersHtml = chargers.map(charger => createChargerCard(charger)).join('');
+    container.innerHTML = `<div class="chargers-grid">${chargersHtml}</div>`;
 }
 
-// Get deviceId from URL parameter
-function getDeviceIdFromURL() {
-    const urlParams = new URLSearchParams(window.location.search);
-    return urlParams.get('deviceId');
+// Create charger card HTML
+function createChargerCard(charger) {
+    const statusClass = charger.isOnline ? 'online' : 'offline';
+    const statusText = charger.isOnline ? 'Online' : 'Offline';
+    const lastActive = charger.lastActiveTime;
+    const timeAgo = lastActive ? getTimeAgo(lastActive) : 'Never';
+    const lastActiveDate = lastActive ? lastActive.toLocaleDateString() : 'N/A';
+    const lastActiveTime = lastActive ? lastActive.toLocaleTimeString() : '';
+    
+    return `
+        <div class="charger-card" onclick="viewChargerLogs('${charger.deviceId}')">
+            <div class="charger-card-header">
+                <div>
+                    <div class="charger-id">
+                        <i class="fas fa-charging-station me-2"></i>${charger.deviceId}
+                    </div>
+                    ${charger.name ? `<div class="text-muted mt-1">${charger.name}</div>` : ''}
+                </div>
+                <span class="status-badge ${statusClass}">
+                    ${statusText}
+                </span>
+            </div>
+            
+            <div class="charger-info">
+                <div class="info-item">
+                    <i class="fas fa-bolt"></i>
+                    <span class="info-label">Power:</span>
+                    <span>${charger.powerRating ?? 'N/A'}</span>
+                </div>
+                <div class="info-item">
+                    <i class="fas fa-plug"></i>
+                    <span class="info-label">Connectors:</span>
+                    <span>${charger.connectorCount ?? 'N/A'}</span>
+                </div>
+            </div>
+            
+            <div class="last-active">
+                <div>
+                    <div class="last-active-line">
+                        <i class="fas fa-clock"></i>
+                        <span class="last-active-time">Last Active: ${lastActiveDate}</span>
+                    </div>
+                    <div class="last-active-sub">${lastActiveTime}</div>
+                </div>
+                <span class="time-ago">${timeAgo} ago</span>
+            </div>
+        </div>
+    `;
+}
+
+// Get time ago string
+function getTimeAgo(date) {
+    const now = new Date();
+    const diff = now - date;
+    const seconds = Math.floor(diff / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    
+    if (days > 0) return `${days} day${days > 1 ? 's' : ''}`;
+    if (hours > 0) return `${hours} hour${hours > 1 ? 's' : ''}`;
+    if (minutes > 0) return `${minutes} minute${minutes > 1 ? 's' : ''}`;
+    return `${seconds} second${seconds > 1 ? 's' : ''}`;
+}
+
+// View charger logs (clickable card)
+function viewChargerLogs(deviceId) {
+    window.location.href = `/charger-logs.html?deviceId=${encodeURIComponent(deviceId)}`;
+}
+
+// Show logs view
+function showLogsView(deviceId) {
+    // Not used anymore; logs open on dedicated page
+}
+
+// Show cards view
+function showCardsView() {
+    // Not used anymore; page only shows cards now
 }
 
 // Load charger logs
-async function loadLogs(page = 1) {
+async function loadLogs(page = 1, deviceId = null) {
+    // No longer used on this page
     if (isLoading) return;
+    
+    const targetDeviceId = deviceId || selectedDeviceId;
     
     try {
         isLoading = true;
-        const deviceId = getDeviceIdFromURL();
-        console.log(`📥 Loading page ${page}${deviceId ? ` for device: ${deviceId}` : ''}...`);
+        console.log(`📥 Loading page ${page}${targetDeviceId ? ` for device: ${targetDeviceId}` : ''}...`);
         
         // Build API URL with deviceId if present
         let apiUrl = `${API_BASE}/data?page=${page}&limit=100`;
-        if (deviceId) {
-            apiUrl += `&deviceId=${encodeURIComponent(deviceId)}`;
+        if (targetDeviceId) {
+            apiUrl += `&deviceId=${encodeURIComponent(targetDeviceId)}`;
         }
         
         const response = await fetch(apiUrl);
@@ -241,11 +324,6 @@ async function loadLogs(page = 1) {
             currentPage = data.pagination.page;
             totalPages = data.pagination.pages;
             
-            // Update page title if deviceId is present
-            if (deviceId) {
-                updatePageTitle(deviceId);
-            }
-            
             displayLogs();
             
             console.log(`✅ Loaded ${data.data.length} logs for page ${page}`);
@@ -257,17 +335,6 @@ async function loadLogs(page = 1) {
         showAlert('Failed to load charger logs', 'danger');
     } finally {
         isLoading = false;
-    }
-}
-
-// Update page title with device ID
-function updatePageTitle(deviceId) {
-    const pageTitle = document.querySelector('.page-title');
-    if (pageTitle) {
-        pageTitle.innerHTML = `
-            <i class="fas fa-charging-station me-2"></i>
-            Charger Logs - ${deviceId}
-        `;
     }
 }
 
@@ -351,15 +418,6 @@ function createLogItem(log) {
     `;
 }
 
-// Update statistics (simplified - no stats display needed)
-function updateStats() {
-    const incomingCount = allLogs.filter(log => log.direction === 'Incoming').length;
-    const outgoingCount = allLogs.filter(log => log.direction === 'Outgoing').length;
-    
-    // Just log the stats, don't try to update non-existent elements
-    console.log(`📊 Stats: ${incomingCount} incoming, ${outgoingCount} outgoing`);
-}
-
 // Handle scroll for infinite loading
 function handleScroll() {
     const scrollTop = window.scrollY;
@@ -367,26 +425,29 @@ function handleScroll() {
     const documentHeight = document.body.offsetHeight;
     const scrollPercent = (scrollTop + windowHeight) / documentHeight;
     
-    console.log(`📊 Scroll: ${Math.round(scrollPercent * 100)}% - Page: ${currentPage}/${totalPages} - Loading: ${isLoading}`);
-    
     // Trigger when 80% scrolled OR when very close to bottom
     if (scrollPercent >= 0.8 || (scrollTop + windowHeight) >= (documentHeight - 500)) {
-        if (currentPage < totalPages && !isLoading) {
+        if (currentPage < totalPages && !isLoading && selectedDeviceId) {
             console.log('🔄 Auto-loading more data...');
-            loadLogs(currentPage + 1);
-        } else if (currentPage >= totalPages) {
-            console.log('✅ All pages loaded - no more data');
+            loadLogs(currentPage + 1, selectedDeviceId);
         }
     }
 }
 
-
+// Update last updated time
+function updateLastUpdated() {
+    const lastUpdatedEl = document.getElementById('last-updated');
+    if (lastUpdatedEl) {
+        lastUpdatedEl.textContent = `Updated: ${new Date().toLocaleTimeString()}`;
+    }
+}
 
 // Show alert
 function showAlert(message, type) {
     const container = document.getElementById('alert-container');
-    const alertId = 'alert-' + Date.now();
+    if (!container) return;
     
+    const alertId = 'alert-' + Date.now();
     const alertHtml = `
         <div id="${alertId}" class="alert alert-${type} alert-dismissible fade show" role="alert">
             <i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-triangle'} me-2"></i>
@@ -397,7 +458,6 @@ function showAlert(message, type) {
     
     container.insertAdjacentHTML('beforeend', alertHtml);
     
-    // Auto-dismiss after 5 seconds
     setTimeout(() => {
         const alert = document.getElementById(alertId);
         if (alert) {
@@ -405,16 +465,3 @@ function showAlert(message, type) {
         }
     }, 5000);
 }
-
-// Auto-refresh every 30 seconds
-setInterval(async () => {
-    if (!isLoading) {
-        console.log('🔄 Auto-refreshing data...');
-        await loadStats();
-        // Only reload first page to avoid duplicates
-        if (currentPage === 1) {
-            await loadLogs(1);
-        }
-    }
-}, 30000);
-

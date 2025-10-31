@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Charger List - GenX</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #007bff;
+            --secondary-color: #6c757d;
+            --success-color: #28a745;
+            --danger-color: #dc3545;
+            --warning-color: #ffc107;
+            --info-color: #17a2b8;
+            --light-color: #f8f9fa;
+            --dark-color: #343a40;
+        }
+
+        body {
+            background-color: #f8f9fa;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        .navbar {
+            background: linear-gradient(135deg, var(--primary-color), #0056b3);
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .navbar-brand {
+            font-weight: 700;
+            font-size: 1.5rem;
+        }
+
+        .main-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .page-header {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .page-title {
+            color: var(--dark-color);
+            font-weight: 700;
+            margin-bottom: 10px;
+        }
+
+        .page-subtitle {
+            color: var(--secondary-color);
+            font-size: 1.1rem;
+        }
+
+        /* Cards View Styles */
+        .chargers-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .charger-card {
+            background: white;
+            border-radius: 10px;
+            padding: 25px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+            cursor: pointer;
+            border-left: 4px solid var(--primary-color);
+        }
+
+        .charger-card:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            border-left-color: var(--success-color);
+        }
+
+        .charger-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 15px;
+        }
+
+        .charger-id {
+            font-size: 1.2rem;
+            font-weight: 700;
+            color: var(--dark-color);
+            margin-bottom: 5px;
+        }
+
+        .status-badge {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+
+        .status-badge.online {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .status-badge.offline {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+
+        .charger-info {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .info-item {
+            display: flex;
+            align-items: center;
+            color: var(--secondary-color);
+            font-size: 0.95rem;
+        }
+
+        .info-item i {
+            margin-right: 10px;
+            color: var(--primary-color);
+            width: 20px;
+            text-align: center;
+        }
+
+        .info-label {
+            font-weight: 600;
+            margin-right: 5px;
+            color: var(--dark-color);
+        }
+
+        .last-active {
+            background-color: #e7f3ff;
+            border-radius: 5px;
+            padding: 12px;
+            margin-top: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .last-active-time {
+            font-weight: 600;
+            color: var(--primary-color);
+        }
+
+        .last-active-sub {
+            display: block;
+            font-weight: 600;
+            color: var(--primary-color);
+            margin-top: 2px;
+        }
+
+        .last-active-line {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-weight: 600;
+            color: var(--dark-color);
+        }
+
+        .time-ago {
+            font-size: 0.85rem;
+            color: var(--secondary-color);
+            white-space: nowrap;
+            margin-left: auto;
+        }
+
+        /* Logs View Styles */
+        .log-item {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 15px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border-left: 4px solid var(--info-color);
+            transition: all 0.3s ease;
+        }
+
+        .log-item:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        }
+
+        .log-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .log-timestamp {
+            color: var(--secondary-color);
+            font-size: 0.9rem;
+        }
+
+        .log-message {
+            font-weight: 600;
+            color: var(--dark-color);
+            margin-bottom: 5px;
+        }
+
+        .log-device {
+            color: var(--primary-color);
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+
+        .log-direction {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 15px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .direction-incoming {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .direction-outgoing {
+            background-color: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .log-data {
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            padding: 10px;
+            margin-top: 10px;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            color: var(--dark-color);
+        }
+
+        .connector-badge {
+            background-color: var(--info-color);
+            color: white;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        /* View Toggle */
+        .cards-view {
+            display: block;
+        }
+
+        .logs-view {
+            display: none;
+        }
+
+        .cards-view.active {
+            display: block;
+        }
+
+        .logs-view.active {
+            display: block;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .empty-state i {
+            font-size: 4rem;
+            color: var(--secondary-color);
+            margin-bottom: 20px;
+        }
+
+        .loading-spinner {
+            text-align: center;
+            padding: 40px;
+            color: var(--secondary-color);
+        }
+
+        .btn-back {
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-bottom: 20px;
+        }
+
+        .btn-back:hover {
+            background: #0056b3;
+        }
+
+        @media (max-width: 768px) {
+            .main-container {
+                padding: 10px;
+            }
+            
+            .chargers-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .charger-card-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+
+            .last-active {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .time-ago {
+                margin-left: 0;
+                margin-top: 6px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container">
+            <a class="navbar-brand" href="/">
+                <i class="fas fa-bolt me-2"></i>GenX Charger List
+            </a>
+            <div class="navbar-nav ms-auto">
+                <a class="nav-link" href="/">
+                    <i class="fas fa-arrow-left me-1"></i>Back to Chat
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Container -->
+    <div class="main-container">
+        <!-- Page Header -->
+        <div class="page-header">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <h1 class="page-title" id="page-title">
+                        <i class="fas fa-charging-station me-2"></i>Charger List
+                    </h1>
+                    <p class="page-subtitle" id="page-subtitle">Click on any charger to view its logs (sorted by most active first)</p>
+                </div>
+                <div class="col-md-4 text-end">
+                    <div class="text-muted">
+                        <i class="fas fa-sync-alt me-2" id="refresh-icon"></i>
+                        <span id="last-updated">Loading...</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Alerts -->
+        <div id="alert-container"></div>
+
+        <!-- Cards View -->
+        <div id="cards-view" class="cards-view active">
+            <div id="chargers-container">
+                <div class="loading-spinner">
+                    <i class="fas fa-spinner fa-spin me-2"></i>Loading chargers...
+                </div>
+            </div>
+        </div>
+
+        <!-- Logs View -->
+        <div id="logs-view" class="logs-view">
+            <button class="btn btn-back" onclick="showCardsView()">
+                <i class="fas fa-arrow-left me-2"></i>Back to Charger List
+            </button>
+            <div id="logs-container">
+                <div class="loading-spinner">
+                    <i class="fas fa-spinner fa-spin me-2"></i>Loading charger logs...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="charger-list.js"></script>
+</body>
+</html>

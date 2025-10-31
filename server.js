@@ -7,9 +7,11 @@ const { syncDatabase } = require('./models');
 const authRoutes = require('./routes/auth');
 const chatRoutes = require('./routes/chat');
 const chargerRoutes = require('./routes/charger');
+const { createWebSocketServer } = require('./websocket-server');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const WEBSOCKET_PORT = process.env.WEBSOCKET_PORT || 9000;
 
 // Middleware
 app.use(cors());
@@ -49,10 +51,16 @@ app.use((req, res) => {
 const startServer = async () => {
   try {
     await syncDatabase();
+    
+    // Start Express server
     app.listen(PORT, () => {
-      console.log(`Server running on http://localhost:${PORT}`);
+      console.log(`✅ Express server running on http://localhost:${PORT}`);
       console.log('Make sure to set up your .env file with database credentials and OpenAI API key');
     });
+    
+    // Start WebSocket server
+    createWebSocketServer(WEBSOCKET_PORT);
+    
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);

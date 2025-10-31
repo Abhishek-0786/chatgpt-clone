@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { Op } = require('sequelize');
 const Charger = require('../models/Charger');
 const ChargerData = require('../models/ChargerData');
 const fs = require('fs');
@@ -74,8 +75,14 @@ router.get('/sync', async (req, res) => {
       });
     }
     
-    // Filter by specific device ID (you can change this)
-    const targetDeviceId = '1CEVCHAC31506'; // Change this to your device ID
+    // Require deviceId via query to avoid hardcoded imports
+    const targetDeviceId = (req.query.deviceId || '').trim();
+    if (!targetDeviceId) {
+      return res.status(400).json({
+        success: false,
+        error: 'deviceId is required. Example: /api/charger/sync?deviceId=CP001'
+      });
+    }
     
     // Don't delete existing charger record - just update it
     console.log(`🔄 Will update existing charger record for device: ${targetDeviceId}`);
@@ -100,11 +107,15 @@ router.get('/sync', async (req, res) => {
     let chargerUpdated = false;
     let processedCount = 0;
     
-    // First, ensure charger exists (findOrCreate to avoid deletion)
+    // First, ensure charger exists (avoid selecting non-existent columns)
     console.log(`🏗️ Ensuring charger exists for device: ${targetDeviceId}`);
-    let [charger, created] = await Charger.findOrCreate({
+    let charger = await Charger.findOne({
       where: { deviceId: targetDeviceId },
-      defaults: {
+      attributes: { exclude: ['chargerStatus'] }
+    });
+    let created = false;
+    if (!charger) {
+      await Charger.create({
         deviceId: targetDeviceId,
         name: `Charger ${targetDeviceId}`,
         status: 'Available',
@@ -115,9 +126,15 @@ router.get('/sync', async (req, res) => {
         powerRating: 'Unknown',
         voltage: 'Unknown',
         current: 'Unknown',
-        energyConsumption: 'Unknown'
-      }
-    });
+        energyConsumption: 'Unknown',
+        lastSeen: new Date()
+      }, {
+        fields: ['deviceId','name','status','vendor','model','serialNumber','firmwareVersion','powerRating','voltage','current','energyConsumption','lastSeen'],
+        returning: false
+      });
+      charger = await Charger.findOne({ where: { deviceId: targetDeviceId }, attributes: { exclude: ['chargerStatus'] } });
+      created = true;
+    }
     
     if (created) {
       console.log(`🏗️ Created new charger for device: ${targetDeviceId}`);
@@ -289,22 +306,30 @@ router.get('/sync', async (req, res) => {
 router.get('/data', async (req, res) => {
     try {
         const page = parseInt(req.query.page) || 1;
-        const limit = parseInt(req.query.limit) || 100; // Much higher limit
+        const limit = parseInt(req.query.limit) || 100;
         const offset = (page - 1) * limit;
         
-        // Get total count for specific device only
-        const targetDeviceId = '1CEVCHAC31506'; // Target this device
+        // Get deviceId from query parameter (if provided)
+        const deviceId = req.query.deviceId;
+        
+        // Build where clause
+        const whereClause = {};
+        if (deviceId) {
+            whereClause.deviceId = deviceId;
+        }
+        
+        // Get total count
         const totalCount = await ChargerData.count({
-            where: { deviceId: targetDeviceId }
+            where: whereClause
         });
         
-        // Get paginated data for specific device only (most recent first)
-        const data = await ChargerData.findAll({
-            where: { deviceId: targetDeviceId },
+        // Get paginated data (most recent first)
+    const data = await ChargerData.findAll({
+            where: whereClause,
             include: [{
                 model: Charger,
                 as: 'charger',
-                attributes: ['name', 'location', 'vendor', 'model']
+            attributes: { exclude: ['chargerStatus'] }
             }],
             order: [['timestamp', 'DESC']],
             limit: limit,
@@ -319,7 +344,8 @@ router.get('/data', async (req, res) => {
         limit: limit,
         total: totalCount,
         pages: Math.ceil(totalCount / limit)
-      }
+      },
+      deviceId: deviceId || null
     });
     
   } catch (error) {
@@ -335,17 +361,41 @@ router.get('/data', async (req, res) => {
 // Get charger metadata
 router.get('/chargers', async (req, res) => {
   try {
+    // Simple query first - get all chargers (exclude chargerStatus if column doesn't exist)
     const chargers = await Charger.findAll({
-      order: [['lastSeen', 'DESC']]
+      attributes: {
+        exclude: ['chargerStatus'] // Exclude if column doesn't exist
+      }
     });
+    
+    console.log(`📊 Found ${chargers.length} chargers in database`);
+    console.log(`📋 Charger IDs: ${chargers.map(c => c.deviceId).join(', ')}`);
+    
+    // Filter out any chargers with empty/null deviceId
+    const validChargers = chargers.filter(c => c.deviceId && c.deviceId.trim() !== '');
+    console.log(`✅ Valid chargers (after filtering empty IDs): ${validChargers.length}`);
+    
+    if (validChargers.length !== chargers.length) {
+      console.warn(`⚠️ Filtered out ${chargers.length - validChargers.length} chargers with empty deviceId`);
+    }
+    
+    // Sort in JavaScript to handle NULLs properly
+    const sortedChargers = validChargers.sort((a, b) => {
+      const aTime = a.lastSeen ? new Date(a.lastSeen) : new Date(0);
+      const bTime = b.lastSeen ? new Date(b.lastSeen) : new Date(0);
+      return bTime - aTime; // Most recent first
+    });
+    
+    console.log(`✅ Returning ${sortedChargers.length} sorted chargers`);
     
     res.json({
       success: true,
-      data: chargers
+      data: sortedChargers
     });
     
   } catch (error) {
     console.error('❌ Error fetching chargers:', error);
+    console.error('Full error stack:', error.stack);
     res.status(500).json({
       success: false,
       error: 'Failed to fetch chargers',
@@ -368,12 +418,12 @@ router.get('/data/:deviceId', async (req, res) => {
     });
     
     // Get paginated data for this device
-    const data = await ChargerData.findAll({
+  const data = await ChargerData.findAll({
       where: { deviceId: deviceId },
       include: [{
         model: Charger,
         as: 'charger',
-        attributes: ['name', 'location', 'vendor', 'model']
+        attributes: { exclude: ['chargerStatus'] }
       }],
       order: [['timestamp', 'DESC']],
       limit: limit,
@@ -398,6 +448,37 @@ router.get('/data/:deviceId', async (req, res) => {
       error: 'Failed to fetch charger data',
       details: error.message
     });
+  }
+});
+
+// Danger: purge all chargers except a specific deviceId (local cleanup helper)
+// Usage: DELETE /api/charger/purge?except=DEVICE_ID&confirm=YES
+router.delete('/purge', async (req, res) => {
+  try {
+    const exceptId = (req.query.except || '').trim();
+    const confirm = (req.query.confirm || '').trim();
+
+    if (!exceptId) {
+      return res.status(400).json({ success: false, error: 'Query param "except" is required' });
+    }
+    if (confirm !== 'YES') {
+      return res.status(400).json({ success: false, error: 'Add confirm=YES to proceed' });
+    }
+
+    console.log(`⚠️ Purging all chargers except: ${exceptId}`);
+
+    // Delete charger_data for all other deviceIds
+    const deletedData = await ChargerData.destroy({ where: { deviceId: { [Op.ne]: exceptId } } });
+
+    // Delete chargers except the one specified
+    const deletedChargers = await Charger.destroy({ where: { deviceId: { [Op.ne]: exceptId } } });
+
+    console.log(`🗑️ Deleted ${deletedData} charger_data rows and ${deletedChargers} chargers (kept ${exceptId})`);
+
+    res.json({ success: true, kept: exceptId, deletedData, deletedChargers });
+  } catch (error) {
+    console.error('❌ Purge error:', error);
+    res.status(500).json({ success: false, error: 'Failed to purge', details: error.message });
   }
 });
 

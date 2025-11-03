@@ -485,11 +485,11 @@ async function getActiveTransaction(deviceId) {
         const response = await fetch(`${API_BASE}/data?deviceId=${encodeURIComponent(deviceId)}&limit=1000`);
         const data = await response.json();
         
-        if (!data.success || !data.data) {
+        if (!data.success || !data.data || !Array.isArray(data.data)) {
             return null;
         }
         
-        // Find the latest StartTransaction
+        // Find all StartTransaction messages (incoming from charger)
         const startTransactions = data.data.filter(log => 
             log.message === 'StartTransaction' && log.direction === 'Incoming'
         );
@@ -498,23 +498,31 @@ async function getActiveTransaction(deviceId) {
             return null;
         }
         
-        // Get the latest StartTransaction
+        // Get the latest StartTransaction (by id - natural order)
         const latestStart = startTransactions.reduce((latest, current) => {
-            const latestTime = new Date(latest.timestamp || latest.createdAt);
-            const currentTime = new Date(current.timestamp || current.createdAt);
-            return currentTime > latestTime ? current : latest;
+            const latestId = latest.id || 0;
+            const currentId = current.id || 0;
+            return currentId > latestId ? current : latest;
         });
         
-        // Find the response to this StartTransaction (with transactionId)
+        // Find the response to this StartTransaction (outgoing from server, same messageId)
         const startResponse = data.data.find(log => 
             log.message === 'Response' && 
-            log.direction === 'Outgoing' &&
-            log.messageId === latestStart.messageId
+            log.messageId === latestStart.messageId &&
+            log.direction === 'Outgoing'
         );
         
-        // Get transactionId from the response (we generated it)
-        const transactionId = startResponse?.messageData?.transactionId || 
-                              startResponse?.raw?.[2]?.transactionId;
+        if (!startResponse) {
+            return null;
+        }
+        
+        // Get transactionId from the response
+        let transactionId = null;
+        if (startResponse.messageData && startResponse.messageData.transactionId) {
+            transactionId = startResponse.messageData.transactionId;
+        } else if (startResponse.raw && Array.isArray(startResponse.raw) && startResponse.raw[2] && startResponse.raw[2].transactionId) {
+            transactionId = startResponse.raw[2].transactionId;
+        }
         
         if (!transactionId) {
             return null;
@@ -524,15 +532,17 @@ async function getActiveTransaction(deviceId) {
         const stopTransaction = data.data.find(log => 
             log.message === 'StopTransaction' && 
             log.direction === 'Incoming' &&
-            (log.messageData?.transactionId === transactionId || 
-             log.raw?.[2]?.transactionId === transactionId)
+            (
+                (log.messageData && log.messageData.transactionId === transactionId) || 
+                (log.raw && Array.isArray(log.raw) && log.raw[2] && log.raw[2].transactionId === transactionId)
+            )
         );
         
         // If no StopTransaction found, transaction is active
         if (!stopTransaction) {
             const connectorId = latestStart.connectorId || 
-                               latestStart.messageData?.connectorId || 
-                               latestStart.raw?.[2]?.connectorId || 0;
+                               (latestStart.messageData && latestStart.messageData.connectorId) || 
+                               (latestStart.raw && Array.isArray(latestStart.raw) && latestStart.raw[2] && latestStart.raw[2].connectorId) || 0;
             
             return {
                 transactionId: transactionId,

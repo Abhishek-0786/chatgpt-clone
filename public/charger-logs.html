@@ -105,9 +105,22 @@
 
         .log-header {
             display: flex;
-            justify-content: between;
-            align-items: center;
+            justify-content: space-between;
+            align-items: flex-start;
             margin-bottom: 15px;
+            gap: 20px;
+        }
+        
+        .log-header > div:first-child {
+            flex: 0 0 auto;
+            min-width: 280px;
+            max-width: 400px;
+        }
+        
+        .log-header > div:last-child {
+            flex: 0 0 auto;
+            text-align: right;
+            min-width: 180px;
         }
 
         .log-timestamp {
@@ -119,6 +132,9 @@
             font-weight: 600;
             color: var(--dark-color);
             margin-bottom: 5px;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            white-space: normal;
         }
 
         .log-device {
@@ -137,13 +153,27 @@
         }
 
         .direction-incoming {
-            background-color: #d4edda;
-            color: #155724;
+            background-color: #28a745;
+            color: white;
+            font-weight: 600;
+            padding: 4px 12px;
+            border-radius: 12px;
         }
 
         .direction-outgoing {
-            background-color: #d1ecf1;
-            color: #0c5460;
+            background-color: #007bff;
+            color: white;
+            font-weight: 600;
+            padding: 4px 12px;
+            border-radius: 12px;
+        }
+        
+        .log-item.incoming {
+            border-left-color: #28a745;
+        }
+        
+        .log-item.outgoing {
+            border-left-color: #007bff;
         }
 
         /* Mobile responsiveness for direction tags */

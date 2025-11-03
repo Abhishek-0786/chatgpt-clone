@@ -162,10 +162,14 @@ async function loadChargers() {
                     const timeDiff = lastActiveTime ? (now - lastActiveTime) : Infinity;
                     const isOnline = timeDiff <= OFFLINE_THRESHOLD;
                     
+                    // Check for active transactions (StartTransaction without corresponding StopTransaction)
+                    const activeTransaction = await getActiveTransaction(charger.deviceId);
+                    
                     return {
                         ...charger,
                         lastActiveTime: lastActiveTime,
-                        isOnline: isOnline
+                        isOnline: isOnline,
+                        activeTransaction: activeTransaction
                     };
                 })
             );
@@ -221,10 +225,19 @@ function createChargerCard(charger) {
     const lastActive = charger.lastActiveTime;
     const timeAgo = lastActive ? getTimeAgo(lastActive) : 'Never';
     const lastActiveDate = lastActive ? lastActive.toLocaleDateString() : 'N/A';
-    const lastActiveTime = lastActive ? lastActive.toLocaleTimeString() : '';
+    const lastActiveTimeStr = lastActive ? lastActive.toLocaleTimeString() : '';
+    
+    // Check if charging is active
+    const isCharging = charger.activeTransaction !== null && charger.activeTransaction !== undefined;
+    const chargingIndicator = isCharging ? `
+        <div class="charging-indicator" style="background-color: #28a745; color: white; padding: 8px 12px; border-radius: 5px; margin-bottom: 10px; display: flex; align-items: center; gap: 8px;">
+            <i class="fas fa-bolt fa-spin"></i>
+            <span>Charging Active (Connector ${charger.activeTransaction.connectorId}, Transaction ${charger.activeTransaction.transactionId})</span>
+        </div>
+    ` : '';
     
     return `
-        <div class="charger-card" onclick="viewChargerLogs('${charger.deviceId}')">
+        <div class="charger-card ${isCharging ? 'charging-active' : ''}" onclick="viewChargerLogs('${charger.deviceId}')">
             <div class="charger-card-header">
                 <div>
                     <div class="charger-id">
@@ -237,16 +250,33 @@ function createChargerCard(charger) {
                 </span>
             </div>
             
-            <div class="charger-info">
-                <div class="info-item">
-                    <i class="fas fa-bolt"></i>
-                    <span class="info-label">Power:</span>
-                    <span>${charger.powerRating ?? 'N/A'}</span>
+            ${chargingIndicator}
+            
+            <div class="charger-info" style="margin-top: 10px;">
+                <div class="boot-info-item">
+                    <i class="fas fa-industry me-2"></i>
+                    <span class="info-label">Vendor:</span>
+                    <span class="boot-info-value">${charger.vendor || 'N/A'}</span>
                 </div>
-                <div class="info-item">
-                    <i class="fas fa-plug"></i>
+                <div class="boot-info-item">
+                    <i class="fas fa-cube me-2"></i>
+                    <span class="info-label">Model:</span>
+                    <span class="boot-info-value">${charger.model || 'N/A'}</span>
+                </div>
+                <div class="boot-info-item">
+                    <i class="fas fa-barcode me-2"></i>
+                    <span class="info-label">Serial:</span>
+                    <span class="boot-info-value">${charger.serialNumber || 'N/A'}</span>
+                </div>
+                <div class="boot-info-item">
+                    <i class="fas fa-code-branch me-2"></i>
+                    <span class="info-label">Firmware:</span>
+                    <span class="boot-info-value">${charger.firmwareVersion || 'N/A'}</span>
+                </div>
+                <div class="boot-info-item">
+                    <i class="fas fa-plug me-2"></i>
                     <span class="info-label">Connectors:</span>
-                    <span>${charger.connectorCount ?? 'N/A'}</span>
+                    <span class="boot-info-value">${charger.connectorCount ?? 'N/A'}</span>
                 </div>
             </div>
             
@@ -256,9 +286,24 @@ function createChargerCard(charger) {
                         <i class="fas fa-clock"></i>
                         <span class="last-active-time">Last Active: ${lastActiveDate}</span>
                     </div>
-                    <div class="last-active-sub">${lastActiveTime}</div>
+                    <div class="last-active-sub">${lastActiveTimeStr}</div>
                 </div>
                 <span class="time-ago">${timeAgo} ago</span>
+            </div>
+            
+            <div class="charger-card-actions mt-3" style="display: flex; gap: 10px; justify-content: space-between;">
+                <button class="btn btn-primary btn-sm" onclick="event.stopPropagation(); viewChargerLogs('${charger.deviceId}')" style="flex: 1;">
+                    <i class="fas fa-list me-2"></i>View Logs
+                </button>
+                ${!isCharging ? `
+                    <button class="btn btn-success btn-sm" onclick="event.stopPropagation(); startCharging('${charger.deviceId}', this)" style="flex: 1;">
+                        <i class="fas fa-play me-2"></i>Start Charging
+                    </button>
+                ` : `
+                    <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); stopCharging('${charger.deviceId}', ${charger.activeTransaction.transactionId}, this)" style="flex: 1;">
+                        <i class="fas fa-stop me-2"></i>Stop Charging
+                    </button>
+                `}
             </div>
         </div>
     `;
@@ -431,6 +476,155 @@ function handleScroll() {
             console.log('🔄 Auto-loading more data...');
             loadLogs(currentPage + 1, selectedDeviceId);
         }
+    }
+}
+
+// Get active transaction for a charger
+async function getActiveTransaction(deviceId) {
+    try {
+        const response = await fetch(`${API_BASE}/data?deviceId=${encodeURIComponent(deviceId)}&limit=1000`);
+        const data = await response.json();
+        
+        if (!data.success || !data.data) {
+            return null;
+        }
+        
+        // Find the latest StartTransaction
+        const startTransactions = data.data.filter(log => 
+            log.message === 'StartTransaction' && log.direction === 'Incoming'
+        );
+        
+        if (startTransactions.length === 0) {
+            return null;
+        }
+        
+        // Get the latest StartTransaction
+        const latestStart = startTransactions.reduce((latest, current) => {
+            const latestTime = new Date(latest.timestamp || latest.createdAt);
+            const currentTime = new Date(current.timestamp || current.createdAt);
+            return currentTime > latestTime ? current : latest;
+        });
+        
+        // Find the response to this StartTransaction (with transactionId)
+        const startResponse = data.data.find(log => 
+            log.message === 'Response' && 
+            log.direction === 'Outgoing' &&
+            log.messageId === latestStart.messageId
+        );
+        
+        // Get transactionId from the response (we generated it)
+        const transactionId = startResponse?.messageData?.transactionId || 
+                              startResponse?.raw?.[2]?.transactionId;
+        
+        if (!transactionId) {
+            return null;
+        }
+        
+        // Check for StopTransaction with same transactionId
+        const stopTransaction = data.data.find(log => 
+            log.message === 'StopTransaction' && 
+            log.direction === 'Incoming' &&
+            (log.messageData?.transactionId === transactionId || 
+             log.raw?.[2]?.transactionId === transactionId)
+        );
+        
+        // If no StopTransaction found, transaction is active
+        if (!stopTransaction) {
+            const connectorId = latestStart.connectorId || 
+                               latestStart.messageData?.connectorId || 
+                               latestStart.raw?.[2]?.connectorId || 0;
+            
+            return {
+                transactionId: transactionId,
+                connectorId: connectorId,
+                startTime: latestStart.timestamp || latestStart.createdAt
+            };
+        }
+        
+        return null;
+    } catch (error) {
+        console.error('❌ Error getting active transaction:', error);
+        return null;
+    }
+}
+
+// Start charging
+async function startCharging(deviceId, button) {
+    try {
+        // Disable button and show loading
+        const originalText = button.innerHTML;
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Starting...';
+        
+        // Get first available connector (default to 1)
+        const response = await fetch(`${API_BASE}/remote-start`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+            },
+            body: JSON.stringify({
+                deviceId: deviceId,
+                connectorId: 1, // Default to connector 1
+                idTag: Date.now().toString() // Generate a unique idTag
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showAlert('Charging started successfully', 'success');
+            // Reload chargers to update UI
+            await loadChargers();
+        } else {
+            showAlert(data.error || 'Failed to start charging', 'danger');
+            button.innerHTML = originalText;
+            button.disabled = false;
+        }
+    } catch (error) {
+        console.error('❌ Error starting charging:', error);
+        showAlert('Failed to start charging', 'danger');
+        button.innerHTML = originalText;
+        button.disabled = false;
+    }
+}
+
+// Stop charging
+async function stopCharging(deviceId, transactionId, button) {
+    try {
+        // Disable button and show loading
+        const originalText = button.innerHTML;
+        button.disabled = true;
+        button.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Stopping...';
+        
+        const response = await fetch(`${API_BASE}/remote-stop`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+            },
+            body: JSON.stringify({
+                deviceId: deviceId,
+                transactionId: transactionId
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showAlert('Charging stopped successfully', 'success');
+            // Reload chargers to update UI
+            await loadChargers();
+        } else {
+            showAlert(data.error || 'Failed to stop charging', 'danger');
+            button.innerHTML = originalText;
+            button.disabled = false;
+        }
+    } catch (error) {
+        console.error('❌ Error stopping charging:', error);
+        showAlert('Failed to stop charging', 'danger');
+        button.innerHTML = originalText;
+        button.disabled = false;
     }
 }
 

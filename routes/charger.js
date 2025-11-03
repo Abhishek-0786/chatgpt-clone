@@ -5,6 +5,7 @@ const Charger = require('../models/Charger');
 const ChargerData = require('../models/ChargerData');
 const fs = require('fs');
 const path = require('path');
+const { sendOcppCall, connections } = require('../websocket-server');
 
 // JSON file path
 const DATA_FILE_PATH = path.join(__dirname, '..', 'data', 'charger-data.json');
@@ -323,7 +324,7 @@ router.get('/data', async (req, res) => {
             where: whereClause
         });
         
-        // Get paginated data (most recent first)
+        // Get paginated data (natural insertion order - by id)
     const data = await ChargerData.findAll({
             where: whereClause,
             include: [{
@@ -331,7 +332,8 @@ router.get('/data', async (req, res) => {
                 as: 'charger',
             attributes: { exclude: ['chargerStatus'] }
             }],
-            order: [['timestamp', 'DESC']],
+            // No sorting - maintain natural insertion order (queue order)
+            order: null,
             limit: limit,
             offset: offset
         });
@@ -409,7 +411,7 @@ router.get('/data/:deviceId', async (req, res) => {
   try {
     const { deviceId } = req.params;
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
+    const limit = parseInt(req.query.limit) || 1000; // Increased default limit to show all messages
     const offset = (page - 1) * limit;
     
     // Get total count for this device
@@ -417,7 +419,7 @@ router.get('/data/:deviceId', async (req, res) => {
       where: { deviceId: deviceId }
     });
     
-    // Get paginated data for this device
+    // Get paginated data for this device (natural insertion order - by id)
   const data = await ChargerData.findAll({
       where: { deviceId: deviceId },
       include: [{
@@ -425,7 +427,7 @@ router.get('/data/:deviceId', async (req, res) => {
         as: 'charger',
         attributes: { exclude: ['chargerStatus'] }
       }],
-      order: [['timestamp', 'DESC']],
+      order: [['id', 'ASC']], // Natural insertion order by primary key
       limit: limit,
       offset: offset
     });
@@ -479,6 +481,190 @@ router.delete('/purge', async (req, res) => {
   } catch (error) {
     console.error('❌ Purge error:', error);
     res.status(500).json({ success: false, error: 'Failed to purge', details: error.message });
+  }
+});
+
+// Remote Start Transaction
+router.post('/remote-start', async (req, res) => {
+  try {
+    const { deviceId, connectorId, idTag } = req.body;
+    
+    if (!deviceId) {
+      return res.status(400).json({
+        success: false,
+        error: 'deviceId is required'
+      });
+    }
+    
+    if (!connectorId && connectorId !== 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'connectorId is required'
+      });
+    }
+    
+    if (!idTag) {
+      return res.status(400).json({
+        success: false,
+        error: 'idTag is required'
+      });
+    }
+    
+    // Find charger
+    const charger = await Charger.findOne({
+      where: { deviceId: deviceId },
+      attributes: { exclude: ['chargerStatus'] }
+    });
+    
+    if (!charger) {
+      return res.status(404).json({
+        success: false,
+        error: 'Charger not found'
+      });
+    }
+    
+    // Check if charger is connected
+    const ws = connections.get(deviceId);
+    if (!ws || ws.readyState !== 1) { // WebSocket.OPEN = 1
+      return res.status(400).json({
+        success: false,
+        error: `Charger ${deviceId} is not connected. Please ensure the charger is online and connected via WebSocket.`
+      });
+    }
+    
+    // Send RemoteStartTransaction
+    try {
+      const payload = {
+        idTag: idTag,
+        connectorId: connectorId
+      };
+      
+      const response = await sendOcppCall(deviceId, 'RemoteStartTransaction', payload);
+      
+      if (response.status === 'Accepted') {
+        res.json({
+          success: true,
+          message: 'Remote start transaction sent successfully'
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          error: `Remote start transaction rejected: ${response.status}`
+        });
+      }
+    } catch (error) {
+      console.error('❌ Error sending RemoteStartTransaction:', error);
+      
+      // Check if error is due to connection
+      if (error.message && error.message.includes('not connected')) {
+        return res.status(400).json({
+          success: false,
+          error: `Charger ${deviceId} is not connected. Please ensure the charger is online and connected via WebSocket.`
+        });
+      }
+      
+      res.status(500).json({
+        success: false,
+        error: 'Failed to send remote start transaction',
+        details: error.message
+      });
+    }
+    
+  } catch (error) {
+    console.error('❌ Error in remote-start endpoint:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to process remote start request',
+      details: error.message
+    });
+  }
+});
+
+// Remote Stop Transaction
+router.post('/remote-stop', async (req, res) => {
+  try {
+    const { deviceId, transactionId } = req.body;
+    
+    if (!deviceId) {
+      return res.status(400).json({
+        success: false,
+        error: 'deviceId is required'
+      });
+    }
+    
+    if (!transactionId) {
+      return res.status(400).json({
+        success: false,
+        error: 'transactionId is required'
+      });
+    }
+    
+    // Find charger
+    const charger = await Charger.findOne({
+      where: { deviceId: deviceId },
+      attributes: { exclude: ['chargerStatus'] }
+    });
+    
+    if (!charger) {
+      return res.status(404).json({
+        success: false,
+        error: 'Charger not found'
+      });
+    }
+    
+    // Check if charger is connected
+    const ws = connections.get(deviceId);
+    if (!ws || ws.readyState !== 1) { // WebSocket.OPEN = 1
+      return res.status(400).json({
+        success: false,
+        error: `Charger ${deviceId} is not connected. Please ensure the charger is online and connected via WebSocket.`
+      });
+    }
+    
+    // Send RemoteStopTransaction
+    try {
+      const payload = {
+        transactionId: transactionId
+      };
+      
+      const response = await sendOcppCall(deviceId, 'RemoteStopTransaction', payload);
+      
+      if (response.status === 'Accepted') {
+        res.json({
+          success: true,
+          message: 'Remote stop transaction sent successfully'
+        });
+      } else {
+        res.status(400).json({
+          success: false,
+          error: `Remote stop transaction rejected: ${response.status}`
+        });
+      }
+    } catch (error) {
+      console.error('❌ Error sending RemoteStopTransaction:', error);
+      
+      // Check if error is due to connection
+      if (error.message && error.message.includes('not connected')) {
+        return res.status(400).json({
+          success: false,
+          error: `Charger ${deviceId} is not connected. Please ensure the charger is online and connected via WebSocket.`
+        });
+      }
+      
+      res.status(500).json({
+        success: false,
+        error: 'Failed to send remote stop transaction',
+        details: error.message
+      });
+    }
+    
+  } catch (error) {
+    console.error('❌ Error in remote-stop endpoint:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to process remote stop request',
+      details: error.message
+    });
   }
 });
 

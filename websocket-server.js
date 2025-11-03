@@ -16,6 +16,9 @@ const intervals = new Map(); // deviceId -> periodic trigger intervalId
 const keepAliveIntervals = new Map(); // deviceId -> keepalive ping intervalId
 const heartbeatIntervals = new Map(); // deviceId -> heartbeat intervalId
 const heartbeatConfigured = new Set(); // deviceIds we attempted ChangeConfiguration
+const messageSequences = new Map(); // deviceId -> sequence counter for maintaining exact order
+const messageQueues = new Map(); // deviceId -> queue of messages to store in order
+const messageProcessingLocks = new Map(); // deviceId -> promise for sequential message processing
 
 // Create WebSocket server
 function createWebSocketServer(port = 9000) {
@@ -152,9 +155,19 @@ function createWebSocketServer(port = 9000) {
       }
       
       // Setup message handler IMMEDIATELY to not lose early messages from simulator
+      // Initialize message processing lock for this device - ensures sequential processing
+      if (!messageProcessingLocks.has(deviceId)) {
+        messageProcessingLocks.set(deviceId, Promise.resolve());
+      }
+      
       ws.on('message', async (data) => {
-        console.log(`📩 Message received from ${deviceId} (raw length: ${data.length})`);
-        try {
+        // Wait for previous message to complete processing before handling this one
+        const previousPromise = messageProcessingLocks.get(deviceId);
+        const currentPromise = (async () => {
+          await previousPromise; // Wait for previous message
+          
+          console.log(`📩 Message received from ${deviceId} (raw length: ${data.length})`);
+          try {
           // Ensure charger exists (synchronized to prevent race conditions)
           const currentCharger = await ensureCharger();
           if (!currentCharger || !currentCharger.id) {
@@ -225,15 +238,17 @@ function createWebSocketServer(port = 9000) {
               }
             }
             
-            // Sirf allowed actions ke logs store karo: BootNotification, StatusNotification, ChangeConfiguration
-            const allowedActions = ['BootNotification', 'StatusNotification', 'ChangeConfiguration'];
+            // Store allowed actions ke logs: BootNotification, StatusNotification, ChangeConfiguration, StartTransaction, StopTransaction, MeterValues
+            const allowedActions = ['BootNotification', 'StatusNotification', 'ChangeConfiguration', 'StartTransaction', 'StopTransaction', 'MeterValues'];
             if (allowedActions.includes(parsed.action)) {
               messageForStorage = {
                 ocpp: true,
                 type: MESSAGE_TYPE.CALL,
                 id: parsed.id,
                 action: parsed.action,
-                payload: parsed.payload
+                payload: parsed.payload,
+                direction: 'Incoming', // Charger se aane wala message = Incoming
+                raw: [MESSAGE_TYPE.CALL, parsed.id, parsed.action, parsed.payload || {}]
               };
             } else {
               // Other actions ke logs store mat karo
@@ -243,20 +258,217 @@ function createWebSocketServer(port = 9000) {
             
             if (parsed.action === 'BootNotification') {
               try {
+                // First, enqueue the incoming BootNotification message (sequence 1)
+                if (currentCharger && currentCharger.id) {
+                  try {
+                    await enqueueMessage(deviceId, currentCharger.id, messageForStorage);
+                    console.log(`✅ BootNotification (Incoming) enqueued for ${deviceId}`);
+                  } catch (storeErr) {
+                    console.warn(`⚠️ Failed to enqueue BootNotification: ${storeErr.message}`);
+                  }
+                }
+                
+                // Update charger metadata from BootNotification
+                if (currentCharger && currentCharger.id) {
+                  try {
+                    await tryUpdateChargerMetadataFromOcpp(deviceId, currentCharger, parsed);
+                  } catch (metaErr) {
+                    console.warn(`⚠️ Failed to update charger metadata from BootNotification: ${metaErr.message}`);
+                  }
+                }
+                
+                // Then send response and enqueue it (sequence 2)
                 const payload = {
                   status: 'Accepted',
                   currentTime: new Date().toISOString(),
                   interval: 30
                 };
-                ws.send(JSON.stringify(toOcppCallResult(parsed.id, payload)));
+                const responseFrame = toOcppCallResult(parsed.id, payload);
+                ws.send(JSON.stringify(responseFrame));
                 console.log(`✅ Replied BootNotification for ${deviceId}`);
+                
+                // Store outgoing BootNotification response (enqueue for sequential storage)
+                if (currentCharger && currentCharger.id) {
+                  try {
+                    await enqueueMessage(deviceId, currentCharger.id, {
+                      ocpp: true,
+                      type: MESSAGE_TYPE.CALL_RESULT,
+                      id: parsed.id,
+                      payload: payload,
+                      action: 'Response',
+                      direction: 'Outgoing',
+                      raw: responseFrame
+                    });
+                    console.log(`✅ BootNotification Response (Outgoing) enqueued for ${deviceId}`);
+                  } catch (storeErr) {
+                    console.warn(`⚠️ Failed to enqueue BootNotification response: ${storeErr.message}`);
+                  }
+                }
+                
+                // Automatically send ChangeConfiguration after BootNotification
+                // Wait a bit to ensure BootNotification response is sent first
+                setTimeout(async () => {
+                  try {
+                    // Ensure charger exists before sending ChangeConfiguration
+                    // Use attributes exclude to avoid chargerStatus column error
+                    const charger = await Charger.findOne({ 
+                      where: { deviceId },
+                      attributes: { exclude: ['chargerStatus'] }
+                    });
+                    if (!charger || !charger.id) {
+                      console.warn(`⚠️ Cannot send ChangeConfiguration - charger not found for ${deviceId}`);
+                      return;
+                    }
+                    
+                    await sendOcppCall(deviceId, 'ChangeConfiguration', {
+                      key: 'MeterValueSampleInterval',
+                      value: '30'
+                    }, 10000);
+                    console.log(`✅ Auto-sent ChangeConfiguration to ${deviceId}: MeterValueSampleInterval = 30`);
+                  } catch (configError) {
+                    console.error(`❌ Failed to auto-send ChangeConfiguration to ${deviceId}:`, configError);
+                    console.error(`❌ Error details:`, configError.message, configError.stack);
+                  }
+                }, 500); // 500ms delay to ensure BootNotification response is sent first
               } catch (e) {
                 console.warn(`⚠️ Failed to reply BootNotification for ${deviceId}: ${e.message}`);
               }
+            } else if (parsed.action === 'StartTransaction') {
+              try {
+                // First, enqueue the incoming StartTransaction message
+                if (currentCharger && currentCharger.id && messageForStorage) {
+                  try {
+                    await enqueueMessage(deviceId, currentCharger.id, messageForStorage);
+                    console.log(`✅ StartTransaction (Incoming) enqueued for ${deviceId}`);
+                  } catch (storeErr) {
+                    console.warn(`⚠️ Failed to enqueue StartTransaction: ${storeErr.message}`);
+                  }
+                }
+                
+                // Extract connectorId from payload
+                const connectorId = parsed.payload?.connectorId || 0;
+                const idTag = parsed.payload?.idTag || '';
+                
+                // Generate a transaction ID (use a simple counter or timestamp-based ID)
+                const transactionId = Date.now() % 10000000; // Simple transaction ID
+                
+                // Send response with transactionId
+                const payload = {
+                  idTagInfo: {
+                    status: 'Accepted',
+                    expiryDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() // 7 days expiry
+                  },
+                  transactionId: transactionId
+                };
+                const responseFrame = toOcppCallResult(parsed.id, payload);
+                ws.send(JSON.stringify(responseFrame));
+                console.log(`✅ Replied StartTransaction for ${deviceId} with transactionId: ${transactionId}`);
+                
+                // Store outgoing StartTransaction response (enqueue for sequential storage)
+                if (currentCharger && currentCharger.id) {
+                  try {
+                    await enqueueMessage(deviceId, currentCharger.id, {
+                      ocpp: true,
+                      type: MESSAGE_TYPE.CALL_RESULT,
+                      id: parsed.id,
+                      payload: payload,
+                      action: 'Response',
+                      direction: 'Outgoing',
+                      raw: responseFrame
+                    });
+                    console.log(`✅ StartTransaction Response (Outgoing) enqueued for ${deviceId}`);
+                  } catch (storeErr) {
+                    console.warn(`⚠️ Failed to enqueue StartTransaction response: ${storeErr.message}`);
+                  }
+                }
+              } catch (e) {
+                console.warn(`⚠️ Failed to reply StartTransaction for ${deviceId}: ${e.message}`);
+              }
+            } else if (parsed.action === 'StopTransaction') {
+              try {
+                // First, enqueue the incoming StopTransaction message
+                if (currentCharger && currentCharger.id && messageForStorage) {
+                  try {
+                    await enqueueMessage(deviceId, currentCharger.id, messageForStorage);
+                    console.log(`✅ StopTransaction (Incoming) enqueued for ${deviceId}`);
+                  } catch (storeErr) {
+                    console.warn(`⚠️ Failed to enqueue StopTransaction: ${storeErr.message}`);
+                  }
+                }
+                
+                // Extract transactionId from payload
+                const transactionId = parsed.payload?.transactionId;
+                
+                // Send response
+                const payload = {
+                  idTagInfo: {
+                    status: 'Accepted'
+                  }
+                };
+                const responseFrame = toOcppCallResult(parsed.id, payload);
+                ws.send(JSON.stringify(responseFrame));
+                console.log(`✅ Replied StopTransaction for ${deviceId} for transactionId: ${transactionId}`);
+                
+                // Store outgoing StopTransaction response (enqueue for sequential storage)
+                if (currentCharger && currentCharger.id) {
+                  try {
+                    await enqueueMessage(deviceId, currentCharger.id, {
+                      ocpp: true,
+                      type: MESSAGE_TYPE.CALL_RESULT,
+                      id: parsed.id,
+                      payload: payload,
+                      action: 'Response',
+                      direction: 'Outgoing',
+                      raw: responseFrame
+                    });
+                    console.log(`✅ StopTransaction Response (Outgoing) enqueued for ${deviceId}`);
+                  } catch (storeErr) {
+                    console.warn(`⚠️ Failed to enqueue StopTransaction response: ${storeErr.message}`);
+                  }
+                }
+              } catch (e) {
+                console.warn(`⚠️ Failed to reply StopTransaction for ${deviceId}: ${e.message}`);
+              }
             } else if (parsed.action === 'StatusNotification') {
               try {
-                ws.send(JSON.stringify(toOcppCallResult(parsed.id, {})));
+                // First, enqueue the incoming StatusNotification message
+                if (currentCharger && currentCharger.id) {
+                  try {
+                    await enqueueMessage(deviceId, currentCharger.id, messageForStorage);
+                    console.log(`✅ StatusNotification (Incoming) enqueued for ${deviceId}`);
+                  } catch (storeErr) {
+                    console.warn(`⚠️ Failed to enqueue StatusNotification: ${storeErr.message}`);
+                  }
+                }
+                
+                // Extract connectorId from StatusNotification payload
+                const connectorId = parsed.payload && typeof parsed.payload.connectorId !== 'undefined' 
+                  ? parsed.payload.connectorId 
+                  : 0;
+                
+                // Then send response and enqueue it
+                const responseFrame = toOcppCallResult(parsed.id, {});
+                ws.send(JSON.stringify(responseFrame));
                 console.log(`✅ Replied StatusNotification for ${deviceId}`);
+                
+                // Store outgoing StatusNotification response with connectorId from original message (enqueue for sequential storage)
+                if (currentCharger && currentCharger.id) {
+                  try {
+                    await enqueueMessage(deviceId, currentCharger.id, {
+                      ocpp: true,
+                      type: MESSAGE_TYPE.CALL_RESULT,
+                      id: parsed.id,
+                      payload: {},
+                      action: 'Response',
+                      direction: 'Outgoing',
+                      raw: responseFrame,
+                      connectorId: connectorId // Pass connectorId from original StatusNotification
+                    });
+                    console.log(`✅ StatusNotification Response (Outgoing) enqueued for ${deviceId}`);
+                  } catch (storeErr) {
+                    console.warn(`⚠️ Failed to enqueue StatusNotification response: ${storeErr.message}`);
+                  }
+                }
               } catch (e) {
                 console.warn(`⚠️ Failed to reply StatusNotification for ${deviceId}: ${e.message}`);
               }
@@ -270,12 +482,15 @@ function createWebSocketServer(port = 9000) {
             }
           } else if (parsed.kind === 'CALL_RESULT') {
             // CALL_RESULT messages ko "Response" ke naam se store karte hain
+            // Charger se aane wala response = Incoming
             messageForStorage = {
               ocpp: true,
               type: MESSAGE_TYPE.CALL_RESULT,
               id: parsed.id,
               payload: parsed.payload,
-              action: 'Response' // Response ke naam se store karein
+              action: 'Response',
+              direction: 'Incoming',
+              raw: [MESSAGE_TYPE.CALL_RESULT, parsed.id, parsed.payload || {}]
             };
             messageType = 'Response';
           } else if (parsed.kind === 'CALL_ERROR') {
@@ -296,14 +511,17 @@ function createWebSocketServer(port = 9000) {
           console.log(`🔍 Debug - messageForStorage: ${messageForStorage ? 'SET' : 'NULL'}, charger: ${currentCharger ? 'EXISTS' : 'NULL'}, charger.id: ${currentCharger && currentCharger.id ? currentCharger.id : 'N/A'}`);
           
           // Store message in database (only for allowed actions and if messageForStorage is set)
-          // Heartbeat ke logs store NAHI karte - sirf allowed actions: BootNotification, StatusNotification, ChangeConfiguration
-          if (messageForStorage && currentCharger && currentCharger.id) {
-            console.log(`💾 Attempting to store message for ${deviceId} (chargerId: ${currentCharger.id})...`);
+          // Heartbeat ke logs store NAHI karte - sirf allowed actions: BootNotification, StatusNotification, ChangeConfiguration, StartTransaction, StopTransaction
+          // Note: BootNotification, StatusNotification, StartTransaction, and StopTransaction are already enqueued above, so skip them here
+          if (messageForStorage && currentCharger && currentCharger.id && 
+              parsed.action !== 'BootNotification' && parsed.action !== 'StatusNotification' &&
+              parsed.action !== 'StartTransaction' && parsed.action !== 'StopTransaction') {
+            console.log(`💾 Attempting to enqueue message for ${deviceId} (chargerId: ${currentCharger.id})...`);
             try {
-              await storeMessage(deviceId, currentCharger.id, messageForStorage);
-              console.log(`✅ Message stored successfully for ${deviceId}`);
+              await enqueueMessage(deviceId, currentCharger.id, messageForStorage);
+              console.log(`✅ Message enqueued successfully for ${deviceId}`);
             } catch (storeError) {
-              console.error(`❌ Error storing message for ${deviceId}:`, storeError.message);
+              console.error(`❌ Error enqueueing message for ${deviceId}:`, storeError.message);
               console.error(`❌ Store error details:`, storeError);
             }
             // Try to enrich charger metadata based on OCPP messages
@@ -332,6 +550,9 @@ function createWebSocketServer(port = 9000) {
           console.error(`❌ Error processing message from ${deviceId}:`, error.message);
           // Don't send error ack - OCPP 1.6J only allows array frames
         }
+          })(); // End of current promise
+        messageProcessingLocks.set(deviceId, currentPromise);
+        await currentPromise; // Wait for this message to complete
       });
 
       // Handle connection close
@@ -422,8 +643,75 @@ function createWebSocketServer(port = 9000) {
   return wss;
 }
 
-// Store message in database
-async function storeMessage(deviceId, chargerId, message) {
+// Queue message for sequential storage
+async function enqueueMessage(deviceId, chargerId, message) {
+  // Initialize queue for device if not exists
+  if (!messageQueues.has(deviceId)) {
+    messageQueues.set(deviceId, {
+      queue: [],
+      processing: false,
+      nextSequence: 1,
+      processingPromise: Promise.resolve()
+    });
+  }
+  
+  const queueData = messageQueues.get(deviceId);
+  
+  // Wait for any ongoing processing to complete before assigning sequence
+  await queueData.processingPromise;
+  
+  const sequence = queueData.nextSequence;
+  queueData.nextSequence++;
+  
+  // Add message to queue with assigned sequence
+  queueData.queue.push({
+    deviceId,
+    chargerId,
+    message,
+    sequence,
+    timestamp: new Date()
+  });
+  
+  console.log(`📥 Enqueued message for ${deviceId}: ${message.action || message.message || 'Unknown'} (sequence: ${sequence})`);
+  
+  // Process queue immediately and wait for it to complete
+  queueData.processingPromise = processMessageQueue(deviceId);
+  await queueData.processingPromise;
+}
+
+// Process message queue sequentially
+async function processMessageQueue(deviceId) {
+  const queueData = messageQueues.get(deviceId);
+  if (!queueData) return;
+  
+  // If already processing, don't start another process
+  if (queueData.processing) {
+    // Wait for current processing to complete
+    await queueData.processingPromise;
+    return;
+  }
+  
+  queueData.processing = true;
+  
+  try {
+    while (queueData.queue.length > 0) {
+      const queuedMessage = queueData.queue.shift();
+      await storeMessage(
+        queuedMessage.deviceId,
+        queuedMessage.chargerId,
+        queuedMessage.message,
+        queuedMessage.sequence
+      );
+    }
+  } catch (error) {
+    console.error(`❌ Error processing message queue for ${deviceId}:`, error.message);
+  } finally {
+    queueData.processing = false;
+  }
+}
+
+// Store message in database with exact order (no sorting, maintain sequence)
+async function storeMessage(deviceId, chargerId, message, assignedSequence) {
   try {
     // Update charger's lastSeen
     await Charger.update(
@@ -437,19 +725,64 @@ async function storeMessage(deviceId, chargerId, message) {
       : (message.message || message.messageType || message.type || 'Unknown');
     const direction = message.direction || 'Incoming'; // Default to Incoming
 
-    // Store in ChargerData
+    // Extract connectorId - prioritize message.connectorId, then payload
+    let connectorId = 0;
+    if (message.connectorId !== undefined && message.connectorId !== null) {
+      connectorId = message.connectorId;
+    } else if (message.payload && typeof message.payload.connectorId !== 'undefined') {
+      connectorId = message.payload.connectorId;
+    }
+
+    // Format messageData exactly as user wants
+    // For Response messages with empty payload, ensure messageData is {}
+    let messageData = {};
+    if (message.payload) {
+      if (messageType === 'Response' && Object.keys(message.payload).length === 0) {
+        messageData = {}; // Empty object for StatusNotification responses
+      } else {
+        messageData = message.payload;
+      }
+    }
+
+    // Format raw array exactly as user provided
+    let rawArray;
+    if (message.raw && Array.isArray(message.raw)) {
+      rawArray = message.raw;
+    } else {
+      // Build raw array based on message type
+      const msgId = message.id || message.messageId || createMessageId();
+      if (message.type === MESSAGE_TYPE.CALL_RESULT || messageType === 'Response') {
+        // Response: [3, messageId, payload]
+        rawArray = [MESSAGE_TYPE.CALL_RESULT, msgId, message.payload || messageData || {}];
+      } else {
+        // CALL: [2, messageId, action, payload]
+        rawArray = [MESSAGE_TYPE.CALL, msgId, message.action || messageType, message.payload || messageData || {}];
+      }
+    }
+
+    // Use assigned sequence from queue
+    const sequence = assignedSequence || 1;
+    
+    // Create timestamp with sequence offset to maintain exact order
+    // Base timestamp + sequence milliseconds ensures messages appear in stored order
+    const baseTime = new Date();
+    const timestamp = new Date(baseTime.getTime() + sequence);
+
+    // Store in ChargerData with exact format
     await ChargerData.create({
       chargerId: chargerId,
       deviceId: deviceId,
-      type: 'OCPP', // Default type
+      type: 'OCPP',
+      connectorId: connectorId,
+      messageId: message.id || message.messageId || createMessageId(),
       message: messageType,
-      messageData: message,
-      raw: message,
+      messageData: messageData,
+      raw: rawArray,
       direction: direction,
-      timestamp: new Date()
+      timestamp: timestamp
     });
 
-    console.log(`💾 Stored message: ${messageType} from ${deviceId}`);
+    console.log(`💾 Stored message: ${messageType} (${direction}) from ${deviceId} [sequence: ${sequence}]`);
   } catch (error) {
     console.error('❌ Error storing message:', error.message);
     throw error;
@@ -464,6 +797,32 @@ async function sendOcppCall(deviceId, action, payload = {}, timeoutMs = 10000) {
   }
   const id = createMessageId();
   const frame = toOcppCall(action, payload, id);
+  
+  // Store outgoing message (ChangeConfiguration, etc.) with "Outgoing" direction (enqueue for sequential storage)
+  try {
+    const charger = await Charger.findOne({ 
+      where: { deviceId },
+      attributes: { exclude: ['chargerStatus'] }
+    });
+    if (charger && charger.id) {
+      await enqueueMessage(deviceId, charger.id, {
+        ocpp: true,
+        type: MESSAGE_TYPE.CALL,
+        id: id,
+        action: action,
+        payload: payload,
+        direction: 'Outgoing',
+        raw: frame
+      });
+      console.log(`💾 Enqueued ${action} (Outgoing) for ${deviceId} - messageId: ${id}`);
+    } else {
+      console.warn(`⚠️ Cannot enqueue ${action} - charger not found for ${deviceId}`);
+    }
+  } catch (storeErr) {
+    console.error(`❌ Failed to enqueue outgoing ${action}:`, storeErr);
+    console.error(`❌ Error details:`, storeErr.message, storeErr.stack);
+  }
+  
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       pendingRequests.delete(id);
@@ -536,7 +895,34 @@ async function tryUpdateChargerMetadataFromOcpp(deviceId, charger, parsed) {
   const action = parsed.action;
   const payload = parsed.payload || {};
 
-  // 1) Connector count: track the highest connectorId seen in StatusNotification
+  // 1) BootNotification: Extract vendor, model, serialNumber, firmwareVersion
+  if (action === 'BootNotification') {
+    const updates = {};
+    
+    if (payload.chargePointVendor && (!charger.vendor || charger.vendor === 'Unknown')) {
+      updates.vendor = payload.chargePointVendor;
+    }
+    
+    if (payload.chargePointModel && (!charger.model || charger.model === 'Unknown')) {
+      updates.model = payload.chargePointModel;
+    }
+    
+    if (payload.chargePointSerialNumber && (!charger.serialNumber || charger.serialNumber === 'Unknown')) {
+      updates.serialNumber = payload.chargePointSerialNumber;
+    }
+    
+    if (payload.firmwareVersion && (!charger.firmwareVersion || charger.firmwareVersion === 'Unknown')) {
+      updates.firmwareVersion = payload.firmwareVersion;
+    }
+    
+    if (Object.keys(updates).length > 0) {
+      await charger.update(updates);
+      console.log(`✅ Updated charger metadata from BootNotification for ${deviceId}:`, updates);
+    }
+    return;
+  }
+
+  // 2) Connector count: track the highest connectorId seen in StatusNotification
   if (action === 'StatusNotification') {
     const connectorId = Number(payload.connectorId);
     if (!Number.isNaN(connectorId) && connectorId > 0) {
@@ -549,7 +935,7 @@ async function tryUpdateChargerMetadataFromOcpp(deviceId, charger, parsed) {
     return;
   }
 
-  // 2) Power (kW): infer from MeterValues if present
+  // 3) Power (kW): infer from MeterValues if present
   if (action === 'MeterValues') {
     const meterValue = Array.isArray(payload.meterValue) ? payload.meterValue : [];
     let inferredKw = undefined;
@@ -631,6 +1017,7 @@ module.exports = {
   getConnectedChargers,
   getChargerConnection,
   getConnectionCount,
-  connections
+  connections,
+  sendOcppCall
 };
 

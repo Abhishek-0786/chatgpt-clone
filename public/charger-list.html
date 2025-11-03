@@ -141,6 +141,45 @@
             margin-right: 5px;
             color: var(--dark-color);
         }
+        
+        .boot-info-item {
+            margin-bottom: 3px;
+        }
+        
+        .boot-info-item .info-label {
+            margin-right: 5px;
+        }
+        
+        .boot-info-value {
+            color: var(--primary-color);
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+        
+        .charging-active {
+            border: 2px solid #28a745;
+            box-shadow: 0 0 10px rgba(40, 167, 69, 0.3);
+        }
+        
+        .charging-indicator {
+            background-color: #28a745;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .charging-indicator i {
+            animation: spin 2s linear infinite;
+        }
+        
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
 
         .last-active {
             background-color: #e7f3ff;

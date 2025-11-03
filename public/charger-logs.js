@@ -222,8 +222,8 @@ async function loadLogs(page = 1) {
         const deviceId = getDeviceIdFromURL();
         console.log(`📥 Loading page ${page}${deviceId ? ` for device: ${deviceId}` : ''}...`);
         
-        // Build API URL with deviceId if present
-        let apiUrl = `${API_BASE}/data?page=${page}&limit=100`;
+        // Build API URL with deviceId if present (increased limit to show all messages)
+        let apiUrl = `${API_BASE}/data?page=${page}&limit=1000`;
         if (deviceId) {
             apiUrl += `&deviceId=${encodeURIComponent(deviceId)}`;
         }
@@ -275,7 +275,10 @@ function updatePageTitle(deviceId) {
 function displayLogs() {
     const container = document.getElementById('logs-container');
     
-    if (allLogs.length === 0) {
+    // Reverse the array so newest messages appear first (sequence 1 will be last)
+    const reversedLogs = [...allLogs].reverse();
+    
+    if (reversedLogs.length === 0) {
         container.innerHTML = `
             <div class="text-center py-5">
                 <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
@@ -286,7 +289,7 @@ function displayLogs() {
         return;
     }
     
-    const logsHtml = allLogs.map(log => createLogItem(log)).join('');
+    const logsHtml = reversedLogs.map(log => createLogItem(log)).join('');
     const loadingHtml = isLoading ? `
         <div class="text-center py-3">
             <i class="fas fa-spinner fa-spin me-2"></i>Loading more data...
@@ -295,7 +298,7 @@ function displayLogs() {
     
     const totalCountHtml = `
         <div class="text-center py-2">
-            <small class="text-muted">Showing ${allLogs.length} records</small>
+            <small class="text-muted">Showing ${reversedLogs.length} records</small>
         </div>
     `;
     
@@ -306,7 +309,17 @@ function displayLogs() {
 function createLogItem(log) {
     const timestamp = new Date(log.timestamp).toLocaleString();
     const directionClass = log.direction === 'Incoming' ? 'direction-incoming' : 'direction-outgoing';
-    const messageData = log.messageData ? JSON.stringify(log.messageData, null, 2) : 'No data';
+    // Format messageData - if null/undefined, show {} for Response messages, otherwise show the data
+    let messageData = 'No data';
+    if (log.messageData !== null && log.messageData !== undefined) {
+        if (typeof log.messageData === 'object' && Object.keys(log.messageData).length === 0) {
+            messageData = '{}'; // Empty object for StatusNotification responses
+        } else {
+            messageData = JSON.stringify(log.messageData, null, 2);
+        }
+    } else if (log.message === 'Response') {
+        messageData = '{}'; // Default empty object for Response messages without messageData
+    }
     
     // Get message type icon
     const getMessageIcon = (message) => {
@@ -324,8 +337,44 @@ function createLogItem(log) {
         }
     };
     
+    // Add direction class to log-item for border color
+    const directionItemClass = log.direction === 'Incoming' ? 'incoming' : 'outgoing';
+    
+    // Format raw array for display - handle both string and object formats
+    let rawData = null;
+    try {
+        if (log.raw) {
+            if (typeof log.raw === 'string') {
+                rawData = JSON.parse(log.raw);
+            } else {
+                rawData = log.raw;
+            }
+        }
+    } catch (e) {
+        console.warn('Error parsing raw data:', e);
+        rawData = log.raw; // Use as-is if parsing fails
+    }
+    
+    // Format timestamps for display
+    const createdAt = log.createdAt ? new Date(log.createdAt).toISOString() : log.timestamp ? new Date(log.timestamp).toISOString() : null;
+    const updatedAt = log.updatedAt ? new Date(log.updatedAt).toISOString() : log.timestamp ? new Date(log.timestamp).toISOString() : null;
+    
+    // Build complete log object for display (matching user's JSON format exactly)
+    const fullLogData = {
+        deviceId: log.deviceId || null,
+        type: log.type || 'OCPP',
+        connectorId: log.connectorId !== null && log.connectorId !== undefined ? log.connectorId : 0,
+        messageId: log.messageId || null,
+        message: log.message || 'Unknown',
+        messageData: log.messageData !== null && log.messageData !== undefined ? log.messageData : {},
+        raw: rawData !== null ? rawData : [],
+        direction: log.direction || 'Unknown',
+        createdAt: createdAt,
+        updatedAt: updatedAt
+    };
+    
     return `
-        <div class="log-item">
+        <div class="log-item ${directionItemClass}">
             <div class="log-header">
                 <div>
                     <div class="log-message">
@@ -334,7 +383,7 @@ function createLogItem(log) {
                     </div>
                     <div class="log-device">
                         <i class="fas fa-charging-station me-1"></i>${log.deviceId}
-                        ${log.connectorId !== null ? `<span class="connector-badge ms-2">Connector ${log.connectorId}</span>` : ''}
+                        ${log.connectorId !== null && log.connectorId !== undefined ? `<span class="connector-badge ms-2">Connector ${log.connectorId}</span>` : ''}
                     </div>
                 </div>
                 <div class="text-end">
@@ -344,8 +393,7 @@ function createLogItem(log) {
             </div>
             
             <div class="log-data">
-                <strong>Message Data:</strong><br>
-                <pre>${messageData}</pre>
+                <pre style="max-height: 500px; overflow-y: auto;">${JSON.stringify(fullLogData, null, 2)}</pre>
             </div>
         </div>
     `;

@@ -18,18 +18,25 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve static files
-app.use(express.static(path.join(__dirname, 'public')));
-
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/charger', chargerRoutes);
 
-// Serve the main HTML file
+// Serve the home page first (before static middleware)
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.sendFile(path.join(__dirname, 'public', 'home.html'));
 });
+
+// Serve the chat page
+app.get('/chat.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'chat.html'));
+});
+
+// Serve static files (after routes to avoid index.html interference)
+app.use(express.static(path.join(__dirname, 'public'), {
+  index: false // Disable automatic index.html serving
+}));
 
 // Serve reset password page
 app.get('/reset-password.html', (req, res) => {

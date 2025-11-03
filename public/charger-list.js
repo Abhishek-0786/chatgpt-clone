@@ -570,20 +570,32 @@ async function startCharging(deviceId, button) {
             })
         });
         
-        const data = await response.json();
+        // Parse JSON response, handle errors
+        let data;
+        try {
+            data = await response.json();
+        } catch (parseError) {
+            throw new Error(`Server response error (${response.status}): ${response.statusText}`);
+        }
         
         if (data.success) {
             showAlert('Charging started successfully', 'success');
             // Reload chargers to update UI
             await loadChargers();
         } else {
+            // Show specific error message from API
             showAlert(data.error || 'Failed to start charging', 'danger');
             button.innerHTML = originalText;
             button.disabled = false;
         }
     } catch (error) {
         console.error('❌ Error starting charging:', error);
-        showAlert('Failed to start charging', 'danger');
+        // Handle network errors or parsing errors
+        if (error instanceof TypeError && error.message.includes('fetch')) {
+            showAlert('Network error: Please check your connection', 'danger');
+        } else {
+            showAlert('Failed to start charging: ' + (error.message || 'Unknown error'), 'danger');
+        }
         button.innerHTML = originalText;
         button.disabled = false;
     }
@@ -609,20 +621,28 @@ async function stopCharging(deviceId, transactionId, button) {
             })
         });
         
-        const data = await response.json();
+        // Parse JSON response, handle errors
+        let data;
+        try {
+            data = await response.json();
+        } catch (parseError) {
+            throw new Error(`Server response error (${response.status}): ${response.statusText}`);
+        }
         
         if (data.success) {
             showAlert('Charging stopped successfully', 'success');
             // Reload chargers to update UI
             await loadChargers();
         } else {
+            // Show specific error message from API
             showAlert(data.error || 'Failed to stop charging', 'danger');
             button.innerHTML = originalText;
             button.disabled = false;
         }
     } catch (error) {
         console.error('❌ Error stopping charging:', error);
-        showAlert('Failed to stop charging', 'danger');
+        // Show better error message
+        showAlert('Failed to stop charging: ' + (error.message || 'Unknown error'), 'danger');
         button.innerHTML = originalText;
         button.disabled = false;
     }

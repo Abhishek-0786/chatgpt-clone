@@ -563,10 +563,17 @@ router.post('/remote-start', async (req, res) => {
         });
       }
       
+      // Check if error is due to timeout
+      if (error.message && error.message.includes('timeout')) {
+        return res.status(408).json({
+          success: false,
+          error: `Charger ${deviceId} did not respond within 30 seconds. The charger may be offline, busy, or experiencing communication issues.`
+        });
+      }
+      
       res.status(500).json({
         success: false,
-        error: 'Failed to send remote start transaction',
-        details: error.message
+        error: error.message || 'Failed to send remote start transaction'
       });
     }
     
@@ -651,10 +658,17 @@ router.post('/remote-stop', async (req, res) => {
         });
       }
       
+      // Check if error is due to timeout
+      if (error.message && error.message.includes('timeout')) {
+        return res.status(408).json({
+          success: false,
+          error: `Charger ${deviceId} did not respond within 30 seconds. The charger may be offline, busy, or experiencing communication issues.`
+        });
+      }
+      
       res.status(500).json({
         success: false,
-        error: 'Failed to send remote stop transaction',
-        details: error.message
+        error: error.message || 'Failed to send remote stop transaction'
       });
     }
     

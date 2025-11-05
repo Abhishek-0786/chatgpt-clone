@@ -1,4 +1,5 @@
 const WebSocket = require('ws');
+const { Op } = require('sequelize');
 const Charger = require('./models/Charger');
 const ChargerData = require('./models/ChargerData');
 const {
@@ -474,6 +475,17 @@ function createWebSocketServer(port = 9000) {
               }
             } else if (parsed.action === 'MeterValues') {
               try {
+                // First, enqueue the incoming MeterValues message
+                if (currentCharger && currentCharger.id && messageForStorage) {
+                  try {
+                    await enqueueMessage(deviceId, currentCharger.id, messageForStorage);
+                    console.log(`✅ MeterValues (Incoming) enqueued for ${deviceId}`);
+                  } catch (storeErr) {
+                    console.warn(`⚠️ Failed to enqueue MeterValues: ${storeErr.message}`);
+                  }
+                }
+                
+                // Then send response
                 ws.send(JSON.stringify(toOcppCallResult(parsed.id, {})));
                 console.log(`✅ Replied MeterValues for ${deviceId}`);
               } catch (e) {
@@ -482,7 +494,7 @@ function createWebSocketServer(port = 9000) {
             }
           } else if (parsed.kind === 'CALL_RESULT') {
             // CALL_RESULT messages ko "Response" ke naam se store karte hain
-            // Charger se aane wala response = Incoming
+            // Charger se aane wala response = Incoming (for our outgoing calls like RemoteStartTransaction, RemoteStopTransaction)
             messageForStorage = {
               ocpp: true,
               type: MESSAGE_TYPE.CALL_RESULT,
@@ -493,29 +505,135 @@ function createWebSocketServer(port = 9000) {
               raw: [MESSAGE_TYPE.CALL_RESULT, parsed.id, parsed.payload || {}]
             };
             messageType = 'Response';
+            
+            // Store the Response message (e.g., RemoteStartTransaction/RemoteStopTransaction responses)
+            if (currentCharger && currentCharger.id) {
+              try {
+                await enqueueMessage(deviceId, currentCharger.id, messageForStorage);
+                console.log(`✅ Response (Incoming) enqueued for ${deviceId} - messageId: ${parsed.id}`);
+              } catch (storeErr) {
+                console.warn(`⚠️ Failed to enqueue Response: ${storeErr.message}`);
+              }
+            }
           } else if (parsed.kind === 'CALL_ERROR') {
+            // CALL_ERROR messages ko store karte hain (e.g., charger ne RemoteStartTransaction reject kiya)
             messageForStorage = {
               ocpp: true,
               type: MESSAGE_TYPE.CALL_ERROR,
               id: parsed.id,
-              error: parsed.error
+              error: parsed.error,
+              action: 'CALL_ERROR',
+              direction: 'Incoming',
+              raw: [MESSAGE_TYPE.CALL_ERROR, parsed.id, parsed.error?.errorCode || 'InternalError', parsed.error?.errorDescription || '', parsed.error?.errorDetails || {}]
             };
             messageType = 'CALL_ERROR';
+            
+            // Store the CALL_ERROR message
+            if (currentCharger && currentCharger.id) {
+              try {
+                await enqueueMessage(deviceId, currentCharger.id, messageForStorage);
+                console.log(`✅ CALL_ERROR (Incoming) enqueued for ${deviceId} - messageId: ${parsed.id}`);
+              } catch (storeErr) {
+                console.warn(`⚠️ Failed to enqueue CALL_ERROR: ${storeErr.message}`);
+              }
+            }
           } else {
+            // Handle non-standard OCPP messages or parsing errors (parsed.kind === 'JSON')
             const msgObj = parsed.data || {};
             messageType = msgObj.messageType || msgObj.type || 'Unknown';
-            messageForStorage = msgObj;
+            
+            // Try to extract action from raw data if it's an array
+            if (Array.isArray(msgObj) && msgObj.length >= 3) {
+              const [type, id, actionOrPayload] = msgObj;
+              if (type === MESSAGE_TYPE.CALL && msgObj.length >= 4) {
+                const action = msgObj[2];
+                messageType = action || 'Unknown';
+                // Only store if it's a valid OCPP action
+                if (messageType !== 'Unknown') {
+                  messageForStorage = {
+                    ocpp: true,
+                    type: MESSAGE_TYPE.CALL,
+                    id: id,
+                    action: messageType,
+                    payload: msgObj[3] || {},
+                    direction: 'Incoming',
+                    raw: msgObj
+                  };
+                } else {
+                  // Don't store invalid messages
+                  messageForStorage = null;
+                  console.warn(`⚠️ Invalid CALL message from ${deviceId} - action is "Unknown". Raw:`, JSON.stringify(msgObj).substring(0, 300));
+                }
+              } else if (type === MESSAGE_TYPE.CALL_RESULT && msgObj.length >= 3) {
+                // This should have been caught by parseIncoming, but handle it here as fallback
+                messageType = 'Response';
+                messageForStorage = {
+                  ocpp: true,
+                  type: MESSAGE_TYPE.CALL_RESULT,
+                  id: id,
+                  payload: actionOrPayload || {},
+                  action: 'Response',
+                  direction: 'Incoming',
+                  raw: msgObj
+                };
+                // Store this response
+                if (currentCharger && currentCharger.id) {
+                  try {
+                    await enqueueMessage(deviceId, currentCharger.id, messageForStorage);
+                    console.log(`✅ Response (Incoming) enqueued from fallback parser for ${deviceId} - messageId: ${id}`);
+                  } catch (storeErr) {
+                    console.warn(`⚠️ Failed to enqueue Response from fallback: ${storeErr.message}`);
+                  }
+                }
+                // Don't store again in the general flow
+                messageForStorage = null;
+              } else if (type === MESSAGE_TYPE.CALL_ERROR && msgObj.length >= 5) {
+                messageType = 'CALL_ERROR';
+                messageForStorage = {
+                  ocpp: true,
+                  type: MESSAGE_TYPE.CALL_ERROR,
+                  id: id,
+                  error: { errorCode: msgObj[2], errorDescription: msgObj[3], errorDetails: msgObj[4] },
+                  action: 'CALL_ERROR',
+                  direction: 'Incoming',
+                  raw: msgObj
+                };
+                // Store this error
+                if (currentCharger && currentCharger.id) {
+                  try {
+                    await enqueueMessage(deviceId, currentCharger.id, messageForStorage);
+                    console.log(`✅ CALL_ERROR (Incoming) enqueued from fallback parser for ${deviceId} - messageId: ${id}`);
+                  } catch (storeErr) {
+                    console.warn(`⚠️ Failed to enqueue CALL_ERROR from fallback: ${storeErr.message}`);
+                  }
+                }
+                // Don't store again in the general flow
+                messageForStorage = null;
+              } else {
+                // Invalid array format - don't store
+                messageForStorage = null;
+                console.warn(`⚠️ Invalid OCPP array format from ${deviceId}:`, JSON.stringify(msgObj).substring(0, 300));
+              }
+            } else {
+              // Not an array and not a valid OCPP message - don't store
+              messageForStorage = null;
+              if (messageType === 'Unknown') {
+                console.warn(`⚠️ Unknown message format from ${deviceId} (not an OCPP array):`, JSON.stringify(msgObj).substring(0, 300));
+                console.warn(`⚠️ Parsed object kind: ${parsed.kind}, data:`, JSON.stringify(parsed).substring(0, 300));
+              }
+            }
           }
           console.log(`📨 Received message from ${deviceId}: ${messageType}`);
           console.log(`🔍 Debug - parsed.kind: ${parsed.kind}, parsed.action: ${parsed.action || 'N/A'}`);
           console.log(`🔍 Debug - messageForStorage: ${messageForStorage ? 'SET' : 'NULL'}, charger: ${currentCharger ? 'EXISTS' : 'NULL'}, charger.id: ${currentCharger && currentCharger.id ? currentCharger.id : 'N/A'}`);
           
           // Store message in database (only for allowed actions and if messageForStorage is set)
-          // Heartbeat ke logs store NAHI karte - sirf allowed actions: BootNotification, StatusNotification, ChangeConfiguration, StartTransaction, StopTransaction
-          // Note: BootNotification, StatusNotification, StartTransaction, and StopTransaction are already enqueued above, so skip them here
+          // Heartbeat ke logs store NAHI karte - sirf allowed actions: BootNotification, StatusNotification, ChangeConfiguration, StartTransaction, StopTransaction, MeterValues
+          // Note: BootNotification, StatusNotification, StartTransaction, StopTransaction, MeterValues, CALL_RESULT (Response), and CALL_ERROR are already enqueued above, so skip them here
           if (messageForStorage && currentCharger && currentCharger.id && 
               parsed.action !== 'BootNotification' && parsed.action !== 'StatusNotification' &&
-              parsed.action !== 'StartTransaction' && parsed.action !== 'StopTransaction') {
+              parsed.action !== 'StartTransaction' && parsed.action !== 'StopTransaction' &&
+              parsed.action !== 'MeterValues' && parsed.kind !== 'CALL_RESULT' && parsed.kind !== 'CALL_ERROR') {
             console.log(`💾 Attempting to enqueue message for ${deviceId} (chargerId: ${currentCharger.id})...`);
             try {
               await enqueueMessage(deviceId, currentCharger.id, messageForStorage);
@@ -725,6 +843,50 @@ async function storeMessage(deviceId, chargerId, message, assignedSequence) {
       : (message.message || message.messageType || message.type || 'Unknown');
     const direction = message.direction || 'Incoming'; // Default to Incoming
 
+    // Get messageId for duplicate check
+    const msgId = message.id || message.messageId;
+    
+    // Check for duplicate message (same messageId + message type + direction) - only if messageId exists
+    if (msgId) {
+      const existingMessage = await ChargerData.findOne({
+        where: {
+          deviceId: deviceId,
+          messageId: msgId,
+          message: messageType,
+          direction: direction
+        }
+      });
+
+      if (existingMessage) {
+        console.warn(`⚠️ Duplicate message detected and skipped: ${messageType} (${direction}) messageId: ${msgId} from ${deviceId}`);
+        return; // Skip storing duplicate
+      }
+    }
+    
+    // ADDITIONAL: For RemoteStartTransaction/RemoteStopTransaction, check for very recent duplicate commands
+    // (Even with different messageIds, if same command sent within 5 seconds, it's likely a duplicate)
+    // This prevents multiple API calls from creating duplicate log entries
+    if ((messageType === 'RemoteStartTransaction' || messageType === 'RemoteStopTransaction') && direction === 'Outgoing') {
+      const fiveSecondsAgo = new Date(Date.now() - 5000); // 5 seconds ago (increased from 2 to catch delayed calls)
+      const recentDuplicate = await ChargerData.findOne({
+        where: {
+          deviceId: deviceId,
+          message: messageType,
+          direction: 'Outgoing',
+          createdAt: {
+            [Op.gte]: fiveSecondsAgo
+          }
+        },
+        order: [['id', 'DESC']]
+      });
+
+      if (recentDuplicate) {
+        const timeDiff = Math.round((Date.now() - new Date(recentDuplicate.createdAt).getTime()) / 1000);
+        console.warn(`⚠️ [DUPLICATE PREVENTED] Duplicate ${messageType} command detected within 5 seconds - skipping storage. Previous messageId: ${recentDuplicate.messageId} (${timeDiff}s ago), Current messageId: ${msgId}`);
+        return; // Skip storing duplicate command
+      }
+    }
+
     // Extract connectorId - prioritize message.connectorId, then payload
     let connectorId = 0;
     if (message.connectorId !== undefined && message.connectorId !== null) {
@@ -749,14 +911,14 @@ async function storeMessage(deviceId, chargerId, message, assignedSequence) {
     if (message.raw && Array.isArray(message.raw)) {
       rawArray = message.raw;
     } else {
-      // Build raw array based on message type
-      const msgId = message.id || message.messageId || createMessageId();
+      // Build raw array based on message type - use msgId we already got above, or create new one
+      const rawMsgId = msgId || createMessageId();
       if (message.type === MESSAGE_TYPE.CALL_RESULT || messageType === 'Response') {
         // Response: [3, messageId, payload]
-        rawArray = [MESSAGE_TYPE.CALL_RESULT, msgId, message.payload || messageData || {}];
+        rawArray = [MESSAGE_TYPE.CALL_RESULT, rawMsgId, message.payload || messageData || {}];
       } else {
         // CALL: [2, messageId, action, payload]
-        rawArray = [MESSAGE_TYPE.CALL, msgId, message.action || messageType, message.payload || messageData || {}];
+        rawArray = [MESSAGE_TYPE.CALL, rawMsgId, message.action || messageType, message.payload || messageData || {}];
       }
     }
 
@@ -768,13 +930,14 @@ async function storeMessage(deviceId, chargerId, message, assignedSequence) {
     const baseTime = new Date();
     const timestamp = new Date(baseTime.getTime() + sequence);
 
-    // Store in ChargerData with exact format
+    // Store in ChargerData with exact format - use msgId we already got, or create new one
+    const finalMsgId = msgId || createMessageId();
     await ChargerData.create({
       chargerId: chargerId,
       deviceId: deviceId,
       type: 'OCPP',
       connectorId: connectorId,
-      messageId: message.id || message.messageId || createMessageId(),
+      messageId: finalMsgId,
       message: messageType,
       messageData: messageData,
       raw: rawArray,
@@ -782,7 +945,7 @@ async function storeMessage(deviceId, chargerId, message, assignedSequence) {
       timestamp: timestamp
     });
 
-    console.log(`💾 Stored message: ${messageType} (${direction}) from ${deviceId} [sequence: ${sequence}]`);
+    console.log(`💾 Stored message: ${messageType} (${direction}) from ${deviceId} [sequence: ${sequence}, messageId: ${finalMsgId}]`);
   } catch (error) {
     console.error('❌ Error storing message:', error.message);
     throw error;

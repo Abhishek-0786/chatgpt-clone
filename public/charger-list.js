@@ -41,8 +41,8 @@ async function checkAuthAndInitialize() {
         if (response.ok) {
             console.log('✅ User authenticated successfully');
             await loadChargers();
-            // Auto-refresh every 30 seconds
-            setInterval(loadChargers, 30000);
+            // Auto-refresh every 15 seconds
+            setInterval(loadChargers, 15000);
         } else {
             console.log('❌ Invalid token - response not OK');
             showAuthError();
@@ -229,12 +229,6 @@ function createChargerCard(charger) {
     
     // Check if charging is active
     const isCharging = charger.activeTransaction !== null && charger.activeTransaction !== undefined;
-    const chargingIndicator = isCharging ? `
-        <div class="charging-indicator" style="background-color: #28a745; color: white; padding: 8px 12px; border-radius: 5px; margin-bottom: 10px; display: flex; align-items: center; gap: 8px;">
-            <i class="fas fa-bolt fa-spin"></i>
-            <span>Charging Active (Connector ${charger.activeTransaction.connectorId}, Transaction ${charger.activeTransaction.transactionId})</span>
-        </div>
-    ` : '';
     
     return `
         <div class="charger-card ${isCharging ? 'charging-active' : ''}" onclick="viewChargerLogs('${charger.deviceId}')">
@@ -242,6 +236,7 @@ function createChargerCard(charger) {
                 <div>
                     <div class="charger-id">
                         <i class="fas fa-charging-station me-2"></i>${charger.deviceId}
+                        ${isCharging ? `<span class="charging-badge-inline"><i class="fas fa-bolt fa-spin"></i></span>` : ''}
                     </div>
                     ${charger.name ? `<div class="text-muted mt-1">${charger.name}</div>` : ''}
                 </div>
@@ -249,8 +244,6 @@ function createChargerCard(charger) {
                     ${statusText}
                 </span>
             </div>
-            
-            ${chargingIndicator}
             
             <div class="charger-info" style="margin-top: 10px;">
                 <div class="boot-info-item">
@@ -482,12 +475,22 @@ function handleScroll() {
 // Get active transaction for a charger
 async function getActiveTransaction(deviceId) {
     try {
-        const response = await fetch(`${API_BASE}/data?deviceId=${encodeURIComponent(deviceId)}&limit=1000`);
+        // Get more data and sort by timestamp to ensure we have the latest
+        const response = await fetch(`${API_BASE}/data?deviceId=${encodeURIComponent(deviceId)}&limit=2000`);
         const data = await response.json();
         
         if (!data.success || !data.data || !Array.isArray(data.data)) {
+            console.warn(`⚠️ [getActiveTransaction] Invalid response for ${deviceId}`);
             return null;
         }
+        
+        // Sort by timestamp (descending) to get latest first, then by id as tiebreaker
+        data.data.sort((a, b) => {
+            const timeA = new Date(a.timestamp || a.createdAt).getTime();
+            const timeB = new Date(b.timestamp || b.createdAt).getTime();
+            if (timeB !== timeA) return timeB - timeA; // Latest first
+            return (b.id || 0) - (a.id || 0); // Higher ID first
+        });
         
         // Find all StartTransaction messages (incoming from charger)
         const startTransactions = data.data.filter(log => 
@@ -498,8 +501,13 @@ async function getActiveTransaction(deviceId) {
             return null;
         }
         
-        // Get the latest StartTransaction (by id - natural order)
+        // Get the latest StartTransaction (by timestamp first, then by id)
         const latestStart = startTransactions.reduce((latest, current) => {
+            const latestTime = new Date(latest.timestamp || latest.createdAt).getTime();
+            const currentTime = new Date(current.timestamp || current.createdAt).getTime();
+            if (currentTime > latestTime) return current;
+            if (currentTime < latestTime) return latest;
+            // If same time, use ID
             const latestId = latest.id || 0;
             const currentId = current.id || 0;
             return currentId > latestId ? current : latest;
@@ -558,12 +566,37 @@ async function getActiveTransaction(deviceId) {
     }
 }
 
+// Global lock to prevent duplicate API calls
+const chargingLocks = new Set(); // Set of deviceIds currently processing
+
 // Start charging
 async function startCharging(deviceId, button) {
+    // CRITICAL: Prevent duplicate API calls - check global lock FIRST (synchronous check)
+    // Use Set for O(1) lookup performance
+    if (chargingLocks.has(deviceId)) {
+        console.log(`⚠️ [DUPLICATE PREVENTED] Start charging already in progress for ${deviceId}, ignoring duplicate click`);
+        return;
+    }
+    
+    // Also check button state (additional protection)
+    if (button && (button.disabled || button.dataset.processing === 'true')) {
+        console.log(`⚠️ [DUPLICATE PREVENTED] Button already disabled for ${deviceId}, ignoring duplicate click`);
+        return;
+    }
+    
+    // Set global lock IMMEDIATELY (synchronous) - BEFORE any async operations
+    // This MUST happen synchronously to prevent race conditions
+    chargingLocks.add(deviceId);
+    console.log(`🔒 [LOCK SET] Start charging lock set for ${deviceId} at ${Date.now()}`);
+    
+    // Log API call attempt
+    console.log(`📤 [API CALL] Starting RemoteStartTransaction for ${deviceId} at ${new Date().toISOString()}`);
+    
     try {
         // Disable button and show loading
         const originalText = button.innerHTML;
         button.disabled = true;
+        button.dataset.processing = 'true';
         button.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Starting...';
         
         // Get first available connector (default to 1)
@@ -590,13 +623,135 @@ async function startCharging(deviceId, button) {
         
         if (data.success) {
             showAlert('Charging started successfully', 'success');
-            // Reload chargers to update UI
+            // Reload chargers to update UI (this will reset button state)
             await loadChargers();
+            // Clear global lock
+            chargingLocks.delete(deviceId);
+            console.log(`🔓 [LOCK CLEARED] Start charging lock cleared for ${deviceId}`);
+            // Reset processing flag after reload
+            if (button && button.parentNode) {
+                button.dataset.processing = 'false';
+            }
+        } else if (response.status === 408) {
+            // Timeout error - FIRST check immediately if charging already started (before showing warning)
+            // IMPORTANT: Keep lock active during entire check process to prevent duplicate calls
+            console.log(`⚠️ [TIMEOUT] Received 408 timeout for ${deviceId} - checking immediately...`);
+            
+            // IMMEDIATE check - no delay, check right away
+            const immediateCheck = await getActiveTransaction(deviceId);
+            if (immediateCheck) {
+                // Charging already active! Show success immediately - no warning needed
+                showAlert('Charging started successfully', 'success');
+                chargingLocks.delete(deviceId); // Clear lock ONLY after success confirmed
+                console.log(`✅ [TIMEOUT] Charging already active for ${deviceId} (transactionId: ${immediateCheck.transactionId})`);
+                await loadChargers();
+                // Reset button state
+                if (button && button.parentNode) {
+                    button.dataset.processing = 'false';
+                }
+                return; // Exit early - no delay, no warning
+            }
+            
+            // Charging not detected yet - show warning and check with shorter intervals
+            // IMPORTANT: Lock stays active during all checks to prevent duplicate API calls
+            const warningAlertId = showAlert('Server timeout - checking if charging started...', 'warning', true);
+            
+            // Check more frequently but fewer times (faster detection)
+            let checkCount = 0;
+            const maxChecks = 3; // Reduced to 3 checks (faster)
+            const checkInterval = 2000; // 2 seconds between checks
+            
+            const checkChargingStatus = async () => {
+                checkCount++;
+                console.log(`🔍 [TIMEOUT CHECK] Checking charging status (attempt ${checkCount}/${maxChecks}) for ${deviceId}`);
+                
+                // Quick direct check first (faster than reloading everything)
+                const quickCheck = await getActiveTransaction(deviceId);
+                if (quickCheck) {
+                    // Found it! Dismiss warning and show success immediately
+                    if (warningAlertId) {
+                        dismissAlert(warningAlertId);
+                    }
+                    showAlert('Charging started successfully', 'success');
+                    chargingLocks.delete(deviceId); // Clear lock ONLY after success confirmed
+                    console.log(`✅ [TIMEOUT CHECK] Found active transaction: ${quickCheck.transactionId}`);
+                    await loadChargers();
+                    // Reset button state
+                    if (button && button.parentNode) {
+                        button.dataset.processing = 'false';
+                    }
+                    return; // Stop checking
+                }
+                
+                // Also reload chargers to update UI
+                await loadChargers();
+                
+                // If no active transaction yet, check again if we haven't exceeded max checks
+                if (checkCount < maxChecks) {
+                    console.log(`⏳ [TIMEOUT CHECK] Charging not detected yet, will check again in ${checkInterval}ms`);
+                    setTimeout(checkChargingStatus, checkInterval);
+                } else {
+                    // Final check - still no active transaction
+                    console.log(`⚠️ [TIMEOUT CHECK] Charging not detected after ${maxChecks} checks`);
+                    
+                    // Final direct check
+                    try {
+                        const finalCheck = await getActiveTransaction(deviceId);
+                        if (finalCheck) {
+                            // Found it! Dismiss warning and show success
+                            if (warningAlertId) {
+                                dismissAlert(warningAlertId);
+                            }
+                            showAlert('Charging started successfully', 'success');
+                            chargingLocks.delete(deviceId); // Clear lock ONLY after final check
+                            console.log(`✅ [TIMEOUT CHECK] Found active transaction: ${finalCheck.transactionId}`);
+                            await loadChargers();
+                            // Reset button state
+                            if (button && button.parentNode) {
+                                button.dataset.processing = 'false';
+                            }
+                            return; // Stop here
+                        }
+                        
+                        // Really didn't start - show error
+                        if (warningAlertId) {
+                            dismissAlert(warningAlertId);
+                        }
+                        showAlert('Charging did not start. The charger may be busy or offline. Please try again.', 'danger');
+                        button.innerHTML = originalText;
+                        button.disabled = false;
+                        button.dataset.processing = 'false';
+                        chargingLocks.delete(deviceId); // Clear lock ONLY after final check
+                        console.log(`❌ [TIMEOUT CHECK] Charging confirmed NOT started for ${deviceId}`);
+                    } catch (finalCheckError) {
+                        console.error('❌ Error in final check:', finalCheckError);
+                        if (warningAlertId) {
+                            dismissAlert(warningAlertId);
+                        }
+                        showAlert('Could not verify charging status. Please check manually.', 'warning');
+                        button.innerHTML = originalText;
+                        button.disabled = false;
+                        button.dataset.processing = 'false';
+                        chargingLocks.delete(deviceId); // Clear lock on error
+                    }
+                }
+            };
+            
+            // Start checking immediately (no delay - faster detection)
+            setTimeout(checkChargingStatus, 1000); // Wait 1 second before first check
+            
+            // IMPORTANT: Lock stays active - don't clear it here, only clear after checks complete
+            // Don't show error message here - wait for status check
+            return; // Exit early, don't process further
         } else {
             // Show specific error message from API
             showAlert(data.error || 'Failed to start charging', 'danger');
             button.innerHTML = originalText;
             button.disabled = false;
+            button.dataset.processing = 'false';
+            // Clear global lock
+            chargingLocks.delete(deviceId);
+            console.log(`🔓 [LOCK CLEARED] Start charging lock cleared for ${deviceId}`);
         }
     } catch (error) {
         console.error('❌ Error starting charging:', error);
@@ -608,15 +763,36 @@ async function startCharging(deviceId, button) {
         }
         button.innerHTML = originalText;
         button.disabled = false;
+        button.dataset.processing = 'false';
+        // Clear global lock on error
+        chargingLocks.delete(deviceId);
     }
 }
 
 // Stop charging
 async function stopCharging(deviceId, transactionId, button) {
+    // Prevent double-click - check global lock first (synchronous check)
+    const stopLockKey = `${deviceId}_stop`;
+    if (chargingLocks.has(stopLockKey)) {
+        console.log(`⚠️ [DUPLICATE PREVENTED] Stop charging already in progress for ${deviceId}, ignoring duplicate click`);
+        return;
+    }
+    
+    // Also check button state (additional protection)
+    if (button && (button.disabled || button.dataset.processing === 'true')) {
+        console.log(`⚠️ [DUPLICATE PREVENTED] Button already disabled for ${deviceId}, ignoring duplicate click`);
+        return;
+    }
+    
+    // Set global lock IMMEDIATELY (synchronous) - BEFORE any async operations
+    chargingLocks.add(stopLockKey);
+    console.log(`🔒 [LOCK SET] Stop charging lock set for ${deviceId} at ${Date.now()}`);
+    
     try {
         // Disable button and show loading
         const originalText = button.innerHTML;
         button.disabled = true;
+        button.dataset.processing = 'true';
         button.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Stopping...';
         
         const response = await fetch(`${API_BASE}/remote-stop`, {
@@ -641,13 +817,66 @@ async function stopCharging(deviceId, transactionId, button) {
         
         if (data.success) {
             showAlert('Charging stopped successfully', 'success');
-            // Reload chargers to update UI
+            // Reload chargers to update UI (this will reset button state)
             await loadChargers();
+            // Clear global lock
+            chargingLocks.delete(stopLockKey);
+            console.log(`🔓 [LOCK CLEARED] Stop charging lock cleared for ${deviceId}`);
+            // Reset processing flag after reload
+            if (button && button.parentNode) {
+                button.dataset.processing = 'false';
+            }
+        } else if (response.status === 408) {
+            // Timeout error - FIRST check immediately if charging already stopped (before showing warning)
+            console.log(`⚠️ [TIMEOUT] Received 408 timeout for stop ${deviceId} - checking immediately...`);
+            
+            // IMMEDIATE check - no delay, check right away
+            const immediateCheck = await getActiveTransaction(deviceId);
+            if (!immediateCheck) {
+                // Charging already stopped! Show success immediately - no delay
+                showAlert('Charging stopped successfully', 'success');
+                chargingLocks.delete(stopLockKey);
+                console.log(`✅ [TIMEOUT] Charging already stopped for ${deviceId}`);
+                await loadChargers();
+                return; // Exit early - no delay
+            }
+            
+            // Charging still active - show warning and check again
+            const warningAlertId = showAlert('Server timeout - checking if charging stopped...', 'warning', true);
+            
+            // Check more frequently
+            setTimeout(async () => {
+                const quickCheck = await getActiveTransaction(deviceId);
+                if (!quickCheck) {
+                    // Charging stopped - dismiss warning and show success
+                    if (warningAlertId) {
+                        dismissAlert(warningAlertId);
+                    }
+                    showAlert('Charging stopped successfully', 'success');
+                    chargingLocks.delete(stopLockKey);
+                    await loadChargers();
+                } else {
+                    // Charging didn't stop - show error
+                    if (warningAlertId) {
+                        dismissAlert(warningAlertId);
+                    }
+                    showAlert('Charging did not stop. The charger may be busy or offline. Please try again.', 'danger');
+                    button.innerHTML = originalText;
+                    button.disabled = false;
+                    button.dataset.processing = 'false';
+                    chargingLocks.delete(stopLockKey);
+                }
+            }, 2000); // Wait 2 seconds before final check
+            return; // Exit early, don't process further
         } else {
             // Show specific error message from API
             showAlert(data.error || 'Failed to stop charging', 'danger');
             button.innerHTML = originalText;
             button.disabled = false;
+            button.dataset.processing = 'false';
+            // Clear global lock
+            chargingLocks.delete(stopLockKey);
+            console.log(`🔓 [LOCK CLEARED] Stop charging lock cleared for ${deviceId}`);
         }
     } catch (error) {
         console.error('❌ Error stopping charging:', error);
@@ -655,6 +884,9 @@ async function stopCharging(deviceId, transactionId, button) {
         showAlert('Failed to stop charging: ' + (error.message || 'Unknown error'), 'danger');
         button.innerHTML = originalText;
         button.disabled = false;
+        button.dataset.processing = 'false';
+        // Clear global lock on error
+        chargingLocks.delete(stopLockKey);
     }
 }
 
@@ -667,25 +899,52 @@ function updateLastUpdated() {
 }
 
 // Show alert
-function showAlert(message, type) {
+function showAlert(message, type, returnId = false) {
     const container = document.getElementById('alert-container');
-    if (!container) return;
+    if (!container) return returnId ? null : undefined;
     
     const alertId = 'alert-' + Date.now();
     const alertHtml = `
         <div id="${alertId}" class="alert alert-${type} alert-dismissible fade show" role="alert">
-            <i class="fas fa-${type === 'success' ? 'check-circle' : 'exclamation-triangle'} me-2"></i>
+            <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'warning' ? 'exclamation-triangle' : 'exclamation-circle'} me-2"></i>
             ${message}
             <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
         </div>
     `;
     
-    container.insertAdjacentHTML('beforeend', alertHtml);
+    container.innerHTML = alertHtml; // Replace existing alert
     
-    setTimeout(() => {
-        const alert = document.getElementById(alertId);
-        if (alert) {
+    // Auto-dismiss after 5 seconds (except for warnings that might be dismissed manually)
+    if (type !== 'warning' || !returnId) {
+        setTimeout(() => {
+            const alert = document.getElementById(alertId);
+            if (alert) {
+                alert.remove();
+            }
+        }, 5000);
+    }
+    
+    // Return alert ID if requested (for manual dismissal)
+    if (returnId) {
+        return alertId;
+    }
+}
+
+// Dismiss alert by ID
+function dismissAlert(alertId) {
+    const alert = document.getElementById(alertId);
+    if (alert) {
+        // Use Bootstrap's dismiss method if available, otherwise just remove
+        try {
+            const bsAlert = bootstrap?.Alert?.getOrCreateInstance(alert);
+            if (bsAlert) {
+                bsAlert.close();
+            } else {
+                alert.remove();
+            }
+        } catch (e) {
+            // Fallback: just remove the alert
             alert.remove();
         }
-    }, 5000);
+    }
 }

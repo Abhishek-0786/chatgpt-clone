@@ -427,7 +427,7 @@ router.get('/data/:deviceId', async (req, res) => {
         as: 'charger',
         attributes: { exclude: ['chargerStatus'] }
       }],
-      order: [['id', 'ASC']], // Natural insertion order by primary key
+      order: [['timestamp', 'ASC'], ['id', 'ASC']], // Sort by timestamp first (includes sequence offsets), then by id for tie-breaking
       limit: limit,
       offset: offset
     });
@@ -484,6 +484,9 @@ router.delete('/purge', async (req, res) => {
   }
 });
 
+// In-memory map to track recent RemoteStartTransaction requests (prevent duplicates)
+const recentRemoteStartRequests = new Map(); // deviceId -> timestamp
+
 // Remote Start Transaction
 router.post('/remote-start', async (req, res) => {
   try {
@@ -532,6 +535,110 @@ router.post('/remote-start', async (req, res) => {
       });
     }
     
+    // CRITICAL: Check if charger is already charging (has active transaction) - CHECK THIS FIRST!
+    // This prevents sending RemoteStartTransaction if charging is already active
+    // This is the main protection against periodic/automatic retry requests
+    try {
+      // Check for any active StartTransaction (not stopped) - look back 10 minutes
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000); // 10 minutes ago
+      
+      const recentData = await ChargerData.findAll({
+        where: { 
+          deviceId: deviceId,
+          createdAt: {
+            [Op.gte]: tenMinutesAgo
+          }
+        },
+        order: [['id', 'DESC']],
+        limit: 200
+      });
+      
+      // Find latest StartTransaction
+      const startTransactions = recentData.filter(log => 
+        log.message === 'StartTransaction' && log.direction === 'Incoming'
+      );
+      
+      if (startTransactions.length > 0) {
+        // Get latest StartTransaction (by timestamp, then ID)
+        const latestStart = startTransactions.reduce((latest, current) => {
+          const latestTime = new Date(latest.timestamp || latest.createdAt).getTime();
+          const currentTime = new Date(current.timestamp || current.createdAt).getTime();
+          if (currentTime > latestTime) return current;
+          if (currentTime < latestTime) return latest;
+          return (current.id || 0) > (latest.id || 0) ? current : latest;
+        });
+        
+        // Get transactionId from StartTransaction response
+        const startResponse = recentData.find(log => 
+          log.message === 'Response' && 
+          log.messageId === latestStart.messageId &&
+          log.direction === 'Outgoing'
+        );
+        
+        let transactionId = null;
+        if (startResponse) {
+          if (startResponse.messageData && startResponse.messageData.transactionId) {
+            transactionId = startResponse.messageData.transactionId;
+          } else if (startResponse.raw && Array.isArray(startResponse.raw) && startResponse.raw[2] && startResponse.raw[2].transactionId) {
+            transactionId = startResponse.raw[2].transactionId;
+          }
+        }
+        
+        if (transactionId) {
+          // Check if there's a StopTransaction for this transactionId
+          const stopTransaction = recentData.find(log => 
+            log.message === 'StopTransaction' && 
+            log.direction === 'Incoming' &&
+            (
+              (log.messageData && log.messageData.transactionId === transactionId) || 
+              (log.raw && Array.isArray(log.raw) && log.raw[2] && log.raw[2].transactionId === transactionId)
+            )
+          );
+          
+          // If no StopTransaction found, charging is still active - BLOCK the request
+          if (!stopTransaction) {
+            const startTime = new Date(latestStart.timestamp || latestStart.createdAt).getTime();
+            const timeSinceStart = Math.round((Date.now() - startTime) / 1000);
+            console.warn(`⚠️ [BLOCKED] RemoteStartTransaction request for ${deviceId} rejected - charger is already charging (Transaction ${transactionId}, started ${timeSinceStart}s ago)`);
+            
+            // Don't record this in rate limit map - it's a different error (already charging)
+            // Just return the error directly
+            return res.status(400).json({
+              success: false,
+              error: `Charger ${deviceId} is already charging (Transaction ${transactionId}). Please stop the current charging session first.`
+            });
+          }
+        }
+      }
+    } catch (checkError) {
+      // If check fails, log warning but continue (don't block the request)
+      console.warn(`⚠️ Error checking active transaction for ${deviceId}:`, checkError.message);
+    }
+    
+    // CRITICAL: Check if a RemoteStartTransaction was already sent for this device recently
+    // This prevents duplicate API calls from creating multiple RemoteStartTransaction commands
+    // BUT only if charging is NOT already active (checked above)
+    const lastRequestTime = recentRemoteStartRequests.get(deviceId);
+    if (lastRequestTime) {
+      const timeSinceLastRequest = Date.now() - lastRequestTime;
+      // Increased to 2 minutes to prevent periodic requests during charging
+      if (timeSinceLastRequest < 120000) { // 2 minutes (was 5 seconds)
+        const minutesLeft = Math.ceil((120000 - timeSinceLastRequest) / 60000);
+        console.warn(`⚠️ [DUPLICATE PREVENTED] RemoteStartTransaction request for ${deviceId} rejected - duplicate request within 2 minutes (${minutesLeft} minute(s) ago)`);
+        return res.status(429).json({
+          success: false,
+          error: `A RemoteStartTransaction request was already sent for ${deviceId} recently. Please wait ${minutesLeft} minute(s) before trying again.`
+        });
+      }
+    }
+    
+    // Record this request (will be cleared after 2 minutes automatically)
+    recentRemoteStartRequests.set(deviceId, Date.now());
+    // Auto-cleanup after 2 minutes
+    setTimeout(() => {
+      recentRemoteStartRequests.delete(deviceId);
+    }, 120000); // 2 minutes
+    
     // Send RemoteStartTransaction
     try {
       const payload = {
@@ -539,7 +646,8 @@ router.post('/remote-start', async (req, res) => {
         connectorId: connectorId
       };
       
-      const response = await sendOcppCall(deviceId, 'RemoteStartTransaction', payload);
+      // Increase timeout to 60 seconds for live chargers (they may respond slower)
+      const response = await sendOcppCall(deviceId, 'RemoteStartTransaction', payload, 60000);
       
       if (response.status === 'Accepted') {
         res.json({
@@ -553,10 +661,9 @@ router.post('/remote-start', async (req, res) => {
         });
       }
     } catch (error) {
-      console.error('❌ Error sending RemoteStartTransaction:', error);
-      
       // Check if error is due to connection
       if (error.message && error.message.includes('not connected')) {
+        console.error('❌ Error sending RemoteStartTransaction:', error);
         return res.status(400).json({
           success: false,
           error: `Charger ${deviceId} is not connected. Please ensure the charger is online and connected via WebSocket.`
@@ -565,11 +672,16 @@ router.post('/remote-start', async (req, res) => {
       
       // Check if error is due to timeout
       if (error.message && error.message.includes('timeout')) {
+        // Timeout is expected for slow chargers - log as warning, not error
+        console.warn(`⚠️ RemoteStartTransaction timeout for ${deviceId} (60s). Charging may still start.`);
         return res.status(408).json({
           success: false,
-          error: `Charger ${deviceId} did not respond within 30 seconds. The charger may be offline, busy, or experiencing communication issues.`
+          error: `Charger ${deviceId} did not respond within 60 seconds. The charger may be offline, busy, or experiencing communication issues. Note: Charging may still start even if this timeout occurs.`
         });
       }
+      
+      // Other errors - log as error
+      console.error('❌ Error sending RemoteStartTransaction:', error);
       
       res.status(500).json({
         success: false,
@@ -634,7 +746,8 @@ router.post('/remote-stop', async (req, res) => {
         transactionId: transactionId
       };
       
-      const response = await sendOcppCall(deviceId, 'RemoteStopTransaction', payload);
+      // Increase timeout to 60 seconds for live chargers (they may respond slower)
+      const response = await sendOcppCall(deviceId, 'RemoteStopTransaction', payload, 60000);
       
       if (response.status === 'Accepted') {
         res.json({
@@ -648,10 +761,9 @@ router.post('/remote-stop', async (req, res) => {
         });
       }
     } catch (error) {
-      console.error('❌ Error sending RemoteStopTransaction:', error);
-      
       // Check if error is due to connection
       if (error.message && error.message.includes('not connected')) {
+        console.error('❌ Error sending RemoteStopTransaction:', error);
         return res.status(400).json({
           success: false,
           error: `Charger ${deviceId} is not connected. Please ensure the charger is online and connected via WebSocket.`
@@ -660,11 +772,16 @@ router.post('/remote-stop', async (req, res) => {
       
       // Check if error is due to timeout
       if (error.message && error.message.includes('timeout')) {
+        // Timeout is expected for slow chargers - log as warning, not error
+        console.warn(`⚠️ RemoteStopTransaction timeout for ${deviceId} (60s). Charging may still stop.`);
         return res.status(408).json({
           success: false,
-          error: `Charger ${deviceId} did not respond within 30 seconds. The charger may be offline, busy, or experiencing communication issues.`
+          error: `Charger ${deviceId} did not respond within 60 seconds. The charger may be offline, busy, or experiencing communication issues. Note: Charging may still stop even if this timeout occurs.`
         });
       }
+      
+      // Other errors - log as error
+      console.error('❌ Error sending RemoteStopTransaction:', error);
       
       res.status(500).json({
         success: false,

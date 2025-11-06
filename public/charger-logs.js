@@ -275,10 +275,8 @@ function updatePageTitle(deviceId) {
 function displayLogs() {
     const container = document.getElementById('logs-container');
     
-    // Reverse the array so newest messages appear first (sequence 1 will be last)
-    const reversedLogs = [...allLogs].reverse();
-    
-    if (reversedLogs.length === 0) {
+    // API now returns newest first (DESC order), so no need to reverse
+    if (allLogs.length === 0) {
         container.innerHTML = `
             <div class="text-center py-5">
                 <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
@@ -289,7 +287,7 @@ function displayLogs() {
         return;
     }
     
-    const logsHtml = reversedLogs.map(log => createLogItem(log)).join('');
+    const logsHtml = allLogs.map(log => createLogItem(log)).join('');
     const loadingHtml = isLoading ? `
         <div class="text-center py-3">
             <i class="fas fa-spinner fa-spin me-2"></i>Loading more data...
@@ -298,7 +296,7 @@ function displayLogs() {
     
     const totalCountHtml = `
         <div class="text-center py-2">
-            <small class="text-muted">Showing ${reversedLogs.length} records</small>
+            <small class="text-muted">Showing ${allLogs.length} records</small>
         </div>
     `;
     

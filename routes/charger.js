@@ -324,7 +324,7 @@ router.get('/data', async (req, res) => {
             where: whereClause
         });
         
-        // Get paginated data (natural insertion order - by id)
+        // Get paginated data (newest first - latest at top)
     const data = await ChargerData.findAll({
             where: whereClause,
             include: [{
@@ -332,8 +332,8 @@ router.get('/data', async (req, res) => {
                 as: 'charger',
             attributes: { exclude: ['chargerStatus'] }
             }],
-            // No sorting - maintain natural insertion order (queue order)
-            order: null,
+            // Sort by timestamp DESC (newest first) then by id DESC for tie-breaking
+            order: [['timestamp', 'DESC'], ['id', 'DESC']],
             limit: limit,
             offset: offset
         });
@@ -419,7 +419,7 @@ router.get('/data/:deviceId', async (req, res) => {
       where: { deviceId: deviceId }
     });
     
-    // Get paginated data for this device (natural insertion order - by id)
+    // Get paginated data for this device (newest first - latest at top)
   const data = await ChargerData.findAll({
       where: { deviceId: deviceId },
       include: [{
@@ -427,7 +427,7 @@ router.get('/data/:deviceId', async (req, res) => {
         as: 'charger',
         attributes: { exclude: ['chargerStatus'] }
       }],
-      order: [['timestamp', 'ASC'], ['id', 'ASC']], // Sort by timestamp first (includes sequence offsets), then by id for tie-breaking
+      order: [['timestamp', 'DESC'], ['id', 'DESC']], // Sort by timestamp DESC (newest first) then by id DESC for tie-breaking
       limit: limit,
       offset: offset
     });

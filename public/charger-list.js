@@ -292,11 +292,15 @@ function createChargerCard(charger) {
                     <button class="btn btn-success btn-sm" onclick="event.stopPropagation(); startCharging('${charger.deviceId}', this)" style="flex: 1;">
                         <i class="fas fa-play me-2"></i>Start Charging
                     </button>
-                ` : `
+                ` : (charger.activeTransaction && charger.activeTransaction.transactionId ? `
                     <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); stopCharging('${charger.deviceId}', ${charger.activeTransaction.transactionId}, this)" style="flex: 1;">
                         <i class="fas fa-stop me-2"></i>Stop Charging
                     </button>
-                `}
+                ` : `
+                    <button class="btn btn-success btn-sm" onclick="event.stopPropagation(); startCharging('${charger.deviceId}', this)" style="flex: 1;">
+                        <i class="fas fa-play me-2"></i>Start Charging
+                    </button>
+                `)}
             </div>
         </div>
     `;
@@ -513,30 +517,50 @@ async function getActiveTransaction(deviceId) {
             return currentId > latestId ? current : latest;
         });
         
+        // CRITICAL: Check if StartTransaction is recent (within last 2 hours for real chargers)
+        // Real chargers might have delays, so we use a longer window
+        const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
+        const startTime = new Date(latestStart.timestamp || latestStart.createdAt).getTime();
+        if (startTime < twoHoursAgo.getTime()) {
+            console.log(`⚠️ [getActiveTransaction] StartTransaction too old for ${deviceId} (${new Date(startTime).toISOString()})`);
+            return null; // Transaction is too old, consider it inactive
+        }
+        
         // Find the response to this StartTransaction (outgoing from server, same messageId)
+        // BUT: For real chargers, if response not found, try to get transactionId from StartTransaction itself
         const startResponse = data.data.find(log => 
             log.message === 'Response' && 
             log.messageId === latestStart.messageId &&
             log.direction === 'Outgoing'
         );
         
-        if (!startResponse) {
-            return null;
+        // Get transactionId - first try from response, then from StartTransaction itself (for real chargers)
+        let transactionId = null;
+        if (startResponse) {
+            if (startResponse.messageData && startResponse.messageData.transactionId) {
+                transactionId = startResponse.messageData.transactionId;
+            } else if (startResponse.raw && Array.isArray(startResponse.raw) && startResponse.raw[2] && startResponse.raw[2].transactionId) {
+                transactionId = startResponse.raw[2].transactionId;
+            }
         }
         
-        // Get transactionId from the response
-        let transactionId = null;
-        if (startResponse.messageData && startResponse.messageData.transactionId) {
-            transactionId = startResponse.messageData.transactionId;
-        } else if (startResponse.raw && Array.isArray(startResponse.raw) && startResponse.raw[2] && startResponse.raw[2].transactionId) {
-            transactionId = startResponse.raw[2].transactionId;
+        // If not found in response, try to get from StartTransaction message itself (real chargers might send it differently)
+        if (!transactionId && latestStart.messageData && latestStart.messageData.transactionId) {
+            transactionId = latestStart.messageData.transactionId;
+        } else if (!transactionId && latestStart.raw && Array.isArray(latestStart.raw)) {
+            // Try to extract from raw OCPP message
+            const payload = latestStart.raw[2];
+            if (payload && payload.transactionId) {
+                transactionId = payload.transactionId;
+            }
         }
         
         if (!transactionId) {
+            console.log(`⚠️ [getActiveTransaction] No transactionId found for ${deviceId} - StartTransaction: ${JSON.stringify(latestStart).substring(0, 200)}`);
             return null;
         }
         
-        // Check for StopTransaction with same transactionId
+        // Check for StopTransaction with same transactionId in all data (not just recent)
         const stopTransaction = data.data.find(log => 
             log.message === 'StopTransaction' && 
             log.direction === 'Incoming' &&
@@ -552,6 +576,7 @@ async function getActiveTransaction(deviceId) {
                                (latestStart.messageData && latestStart.messageData.connectorId) || 
                                (latestStart.raw && Array.isArray(latestStart.raw) && latestStart.raw[2] && latestStart.raw[2].connectorId) || 0;
             
+            console.log(`✅ [getActiveTransaction] Active transaction found for ${deviceId}: transactionId=${transactionId}, connectorId=${connectorId}`);
             return {
                 transactionId: transactionId,
                 connectorId: connectorId,
@@ -599,7 +624,71 @@ async function startCharging(deviceId, button) {
         button.dataset.processing = 'true';
         button.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Starting...';
         
-        // Get first available connector (default to 1)
+        // CRITICAL: For live chargers, StartTransaction arrives AFTER RemoteStartTransaction
+        // So we start checking IMMEDIATELY after API call, not after response
+        // This way we detect charging as soon as charger sends StartTransaction
+        
+        let checkStarted = false;
+        let checkCompleted = false;
+        let successShown = false;
+        
+        // Start checking for StartTransaction IMMEDIATELY (don't wait for API response)
+        const startChecking = async () => {
+            if (checkStarted) return; // Prevent multiple checks
+            checkStarted = true;
+            
+            console.log(`🔍 [IMMEDIATE CHECK] Starting immediate check for ${deviceId}...`);
+            
+            // Check every 2 seconds for up to 30 seconds (15 checks)
+            let checkCount = 0;
+            const maxChecks = 15; // 15 checks = 30 seconds total
+            const checkInterval = 2000; // 2 seconds
+            
+            const checkChargingStatus = async () => {
+                if (checkCompleted || successShown) return; // Stop if already completed
+                
+                checkCount++;
+                console.log(`🔍 [IMMEDIATE CHECK] Checking charging status (attempt ${checkCount}/${maxChecks}) for ${deviceId}`);
+                
+                const quickCheck = await getActiveTransaction(deviceId);
+                if (quickCheck) {
+                    // Found StartTransaction! Show success immediately
+                    if (!successShown) {
+                        successShown = true;
+                        checkCompleted = true;
+                        showAlert('Charging started successfully', 'success');
+                        chargingLocks.delete(deviceId);
+                        console.log(`✅ [IMMEDIATE CHECK] Found active transaction: ${quickCheck.transactionId}`);
+                        // Wait a bit for database to sync before reloading UI
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        await loadChargers();
+                        // Reset button state
+                        if (button && button.parentNode) {
+                            button.dataset.processing = 'false';
+                        }
+                    }
+                    return; // Stop checking
+                }
+                
+                // If no active transaction yet, check again if we haven't exceeded max checks
+                if (checkCount < maxChecks && !checkCompleted) {
+                    setTimeout(checkChargingStatus, checkInterval);
+                } else if (checkCount >= maxChecks && !successShown) {
+                    // No StartTransaction found after 30 seconds - check completed but no success
+                    checkCompleted = true;
+                    console.log(`⏳ [IMMEDIATE CHECK] No StartTransaction found after ${maxChecks} checks, waiting for API response...`);
+                    // Don't show error here - wait for API response to determine if it's a timeout or error
+                }
+            };
+            
+            // Start checking after 1 second (give charger time to process RemoteStartTransaction)
+            setTimeout(checkChargingStatus, 1000);
+        };
+        
+        // Start checking immediately (in parallel with API call)
+        startChecking();
+        
+        // Make API call (but don't block on it - check is already running)
         const response = await fetch(`${API_BASE}/remote-start`, {
             method: 'POST',
             headers: {
@@ -618,131 +707,87 @@ async function startCharging(deviceId, button) {
         try {
             data = await response.json();
         } catch (parseError) {
+            // If check already found charging, don't show error
+            if (successShown) {
+                return; // Exit early, success already shown
+            }
             throw new Error(`Server response error (${response.status}): ${response.statusText}`);
         }
         
+        // If check already found charging, don't process API response
+        if (successShown) {
+            return; // Exit early, success already shown
+        }
+        
         if (data.success) {
-            showAlert('Charging started successfully', 'success');
-            // Reload chargers to update UI (this will reset button state)
-            await loadChargers();
-            // Clear global lock
-            chargingLocks.delete(deviceId);
-            console.log(`🔓 [LOCK CLEARED] Start charging lock cleared for ${deviceId}`);
-            // Reset processing flag after reload
-            if (button && button.parentNode) {
-                button.dataset.processing = 'false';
-            }
-        } else if (response.status === 408) {
-            // Timeout error - FIRST check immediately if charging already started (before showing warning)
-            // IMPORTANT: Keep lock active during entire check process to prevent duplicate calls
-            console.log(`⚠️ [TIMEOUT] Received 408 timeout for ${deviceId} - checking immediately...`);
-            
-            // IMMEDIATE check - no delay, check right away
-            const immediateCheck = await getActiveTransaction(deviceId);
-            if (immediateCheck) {
-                // Charging already active! Show success immediately - no warning needed
+            // API response came back first - show success
+            if (!successShown) {
+                successShown = true;
+                checkCompleted = true;
                 showAlert('Charging started successfully', 'success');
-                chargingLocks.delete(deviceId); // Clear lock ONLY after success confirmed
-                console.log(`✅ [TIMEOUT] Charging already active for ${deviceId} (transactionId: ${immediateCheck.transactionId})`);
+                // Wait more for database to sync before reloading UI (real chargers need more time)
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                // Reload chargers to update UI (this will reset button state)
                 await loadChargers();
-                // Reset button state
+                // Clear global lock
+                chargingLocks.delete(deviceId);
+                console.log(`🔓 [LOCK CLEARED] Start charging lock cleared for ${deviceId}`);
+                // Reset processing flag after reload
                 if (button && button.parentNode) {
                     button.dataset.processing = 'false';
                 }
-                return; // Exit early - no delay, no warning
+            }
+        } else if (response.status === 408) {
+            // Timeout error - but we already started checking, so just wait for check to complete
+            // If check already found charging, success already shown
+            if (successShown) {
+                return; // Exit early, success already shown
             }
             
-            // Charging not detected yet - show warning and check with shorter intervals
-            // IMPORTANT: Lock stays active during all checks to prevent duplicate API calls
-            const warningAlertId = showAlert('Server timeout - checking if charging started...', 'warning', true);
-            
-            // Check more frequently but fewer times (faster detection)
-            let checkCount = 0;
-            const maxChecks = 3; // Reduced to 3 checks (faster)
-            const checkInterval = 2000; // 2 seconds between checks
-            
-            const checkChargingStatus = async () => {
-                checkCount++;
-                console.log(`🔍 [TIMEOUT CHECK] Checking charging status (attempt ${checkCount}/${maxChecks}) for ${deviceId}`);
-                
-                // Quick direct check first (faster than reloading everything)
-                const quickCheck = await getActiveTransaction(deviceId);
-                if (quickCheck) {
-                    // Found it! Dismiss warning and show success immediately
-                    if (warningAlertId) {
-                        dismissAlert(warningAlertId);
+            // If check is still running, do one final immediate check
+            if (!checkCompleted) {
+                console.log(`⚠️ [TIMEOUT] Received 408 timeout for ${deviceId}, doing final check...`);
+                // Do one final immediate check
+                const finalCheck = await getActiveTransaction(deviceId);
+                if (finalCheck) {
+                    // Found it! Show success immediately
+                    if (!successShown) {
+                        successShown = true;
+                        checkCompleted = true;
+                        showAlert('Charging started successfully', 'success');
+                        chargingLocks.delete(deviceId);
+                        console.log(`✅ [TIMEOUT] Found active transaction: ${finalCheck.transactionId}`);
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        await loadChargers();
+                        if (button && button.parentNode) {
+                            button.dataset.processing = 'false';
+                        }
                     }
-                    showAlert('Charging started successfully', 'success');
-                    chargingLocks.delete(deviceId); // Clear lock ONLY after success confirmed
-                    console.log(`✅ [TIMEOUT CHECK] Found active transaction: ${quickCheck.transactionId}`);
-                    await loadChargers();
-                    // Reset button state
-                    if (button && button.parentNode) {
-                        button.dataset.processing = 'false';
-                    }
-                    return; // Stop checking
+                    return; // Exit early, success shown
                 }
-                
-                // Also reload chargers to update UI
-                await loadChargers();
-                
-                // If no active transaction yet, check again if we haven't exceeded max checks
-                if (checkCount < maxChecks) {
-                    console.log(`⏳ [TIMEOUT CHECK] Charging not detected yet, will check again in ${checkInterval}ms`);
-                    setTimeout(checkChargingStatus, checkInterval);
-                } else {
-                    // Final check - still no active transaction
-                    console.log(`⚠️ [TIMEOUT CHECK] Charging not detected after ${maxChecks} checks`);
-                    
-                    // Final direct check
-                    try {
-                        const finalCheck = await getActiveTransaction(deviceId);
-                        if (finalCheck) {
-                            // Found it! Dismiss warning and show success
-                            if (warningAlertId) {
-                                dismissAlert(warningAlertId);
-                            }
-                            showAlert('Charging started successfully', 'success');
-                            chargingLocks.delete(deviceId); // Clear lock ONLY after final check
-                            console.log(`✅ [TIMEOUT CHECK] Found active transaction: ${finalCheck.transactionId}`);
-                            await loadChargers();
-                            // Reset button state
-                            if (button && button.parentNode) {
-                                button.dataset.processing = 'false';
-                            }
-                            return; // Stop here
-                        }
-                        
-                        // Really didn't start - show error
-                        if (warningAlertId) {
-                            dismissAlert(warningAlertId);
-                        }
-                        showAlert('Charging did not start. The charger may be busy or offline. Please try again.', 'danger');
-                        button.innerHTML = originalText;
-                        button.disabled = false;
-                        button.dataset.processing = 'false';
-                        chargingLocks.delete(deviceId); // Clear lock ONLY after final check
-                        console.log(`❌ [TIMEOUT CHECK] Charging confirmed NOT started for ${deviceId}`);
-                    } catch (finalCheckError) {
-                        console.error('❌ Error in final check:', finalCheckError);
-                        if (warningAlertId) {
-                            dismissAlert(warningAlertId);
-                        }
-                        showAlert('Could not verify charging status. Please check manually.', 'warning');
-                        button.innerHTML = originalText;
-                        button.disabled = false;
-                        button.dataset.processing = 'false';
-                        chargingLocks.delete(deviceId); // Clear lock on error
-                    }
-                }
-            };
+                // No StartTransaction found - show error
+                checkCompleted = true;
+                console.log(`⚠️ [TIMEOUT] No StartTransaction found after timeout for ${deviceId}`);
+                showAlert('Charging did not start. The charger may be busy or offline. Please try again.', 'danger');
+                button.innerHTML = originalText;
+                button.disabled = false;
+                button.dataset.processing = 'false';
+                chargingLocks.delete(deviceId);
+                console.log(`❌ [TIMEOUT] Charging confirmed NOT started for ${deviceId}`);
+                return; // Exit early
+            }
             
-            // Start checking immediately (no delay - faster detection)
-            setTimeout(checkChargingStatus, 1000); // Wait 1 second before first check
-            
-            // IMPORTANT: Lock stays active - don't clear it here, only clear after checks complete
-            // Don't show error message here - wait for status check
-            return; // Exit early, don't process further
+            // Check completed but no StartTransaction found - show error
+            if (!successShown) {
+                console.log(`⚠️ [TIMEOUT] Received 408 timeout and check completed with no StartTransaction for ${deviceId}`);
+                showAlert('Charging did not start. The charger may be busy or offline. Please try again.', 'danger');
+                button.innerHTML = originalText;
+                button.disabled = false;
+                button.dataset.processing = 'false';
+                chargingLocks.delete(deviceId);
+                console.log(`❌ [TIMEOUT] Charging confirmed NOT started for ${deviceId}`);
+            }
+            return; // Exit early
         } else {
             // Show specific error message from API
             showAlert(data.error || 'Failed to start charging', 'danger');
@@ -788,6 +833,9 @@ async function stopCharging(deviceId, transactionId, button) {
     chargingLocks.add(stopLockKey);
     console.log(`🔒 [LOCK SET] Stop charging lock set for ${deviceId} at ${Date.now()}`);
     
+    // Log API call attempt
+    console.log(`📤 [API CALL] Starting RemoteStopTransaction for ${deviceId} at ${new Date().toISOString()}`);
+    
     try {
         // Disable button and show loading
         const originalText = button.innerHTML;
@@ -795,6 +843,70 @@ async function stopCharging(deviceId, transactionId, button) {
         button.dataset.processing = 'true';
         button.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Stopping...';
         
+        // CRITICAL: For live chargers, StopTransaction arrives AFTER RemoteStopTransaction
+        // So we start checking IMMEDIATELY after API call, not after response
+        // This way we detect charging stopped as soon as charger sends StopTransaction
+        
+        let checkStarted = false;
+        let checkCompleted = false;
+        let successShown = false;
+        
+        // Start checking for StopTransaction IMMEDIATELY (don't wait for API response)
+        const startChecking = async () => {
+            if (checkStarted) return; // Prevent multiple checks
+            checkStarted = true;
+            
+            console.log(`🔍 [IMMEDIATE CHECK] Starting immediate check for stop ${deviceId}...`);
+            
+            // Check every 2 seconds for up to 30 seconds (15 checks)
+            let checkCount = 0;
+            const maxChecks = 15; // 15 checks = 30 seconds total
+            const checkInterval = 2000; // 2 seconds
+            
+            const checkChargingStatus = async () => {
+                if (checkCompleted || successShown) return; // Stop if already completed
+                
+                checkCount++;
+                console.log(`🔍 [IMMEDIATE CHECK] Checking if charging stopped (attempt ${checkCount}/${maxChecks}) for ${deviceId}`);
+                
+                const quickCheck = await getActiveTransaction(deviceId);
+                if (!quickCheck) {
+                    // No active transaction found - charging stopped! Show success immediately
+                    if (!successShown) {
+                        successShown = true;
+                        checkCompleted = true;
+                        showAlert('Charging stopped successfully', 'success');
+                        chargingLocks.delete(stopLockKey);
+                        console.log(`✅ [IMMEDIATE CHECK] Charging stopped for ${deviceId}`);
+                        // Wait a bit for database to sync before reloading UI
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        await loadChargers();
+                        // Reset button state
+                        if (button && button.parentNode) {
+                            button.dataset.processing = 'false';
+                        }
+                    }
+                    return; // Stop checking
+                }
+                
+                // If charging still active, check again if we haven't exceeded max checks
+                if (checkCount < maxChecks && !checkCompleted) {
+                    setTimeout(checkChargingStatus, checkInterval);
+                } else if (checkCount >= maxChecks && !successShown) {
+                    // Charging still active after 30 seconds - will wait for API response
+                    checkCompleted = true;
+                    console.log(`⏳ [IMMEDIATE CHECK] Charging still active after ${maxChecks} checks, waiting for API response...`);
+                }
+            };
+            
+            // Start checking after 1 second (give charger time to process RemoteStopTransaction)
+            setTimeout(checkChargingStatus, 1000);
+        };
+        
+        // Start checking immediately (in parallel with API call)
+        startChecking();
+        
+        // Make API call (but don't block on it - check is already running)
         const response = await fetch(`${API_BASE}/remote-stop`, {
             method: 'POST',
             headers: {
@@ -812,79 +924,108 @@ async function stopCharging(deviceId, transactionId, button) {
         try {
             data = await response.json();
         } catch (parseError) {
+            // If check already found charging stopped, don't show error
+            if (successShown) {
+                return; // Exit early, success already shown
+            }
             throw new Error(`Server response error (${response.status}): ${response.statusText}`);
         }
         
+        // If check already found charging stopped, don't process API response
+        if (successShown) {
+            return; // Exit early, success already shown
+        }
+        
         if (data.success) {
-            showAlert('Charging stopped successfully', 'success');
-            // Reload chargers to update UI (this will reset button state)
-            await loadChargers();
-            // Clear global lock
-            chargingLocks.delete(stopLockKey);
-            console.log(`🔓 [LOCK CLEARED] Stop charging lock cleared for ${deviceId}`);
-            // Reset processing flag after reload
-            if (button && button.parentNode) {
-                button.dataset.processing = 'false';
+            // API response came back first - show success
+            if (!successShown) {
+                successShown = true;
+                checkCompleted = true;
+                showAlert('Charging stopped successfully', 'success');
+                // Wait more for database to sync before reloading UI (real chargers need more time)
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                // Reload chargers to update UI (this will reset button state)
+                await loadChargers();
+                // Clear global lock
+                chargingLocks.delete(stopLockKey);
+                console.log(`🔓 [LOCK CLEARED] Stop charging lock cleared for ${deviceId}`);
+                // Reset processing flag after reload
+                if (button && button.parentNode) {
+                    button.dataset.processing = 'false';
+                }
             }
         } else if (response.status === 408) {
-            // Timeout error - FIRST check immediately if charging already stopped (before showing warning)
-            console.log(`⚠️ [TIMEOUT] Received 408 timeout for stop ${deviceId} - checking immediately...`);
-            
-            // IMMEDIATE check - no delay, check right away
-            const immediateCheck = await getActiveTransaction(deviceId);
-            if (!immediateCheck) {
-                // Charging already stopped! Show success immediately - no delay
-                showAlert('Charging stopped successfully', 'success');
-                chargingLocks.delete(stopLockKey);
-                console.log(`✅ [TIMEOUT] Charging already stopped for ${deviceId}`);
-                await loadChargers();
-                return; // Exit early - no delay
+            // Timeout error - but we already started checking, so just wait for check to complete
+            // If check already found charging stopped, success already shown
+            if (successShown) {
+                return; // Exit early, success already shown
             }
             
-            // Charging still active - show warning and check again
-            const warningAlertId = showAlert('Server timeout - checking if charging stopped...', 'warning', true);
-            
-            // Check more frequently
-            setTimeout(async () => {
-                const quickCheck = await getActiveTransaction(deviceId);
-                if (!quickCheck) {
-                    // Charging stopped - dismiss warning and show success
-                    if (warningAlertId) {
-                        dismissAlert(warningAlertId);
+            // If check is still running, do one final immediate check
+            if (!checkCompleted) {
+                console.log(`⚠️ [TIMEOUT] Received 408 timeout for stop ${deviceId}, doing final check...`);
+                // Do one final immediate check
+                const finalCheck = await getActiveTransaction(deviceId);
+                if (!finalCheck) {
+                    // Charging stopped! Show success immediately
+                    if (!successShown) {
+                        successShown = true;
+                        checkCompleted = true;
+                        showAlert('Charging stopped successfully', 'success');
+                        chargingLocks.delete(stopLockKey);
+                        console.log(`✅ [TIMEOUT] Charging stopped for ${deviceId}`);
+                        await new Promise(resolve => setTimeout(resolve, 500));
+                        await loadChargers();
+                        if (button && button.parentNode) {
+                            button.dataset.processing = 'false';
+                        }
                     }
-                    showAlert('Charging stopped successfully', 'success');
-                    chargingLocks.delete(stopLockKey);
-                    await loadChargers();
-                } else {
-                    // Charging didn't stop - show error
-                    if (warningAlertId) {
-                        dismissAlert(warningAlertId);
-                    }
-                    showAlert('Charging did not stop. The charger may be busy or offline. Please try again.', 'danger');
-                    button.innerHTML = originalText;
-                    button.disabled = false;
-                    button.dataset.processing = 'false';
-                    chargingLocks.delete(stopLockKey);
+                    return; // Exit early, success shown
                 }
-            }, 2000); // Wait 2 seconds before final check
-            return; // Exit early, don't process further
+                // Charging still active - show error
+                checkCompleted = true;
+                console.log(`⚠️ [TIMEOUT] Charging still active after timeout for ${deviceId}`);
+                showAlert('Charging did not stop. The charger may be busy or offline. Please try again.', 'danger');
+                button.innerHTML = originalText;
+                button.disabled = false;
+                button.dataset.processing = 'false';
+                chargingLocks.delete(stopLockKey);
+                console.log(`❌ [TIMEOUT] Charging confirmed NOT stopped for ${deviceId}`);
+                return; // Exit early
+            }
+            
+            // Check completed but charging still active - show error
+            if (!successShown) {
+                console.log(`⚠️ [TIMEOUT] Received 408 timeout and check completed but charging still active for ${deviceId}`);
+                showAlert('Charging did not stop. The charger may be busy or offline. Please try again.', 'danger');
+                button.innerHTML = originalText;
+                button.disabled = false;
+                button.dataset.processing = 'false';
+                chargingLocks.delete(stopLockKey);
+                console.log(`❌ [TIMEOUT] Charging confirmed NOT stopped for ${deviceId}`);
+            }
+            return; // Exit early
         } else {
             // Show specific error message from API
-            showAlert(data.error || 'Failed to stop charging', 'danger');
-            button.innerHTML = originalText;
-            button.disabled = false;
-            button.dataset.processing = 'false';
-            // Clear global lock
-            chargingLocks.delete(stopLockKey);
-            console.log(`🔓 [LOCK CLEARED] Stop charging lock cleared for ${deviceId}`);
+            if (!successShown) {
+                showAlert(data.error || 'Failed to stop charging', 'danger');
+                button.innerHTML = originalText;
+                button.disabled = false;
+                button.dataset.processing = 'false';
+                // Clear global lock
+                chargingLocks.delete(stopLockKey);
+                console.log(`🔓 [LOCK CLEARED] Stop charging lock cleared for ${deviceId}`);
+            }
         }
     } catch (error) {
         console.error('❌ Error stopping charging:', error);
-        // Show better error message
-        showAlert('Failed to stop charging: ' + (error.message || 'Unknown error'), 'danger');
-        button.innerHTML = originalText;
-        button.disabled = false;
-        button.dataset.processing = 'false';
+        // Show better error message (only if success not already shown)
+        if (!successShown) {
+            showAlert('Failed to stop charging: ' + (error.message || 'Unknown error'), 'danger');
+            button.innerHTML = originalText;
+            button.disabled = false;
+            button.dataset.processing = 'false';
+        }
         // Clear global lock on error
         chargingLocks.delete(stopLockKey);
     }
@@ -912,7 +1053,13 @@ function showAlert(message, type, returnId = false) {
         </div>
     `;
     
-    container.innerHTML = alertHtml; // Replace existing alert
+    // For warnings with returnId, append (don't replace) to allow multiple alerts
+    // For others, replace existing alert
+    if (type === 'warning' && returnId) {
+        container.innerHTML += alertHtml; // Append warning alerts
+    } else {
+        container.innerHTML = alertHtml; // Replace existing alert
+    }
     
     // Auto-dismiss after 5 seconds (except for warnings that might be dismissed manually)
     if (type !== 'warning' || !returnId) {

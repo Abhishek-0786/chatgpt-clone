@@ -618,17 +618,97 @@ router.post('/remote-start', async (req, res) => {
     // CRITICAL: Check if a RemoteStartTransaction was already sent for this device recently
     // This prevents duplicate API calls from creating multiple RemoteStartTransaction commands
     // BUT only if charging is NOT already active (checked above)
+    // ALSO: If charging has stopped (no active transaction), clear the rate limit to allow new requests
     const lastRequestTime = recentRemoteStartRequests.get(deviceId);
     if (lastRequestTime) {
       const timeSinceLastRequest = Date.now() - lastRequestTime;
       // Increased to 2 minutes to prevent periodic requests during charging
       if (timeSinceLastRequest < 120000) { // 2 minutes (was 5 seconds)
-        const minutesLeft = Math.ceil((120000 - timeSinceLastRequest) / 60000);
-        console.warn(`⚠️ [DUPLICATE PREVENTED] RemoteStartTransaction request for ${deviceId} rejected - duplicate request within 2 minutes (${minutesLeft} minute(s) ago)`);
-        return res.status(429).json({
-          success: false,
-          error: `A RemoteStartTransaction request was already sent for ${deviceId} recently. Please wait ${minutesLeft} minute(s) before trying again.`
-        });
+        // IMPORTANT: Double-check if charging has actually stopped (StopTransaction exists)
+        // If charging has stopped, clear rate limit and allow the request
+        try {
+          const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+          const recentData = await ChargerData.findAll({
+            where: { 
+              deviceId: deviceId,
+              createdAt: {
+                [Op.gte]: tenMinutesAgo
+              }
+            },
+            order: [['id', 'DESC']],
+            limit: 200
+          });
+          
+          const startTransactions = recentData.filter(log => 
+            log.message === 'StartTransaction' && log.direction === 'Incoming'
+          );
+          
+          let hasActiveTransaction = false;
+          if (startTransactions.length > 0) {
+            const latestStart = startTransactions.reduce((latest, current) => {
+              const latestTime = new Date(latest.timestamp || latest.createdAt).getTime();
+              const currentTime = new Date(current.timestamp || current.createdAt).getTime();
+              if (currentTime > latestTime) return current;
+              if (currentTime < latestTime) return latest;
+              return (current.id || 0) > (latest.id || 0) ? current : latest;
+            });
+            
+            const startResponse = recentData.find(log => 
+              log.message === 'Response' && 
+              log.messageId === latestStart.messageId &&
+              log.direction === 'Outgoing'
+            );
+            
+            let transactionId = null;
+            if (startResponse) {
+              if (startResponse.messageData && startResponse.messageData.transactionId) {
+                transactionId = startResponse.messageData.transactionId;
+              } else if (startResponse.raw && Array.isArray(startResponse.raw) && startResponse.raw[2] && startResponse.raw[2].transactionId) {
+                transactionId = startResponse.raw[2].transactionId;
+              }
+            }
+            
+            if (transactionId) {
+              const stopTransaction = recentData.find(log => 
+                log.message === 'StopTransaction' && 
+                log.direction === 'Incoming' &&
+                (
+                  (log.messageData && log.messageData.transactionId === transactionId) || 
+                  (log.raw && Array.isArray(log.raw) && log.raw[2] && log.raw[2].transactionId === transactionId)
+                )
+              );
+              
+              // If no StopTransaction found, charging is still active
+              if (!stopTransaction) {
+                hasActiveTransaction = true;
+              }
+            }
+          }
+          
+          // If charging has stopped (no active transaction), clear rate limit and allow request
+          if (!hasActiveTransaction) {
+            console.log(`✅ [RATE LIMIT] Charging stopped for ${deviceId}, clearing rate limit to allow new request`);
+            recentRemoteStartRequests.delete(deviceId);
+            // Continue to allow the request - don't block it
+          } else {
+            // Charging still active - block the request
+            const minutesLeft = Math.ceil((120000 - timeSinceLastRequest) / 60000);
+            console.warn(`⚠️ [DUPLICATE PREVENTED] RemoteStartTransaction request for ${deviceId} rejected - duplicate request within 2 minutes (${minutesLeft} minute(s) ago) while charging is active`);
+            return res.status(429).json({
+              success: false,
+              error: `A RemoteStartTransaction request was already sent for ${deviceId} recently. Please wait ${minutesLeft} minute(s) before trying again.`
+            });
+          }
+        } catch (rateLimitCheckError) {
+          // If check fails, apply rate limit (safer to block than allow)
+          console.warn(`⚠️ Error checking active transaction for rate limit: ${rateLimitCheckError.message}`);
+          const minutesLeft = Math.ceil((120000 - timeSinceLastRequest) / 60000);
+          console.warn(`⚠️ [DUPLICATE PREVENTED] RemoteStartTransaction request for ${deviceId} rejected - duplicate request within 2 minutes (${minutesLeft} minute(s) ago)`);
+          return res.status(429).json({
+            success: false,
+            error: `A RemoteStartTransaction request was already sent for ${deviceId} recently. Please wait ${minutesLeft} minute(s) before trying again.`
+          });
+        }
       }
     }
     
@@ -750,6 +830,13 @@ router.post('/remote-stop', async (req, res) => {
       const response = await sendOcppCall(deviceId, 'RemoteStopTransaction', payload, 60000);
       
       if (response.status === 'Accepted') {
+        // CRITICAL: Clear rate limit when charging stops successfully
+        // This allows user to start charging again immediately after stopping
+        if (recentRemoteStartRequests.has(deviceId)) {
+          console.log(`✅ [RATE LIMIT] Charging stopped for ${deviceId}, clearing rate limit to allow new request`);
+          recentRemoteStartRequests.delete(deviceId);
+        }
+        
         res.json({
           success: true,
           message: 'Remote stop transaction sent successfully'

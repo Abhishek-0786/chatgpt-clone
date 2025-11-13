@@ -5,8 +5,10 @@ require('dotenv').config();
 
 const { syncDatabase } = require('./models');
 const authRoutes = require('./routes/auth');
+const customerRoutes = require('./routes/customer');
 const chatRoutes = require('./routes/chat');
 const chargerRoutes = require('./routes/charger');
+const cmsRoutes = require('./routes/cms');
 const { createWebSocketServer } = require('./websocket-server');
 
 const app = express();
@@ -20,8 +22,10 @@ app.use(express.urlencoded({ extended: true }));
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api/user', customerRoutes);
 app.use('/api/chat', chatRoutes);
 app.use('/api/charger', chargerRoutes);
+app.use('/api/cms', cmsRoutes);
 
 // Serve the home page first (before static middleware)
 app.get('/', (req, res) => {
@@ -31,6 +35,21 @@ app.get('/', (req, res) => {
 // Serve the chat page
 app.get('/chat.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'chat.html'));
+});
+
+// Serve the CMS page
+app.get('/cms.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'cms.html'));
+});
+
+// Serve the User Panel page
+app.get('/user-panel.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'user-panel.html'));
+});
+
+// Serve the Customer Reset Password page (Web App - separate from CMS)
+app.get('/user-panel/reset-password.html', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'user-panel', 'reset-password.html'));
 });
 
 // Serve static files (after routes to avoid index.html interference)
@@ -60,7 +79,7 @@ const startServer = async () => {
     await syncDatabase();
     
     // Start Express server
-    app.listen(PORT, () => {
+    app.listen(PORT, '0.0.0.0' , () => {
       console.log(`✅ Express server running on http://localhost:${PORT}`);
       console.log('Make sure to set up your .env file with database credentials and OpenAI API key');
     });

@@ -1,9 +1,17 @@
 const sequelize = require('../config/database');
 const User = require('./User');
+const Customer = require('./Customer');
 const Chat = require('./Chat');
 const Message = require('./Message');
 const Charger = require('./Charger');
 const ChargerData = require('./ChargerData');
+const Tariff = require('./Tariff');
+const Station = require('./Station');
+const ChargingPoint = require('./ChargingPoint');
+const Connector = require('./Connector');
+const Vehicle = require('./Vehicle');
+const Wallet = require('./Wallet');
+const WalletTransaction = require('./WalletTransaction');
 
 // Define associations
 User.hasMany(Chat, { foreignKey: 'userId', as: 'chats' });
@@ -15,6 +23,31 @@ Message.belongsTo(Chat, { foreignKey: 'chatId', as: 'chat' });
 // Charger associations
 Charger.hasMany(ChargerData, { foreignKey: 'chargerId', as: 'data' });
 ChargerData.belongsTo(Charger, { foreignKey: 'chargerId', as: 'charger' });
+
+// Station associations
+Station.hasMany(ChargingPoint, { foreignKey: 'stationId', as: 'chargingPoints' });
+ChargingPoint.belongsTo(Station, { foreignKey: 'stationId', as: 'station' });
+
+// Tariff associations
+Tariff.hasMany(ChargingPoint, { foreignKey: 'tariffId', as: 'chargingPoints' });
+ChargingPoint.belongsTo(Tariff, { foreignKey: 'tariffId', as: 'tariff' });
+
+// ChargingPoint associations
+ChargingPoint.hasMany(Connector, { foreignKey: 'chargingPointId', as: 'connectors' });
+Connector.belongsTo(ChargingPoint, { foreignKey: 'chargingPointId', as: 'chargingPoint' });
+
+// Customer associations
+Customer.hasMany(Vehicle, { foreignKey: 'customerId', as: 'vehicles' });
+Vehicle.belongsTo(Customer, { foreignKey: 'customerId', as: 'customer' });
+
+Customer.hasOne(Wallet, { foreignKey: 'customerId', as: 'wallet' });
+Wallet.belongsTo(Customer, { foreignKey: 'customerId', as: 'customer' });
+
+Wallet.hasMany(WalletTransaction, { foreignKey: 'walletId', as: 'transactions' });
+WalletTransaction.belongsTo(Wallet, { foreignKey: 'walletId', as: 'wallet' });
+
+Customer.hasMany(WalletTransaction, { foreignKey: 'customerId', as: 'walletTransactions' });
+WalletTransaction.belongsTo(Customer, { foreignKey: 'customerId', as: 'customer' });
 
 // Sync database
 const syncDatabase = async () => {
@@ -32,9 +65,17 @@ const syncDatabase = async () => {
 module.exports = {
   sequelize,
   User,
+  Customer,
   Chat,
   Message,
   Charger,
   ChargerData,
+  Tariff,
+  Station,
+  ChargingPoint,
+  Connector,
+  Vehicle,
+  Wallet,
+  WalletTransaction,
   syncDatabase
 };

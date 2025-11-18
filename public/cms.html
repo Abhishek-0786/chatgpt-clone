@@ -256,7 +256,11 @@
             <div class="logo-text">GenX</div>
         </div>
         <div class="sidebar-menu">
-            <a href="#" class="menu-item active" data-module="charging-stations">
+            <a href="#" class="menu-item" data-module="dashboard">
+                <i class="fas fa-home"></i>
+                <span class="menu-item-text">Dashboard</span>
+            </a>
+            <a href="#" class="menu-item" data-module="charging-stations">
                 <i class="fas fa-charging-station"></i>
                 <span class="menu-item-text">Charging Stations</span>
             </a>
@@ -291,15 +295,13 @@
                 <i class="fas fa-chevron-down" style="font-size: 12px; color: #666;"></i>
             </div>
         </div>
-        <div class="module-content" id="moduleContent">
+        <div class="module-content" id="moduleContent" style="display: none;">
             <!-- Module content will be loaded here -->
-            <div id="charging-stations-module">
-                <!-- Charging Stations module will be loaded here -->
-            </div>
         </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script type="module" src="/utils/notifications.js"></script>
     <script type="module" src="/cms.js"></script>
 </body>

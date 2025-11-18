@@ -13,7 +13,7 @@ let currentLogsDeviceId = null;
 let lastLogTimestamp = null; // Track last log timestamp for incremental updates
 
 // Export function to load charging point detail view
-export async function loadChargingPointDetailView(chargingPointId) {
+export async function loadChargingPointDetailView(chargingPointId, activeTab = 'details') {
     try {
         // Fetch charging point details
         const pointResponse = await getChargingPoint(chargingPointId);
@@ -626,21 +626,21 @@ export async function loadChargingPointDetailView(chargingPointId) {
             <!-- Tabs -->
             <div class="tabs-container">
                 <ul class="tabs-list">
-                    <li class="tab-item active" data-tab="details" onclick="window.switchPointTab('details', '${chargingPointId}')">DETAILS</li>
-                    <li class="tab-item" data-tab="connectors" onclick="window.switchPointTab('connectors', '${chargingPointId}')">CONNECTORS</li>
-                    <li class="tab-item" data-tab="logs" onclick="window.switchPointTab('logs', '${chargingPointId}')">LOGS</li>
+                    <li class="tab-item ${activeTab === 'details' ? 'active' : ''}" data-tab="details" onclick="window.switchPointTab('details', '${chargingPointId}')">DETAILS</li>
+                    <li class="tab-item ${activeTab === 'connectors' ? 'active' : ''}" data-tab="connectors" onclick="window.switchPointTab('connectors', '${chargingPointId}')">CONNECTORS</li>
+                    <li class="tab-item ${activeTab === 'logs' ? 'active' : ''}" data-tab="logs" onclick="window.switchPointTab('logs', '${chargingPointId}')">LOGS</li>
                 </ul>
             </div>
             
             <!-- Tab Contents -->
             <div id="pointTabContents">
                 <!-- Details Tab -->
-                <div id="detailsTab" class="tab-content active">
+                <div id="detailsTab" class="tab-content ${activeTab === 'details' ? 'active' : ''}">
                     ${generateDetailsTab(point)}
                 </div>
                 
                 <!-- Connectors Tab -->
-                <div id="connectorsTab" class="tab-content">
+                <div id="connectorsTab" class="tab-content ${activeTab === 'connectors' ? 'active' : ''}">
                     <div class="loading-spinner">
                         <div class="spinner-border text-primary" role="status">
                             <span class="visually-hidden">Loading...</span>
@@ -649,7 +649,7 @@ export async function loadChargingPointDetailView(chargingPointId) {
                 </div>
                 
                 <!-- Logs Tab -->
-                <div id="logsTab" class="tab-content">
+                <div id="logsTab" class="tab-content ${activeTab === 'logs' ? 'active' : ''}">
                     <div class="loading-spinner">
                         <div class="spinner-border text-primary" role="status">
                             <span class="visually-hidden">Loading...</span>
@@ -663,9 +663,16 @@ export async function loadChargingPointDetailView(chargingPointId) {
         // Store chargingPointId for refresh
         window.currentChargingPointId = chargingPointId;
         
-        // Load initial tab data
-        loadConnectorsTab(chargingPointId, point);
-        loadLogsTab(chargingPointId, point.deviceId);
+        // Load initial tab data based on active tab
+        if (activeTab === 'connectors') {
+            loadConnectorsTab(chargingPointId, point);
+        } else if (activeTab === 'logs') {
+            loadLogsTab(chargingPointId, point.deviceId);
+        } else {
+            // Load connectors and logs in background for details tab
+            loadConnectorsTab(chargingPointId, point);
+            loadLogsTab(chargingPointId, point.deviceId);
+        }
         
     } catch (error) {
         console.error('Error loading charging point detail view:', error);
@@ -1373,6 +1380,10 @@ async function stopChargingFromDetail(deviceId, transactionId, connectorId, butt
 
 // Switch tab
 export function switchPointTab(tabName, chargingPointId) {
+    // Update URL with tab parameter
+    const url = `/cms.html?module=charging-points&point=${chargingPointId}&tab=${tabName}`;
+    window.history.pushState({ module: 'charging-points', chargingPointId: chargingPointId, tab: tabName }, '', url);
+    
     // Clear logs refresh interval if switching away from logs tab
     if (tabName !== 'logs' && logsRefreshInterval) {
         clearInterval(logsRefreshInterval);
@@ -1408,6 +1419,20 @@ export function switchPointTab(tabName, chargingPointId) {
             }
         }).catch(error => {
             console.error('Error loading logs on tab switch:', error);
+        });
+    }
+    
+    // If switching to connectors tab, load it if not already loaded
+    if (tabName === 'connectors' && window.currentChargingPointId) {
+        getChargingPoint(window.currentChargingPointId).then(response => {
+            if (response.success && response.point) {
+                const connectorsTab = document.getElementById('connectorsTab');
+                if (connectorsTab && connectorsTab.querySelector('.loading-spinner')) {
+                    loadConnectorsTab(window.currentChargingPointId, response.point);
+                }
+            }
+        }).catch(error => {
+            console.error('Error loading connectors on tab switch:', error);
         });
     }
 }

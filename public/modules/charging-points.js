@@ -3,8 +3,24 @@ import { getChargingPoints, deleteChargingPoint } from '../services/api.js';
 import { formatDate } from '../utils/helpers.js';
 import { showSuccess, showError, showConfirm } from '../utils/notifications.js';
 
+// Global variables for auto-refresh
+let pointsRefreshInterval = null;
+let currentPointsPage = 1;
+let currentPointsLimit = 10;
+
+// Export function to clear refresh interval (called when navigating away)
+export function clearPointsRefreshInterval() {
+    if (pointsRefreshInterval) {
+        clearInterval(pointsRefreshInterval);
+        pointsRefreshInterval = null;
+    }
+}
+
 // Function to view station from charging points module
 async function viewStationFromPoints(stationId) {
+    // Clear refresh interval when navigating away
+    clearPointsRefreshInterval();
+    
     // Update sidebar to show Charging Stations as active
     const menuItems = document.querySelectorAll('.menu-item');
     menuItems.forEach(item => {
@@ -333,11 +349,30 @@ export function loadChargingPointsModule() {
         </div>
     `;
     
+    // Clear any existing refresh interval
+    if (pointsRefreshInterval) {
+        clearInterval(pointsRefreshInterval);
+        pointsRefreshInterval = null;
+    }
+    
     // Setup add form button after HTML is rendered
     setupAddFormButton();
     
     // Load points data
     loadPointsData();
+    
+    // Set up auto-refresh every 10 seconds
+    pointsRefreshInterval = setInterval(() => {
+        // Only refresh if we're still on the points list (not on detail view)
+        const urlParams = new URLSearchParams(window.location.search);
+        const module = urlParams.get('module');
+        const pointId = urlParams.get('point');
+        
+        if (module === 'charging-points' && !pointId) {
+            // We're on the points list, refresh with current page
+            loadPointsData(currentPointsPage, currentPointsLimit);
+        }
+    }, 10000);
 }
 
 // Setup add form button - called after module HTML is loaded
@@ -368,6 +403,10 @@ function setupAddFormButton() {
 // Export data loading function
 export async function loadPointsData(page = 1, limit = 10) {
     try {
+        // Update current page and limit for auto-refresh
+        currentPointsPage = page;
+        currentPointsLimit = limit;
+        
         // Use API service to get charging points from backend
         const data = await getChargingPoints({ page, limit });
         
@@ -583,15 +622,18 @@ export async function editPoint(chargingPointId) {
 }
 
 export async function viewPoint(chargingPointId) {
-    // Push state to browser history for point detail view
-    const url = `/cms.html?module=charging-points&point=${chargingPointId}`;
-    window.history.pushState({ module: 'charging-points', chargingPointId: chargingPointId, view: 'detail' }, '', url);
+    // Clear refresh interval when navigating to detail view
+    clearPointsRefreshInterval();
     
-    // Dynamically import and load charging point detail view
+    // Push state to browser history for point detail view (default to details tab)
+    const url = `/cms.html?module=charging-points&point=${chargingPointId}&tab=details`;
+    window.history.pushState({ module: 'charging-points', chargingPointId: chargingPointId, view: 'detail', tab: 'details' }, '', url);
+    
+    // Dynamically import and load charging point detail view (default to details tab)
     try {
         const detailModule = await import('./charging-point-detail-view.js');
         window.currentChargingPointId = chargingPointId; // Store for reloading
-        detailModule.loadChargingPointDetailView(chargingPointId);
+        detailModule.loadChargingPointDetailView(chargingPointId, 'details');
     } catch (error) {
         console.error('Error loading charging point detail view:', error);
         showError(error.message || 'Failed to load charging point details');

@@ -1,12 +1,14 @@
 const express = require('express');
 const { body, validationResult, query } = require('express-validator');
 const jwt = require('jsonwebtoken');
-const { Customer, Station, ChargingPoint, Connector, Tariff, Vehicle, Wallet, WalletTransaction } = require('../models');
+const { Customer, Station, ChargingPoint, Connector, Tariff, Vehicle, Wallet, WalletTransaction, ChargingSession } = require('../models');
 const { authenticateCustomerToken } = require('../middleware/customerAuth');
 const { Op } = require('sequelize');
 const Charger = require('../models/Charger');
 const ChargerData = require('../models/ChargerData');
 const { createOrder, verifyPayment, getPaymentDetails } = require('../utils/razorpay');
+const crypto = require('crypto');
+const axios = require('axios');
 
 const router = express.Router();
 
@@ -796,14 +798,30 @@ async function calculateSessionStats(deviceId, chargingPoint) {
 /**
  * GET /api/user/stations
  * Get all stations with real-time status and statistics
+ * Query params: location (city/state search), sortBy (lastActive, createdAt)
  */
 router.get('/stations', async (req, res) => {
   try {
+    const { location, sortBy } = req.query;
+    
+    // Build where clause
+    const where = {
+      deleted: false
+    };
+    
+    // Add location filter if provided
+    if (location && location.trim()) {
+      const locationSearch = location.trim();
+      where[Op.or] = [
+        { city: { [Op.iLike]: `%${locationSearch}%` } },
+        { state: { [Op.iLike]: `%${locationSearch}%` } },
+        { fullAddress: { [Op.iLike]: `%${locationSearch}%` } }
+      ];
+    }
+    
     // Get all non-deleted stations
     const stations = await Station.findAll({
-      where: {
-        deleted: false
-      },
+      where,
       order: [['createdAt', 'DESC']]
     });
 
@@ -836,6 +854,7 @@ router.get('/stations', async (req, res) => {
       let totalEnergy = 0;
       let totalBilledAmount = 0;
       let minPricePerKwh = null;
+      let lastActive = null; // Track the most recent lastSeen from all charging points
 
       if (totalCPs > 0) {
         // Check each charging point's online status and calculate session stats
@@ -852,6 +871,11 @@ router.get('/stations', async (req, res) => {
               const now = new Date();
               const timeDiff = now - lastActiveTime;
               const isOnline = timeDiff <= OFFLINE_THRESHOLD;
+              
+              // Track the most recent lastSeen
+              if (!lastActive || lastActiveTime > lastActive) {
+                lastActive = lastActiveTime;
+              }
               
               if (isOnline) {
                 onlineCPs++;
@@ -926,9 +950,24 @@ router.get('/stations', async (req, res) => {
         energy: parseFloat(totalEnergy.toFixed(2)),
         billedAmount: parseFloat(totalBilledAmount.toFixed(2)),
         pricePerKwh: minPricePerKwh ? parseFloat(minPricePerKwh.toFixed(2)) : null,
+        lastActive: lastActive ? lastActive.toISOString() : null,
         createdAt: station.createdAt
       };
     }));
+
+    // Sort by lastActive if sortBy is 'lastActive', otherwise keep original order
+    if (sortBy === 'lastActive') {
+      stationsWithStats.sort((a, b) => {
+        // Stations with lastActive come first, sorted by most recent
+        if (a.lastActive && b.lastActive) {
+          return new Date(b.lastActive) - new Date(a.lastActive);
+        }
+        if (a.lastActive && !b.lastActive) return -1;
+        if (!a.lastActive && b.lastActive) return 1;
+        // If neither has lastActive, keep original order
+        return 0;
+      });
+    }
 
     res.json({
       success: true,
@@ -1868,7 +1907,43 @@ router.post('/wallet/topup', authenticateCustomerToken, [
       });
     }
 
-    // Create pending transaction
+    // Check for existing pending transactions for this order amount
+    // Mark previous pending transactions as failed ONLY if they're OLD (more than 1 minute)
+    // This prevents marking a transaction as failed while it's still being verified
+    const oneMinuteAgo = new Date(Date.now() - 1 * 60 * 1000);
+    const twoMinutesAgo = new Date(Date.now() - 2 * 60 * 1000);
+    
+    // Look for pending transactions older than 1 minute (safe to mark as failed - user likely retried)
+    const oldPendingTransactions = await WalletTransaction.findAll({
+      where: {
+        customerId: customer.id,
+        transactionType: 'credit',
+        status: 'pending',
+        transactionCategory: 'topup',
+        amount: amount,
+        createdAt: {
+          [Op.lt]: oneMinuteAgo, // Only transactions older than 1 minute
+          [Op.gte]: twoMinutesAgo // But not too old (within last 2 minutes)
+        }
+      },
+      order: [['createdAt', 'DESC']]
+    });
+
+    // Mark old pending transactions as failed (user retried after they expired)
+    if (oldPendingTransactions.length > 0) {
+      for (const prevTxn of oldPendingTransactions) {
+        if (prevTxn.status === 'pending') {
+          await prevTxn.update({
+            status: 'failed',
+            description: `${prevTxn.description} - Payment attempt failed (retried)`
+          });
+          console.log(`[Top-up Order] Marked old pending transaction ${prevTxn.id} (order: ${prevTxn.referenceId}) as failed (user retrying with new order: ${orderResult.order.id})`);
+        }
+      }
+    }
+
+    // Create pending transaction with the new order ID
+    // IMPORTANT: Create transaction AFTER marking previous ones as failed to avoid race conditions
     const transaction = await WalletTransaction.create({
       walletId: wallet.id,
       customerId: customer.id,
@@ -1881,6 +1956,16 @@ router.post('/wallet/topup', authenticateCustomerToken, [
       status: 'pending',
       transactionCategory: 'topup'
     });
+
+    console.log(`[Top-up Order] Created new pending transaction ${transaction.id} with order ID ${orderResult.order.id} for amount ₹${amount}`);
+    
+    // Double-check that our new transaction is still pending (shouldn't be marked as failed)
+    await transaction.reload();
+    if (transaction.status !== 'pending') {
+      console.error(`[Top-up Order] ERROR: New transaction ${transaction.id} was marked as ${transaction.status} immediately after creation!`);
+      // Revert to pending if it was incorrectly marked
+      await transaction.update({ status: 'pending' });
+    }
 
     res.json({
       success: true,
@@ -1924,10 +2009,13 @@ router.post('/wallet/topup/verify', authenticateCustomerToken, [
     const customer = req.customer;
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
 
+    console.log(`[Payment Verify] Starting verification for customer ${customer.id}, order: ${razorpay_order_id}, payment: ${razorpay_payment_id}`);
+
     // Verify payment signature
     const isValidSignature = verifyPayment(razorpay_order_id, razorpay_payment_id, razorpay_signature);
 
     if (!isValidSignature) {
+      console.error(`[Payment Verify] Invalid signature for order ${razorpay_order_id}`);
       return res.status(400).json({
         success: false,
         error: 'Invalid payment signature'
@@ -1938,26 +2026,199 @@ router.post('/wallet/topup/verify', authenticateCustomerToken, [
     const paymentResult = await getPaymentDetails(razorpay_payment_id);
 
     if (!paymentResult.success || paymentResult.payment.status !== 'captured') {
+      console.error(`[Payment Verify] Payment not captured for ${razorpay_payment_id}`);
       return res.status(400).json({
         success: false,
         error: 'Payment not successful'
       });
     }
 
-    // Find pending transaction by order ID
-    const transaction = await WalletTransaction.findOne({
+    console.log(`[Payment Verify] Payment verified successfully, looking for transaction with order ID: ${razorpay_order_id}`);
+
+    // STRATEGY: Find the most recent pending transaction, prioritizing exact order ID match
+    // But if not found, use any recent pending transaction (handles retry scenarios)
+    
+    // First, try to find by exact order ID
+    let transaction = await WalletTransaction.findOne({
       where: {
         customerId: customer.id,
         referenceId: razorpay_order_id,
-        status: 'pending'
-      }
+        status: 'pending',
+        transactionCategory: 'topup'
+      },
+      order: [['createdAt', 'DESC']]
     });
 
-    if (!transaction) {
-      return res.status(404).json({
-        success: false,
-        error: 'Transaction not found'
+    if (transaction) {
+      console.log(`[Payment Verify] Found pending transaction ${transaction.id} with exact order ID match: ${razorpay_order_id}`);
+    } else {
+      console.log(`[Payment Verify] No pending transaction found with order ID ${razorpay_order_id}, searching for most recent pending...`);
+      
+      // If not found by order ID, find the MOST RECENT pending transaction (within last 10 minutes)
+      // This handles cases where user retried and order ID might not match exactly
+      const recentPendingTransaction = await WalletTransaction.findOne({
+        where: {
+          customerId: customer.id,
+          status: 'pending',
+          transactionCategory: 'topup',
+          createdAt: {
+            [Op.gte]: new Date(Date.now() - 10 * 60 * 1000) // Last 10 minutes
+          }
+        },
+        order: [['createdAt', 'DESC']]
       });
+
+      if (recentPendingTransaction) {
+        // Found a recent pending transaction - check if it's for the same or different order
+        if (recentPendingTransaction.referenceId === razorpay_order_id) {
+          // Same order - use it
+          console.log(`[Payment Verify] Found matching pending transaction ${recentPendingTransaction.id} for order ${razorpay_order_id}`);
+          transaction = recentPendingTransaction;
+        } else {
+          // Different order - this might be a retry with mismatched order IDs
+          // Only use it if it's VERY recent (within 30 seconds)
+          const transactionAge = Date.now() - new Date(recentPendingTransaction.createdAt).getTime();
+          if (transactionAge < 30000) { // 30 seconds
+            console.log(`[Payment Verify] Using very recent pending transaction ${recentPendingTransaction.id} (referenceId: ${recentPendingTransaction.referenceId}, age: ${transactionAge}ms) for order ${razorpay_order_id}`);
+            console.log(`[Payment Verify] Updating transaction ${recentPendingTransaction.id} referenceId from ${recentPendingTransaction.referenceId} to ${razorpay_order_id}`);
+            // Update the referenceId to match the current order ID for consistency
+            await recentPendingTransaction.update({
+              referenceId: razorpay_order_id
+            });
+            await recentPendingTransaction.reload();
+            transaction = recentPendingTransaction;
+            console.log(`[Payment Verify] Transaction ${transaction.id} will be used for verification`);
+          } else {
+            console.log(`[Payment Verify] Pending transaction ${recentPendingTransaction.id} is too old (${transactionAge}ms) or for different order, not using it`);
+          }
+        }
+      }
+      
+      // If still no transaction found, check by payment ID first (after completion, referenceId is updated to payment ID)
+      if (!transaction) {
+        const completedByPaymentId = await WalletTransaction.findOne({
+          where: {
+            customerId: customer.id,
+            referenceId: razorpay_payment_id,
+            status: 'completed',
+            transactionCategory: 'topup'
+          }
+        });
+
+        if (completedByPaymentId) {
+          // Payment was already processed
+          return res.json({
+            success: true,
+            message: 'Payment already verified',
+            transaction: {
+              id: completedByPaymentId.id,
+              amount: parseFloat(completedByPaymentId.amount),
+              balanceAfter: parseFloat(completedByPaymentId.balanceAfter)
+            }
+          });
+        }
+
+        // Check if there's a completed transaction with this order ID (might have been updated)
+        const completedByOrderId = await WalletTransaction.findOne({
+          where: {
+            customerId: customer.id,
+            referenceId: razorpay_order_id,
+            status: 'completed',
+            transactionCategory: 'topup'
+          },
+          order: [['createdAt', 'DESC']]
+        });
+
+        if (completedByOrderId) {
+          // Payment was already processed
+          return res.json({
+            success: true,
+            message: 'Payment already verified',
+            transaction: {
+              id: completedByOrderId.id,
+              amount: parseFloat(completedByOrderId.amount),
+              balanceAfter: parseFloat(completedByOrderId.balanceAfter)
+            }
+          });
+        }
+
+        // No transaction found at all - log for debugging and try to find ANY recent pending transaction
+        const allRecentTransactions = await WalletTransaction.findAll({
+          where: {
+            customerId: customer.id,
+            transactionCategory: 'topup',
+            createdAt: {
+              [Op.gte]: new Date(Date.now() - 10 * 60 * 1000) // Last 10 minutes
+            }
+          },
+          order: [['createdAt', 'DESC']],
+          limit: 10
+        });
+
+        console.error(`[Payment Verify] Transaction not found for order ${razorpay_order_id}, payment ${razorpay_payment_id}`);
+        console.error(`[Payment Verify] Recent transactions for customer ${customer.id}:`, allRecentTransactions.map(t => ({
+          id: t.id,
+          referenceId: t.referenceId,
+          status: t.status,
+          amount: t.amount,
+          createdAt: t.createdAt
+        })));
+
+        // LAST RESORT: Try to find ANY pending transaction (even if not recent)
+        // This handles edge cases where timing is off
+        const anyPendingTransaction = await WalletTransaction.findOne({
+          where: {
+            customerId: customer.id,
+            status: 'pending',
+            transactionCategory: 'topup',
+            createdAt: {
+              [Op.gte]: new Date(Date.now() - 30 * 60 * 1000) // Last 30 minutes
+            }
+          },
+          order: [['createdAt', 'DESC']]
+        });
+
+        if (anyPendingTransaction) {
+          console.log(`[Payment Verify] FALLBACK: Using any pending transaction ${anyPendingTransaction.id} (referenceId: ${anyPendingTransaction.referenceId}) for order ${razorpay_order_id}`);
+          // Update the referenceId to match
+          await anyPendingTransaction.update({
+            referenceId: razorpay_order_id
+          });
+          await anyPendingTransaction.reload();
+          transaction = anyPendingTransaction;
+        } else {
+          console.error(`[Payment Verify] No pending transactions found at all`);
+          return res.status(404).json({
+            success: false,
+            error: 'Transaction not found. Please contact support with your payment ID.'
+          });
+        }
+      }
+    }
+
+    // Reload transaction to ensure we have latest status
+    await transaction.reload();
+
+    // Double-check transaction is still pending
+    if (transaction.status !== 'pending') {
+      if (transaction.status === 'completed') {
+        // Already completed - return success
+        return res.json({
+          success: true,
+          message: 'Payment already verified',
+          transaction: {
+            id: transaction.id,
+            amount: parseFloat(transaction.amount),
+            balanceAfter: parseFloat(transaction.balanceAfter)
+          }
+        });
+      } else if (transaction.status === 'failed') {
+        // This shouldn't happen if we found it above, but handle it
+        return res.status(400).json({
+          success: false,
+          error: 'This payment attempt was previously marked as failed. Please try a new payment.'
+        });
+      }
     }
 
     // Get wallet
@@ -1988,6 +2249,8 @@ router.post('/wallet/topup/verify', authenticateCustomerToken, [
       description: `Wallet Top-up - ₹${amount} (Payment ID: ${razorpay_payment_id})`
     });
 
+    console.log(`[Payment Verify] Successfully completed transaction ${transaction.id}, updated wallet balance to ₹${newBalance}`);
+
     res.json({
       success: true,
       message: 'Payment verified and wallet updated successfully',
@@ -2002,6 +2265,128 @@ router.post('/wallet/topup/verify', authenticateCustomerToken, [
     res.status(500).json({
       success: false,
       error: 'Failed to verify payment'
+    });
+  }
+});
+
+/**
+ * POST /api/user/wallet/topup/failed
+ * Record a failed payment attempt
+ */
+router.post('/wallet/topup/failed', authenticateCustomerToken, [
+  body('razorpay_order_id')
+    .notEmpty()
+    .withMessage('Razorpay order ID is required'),
+  body('error_reason')
+    .optional()
+    .isString()
+    .withMessage('Error reason must be a string')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        error: errors.array()[0].msg
+      });
+    }
+
+    const customer = req.customer;
+    const { razorpay_order_id, error_reason } = req.body;
+
+    console.log(`[Failed Payment] Attempting to mark order ${razorpay_order_id} as failed, reason: ${error_reason}`);
+
+    // Find transaction by order ID (any status)
+    const transaction = await WalletTransaction.findOne({
+      where: {
+        customerId: customer.id,
+        referenceId: razorpay_order_id,
+        transactionCategory: 'topup'
+      },
+      order: [['createdAt', 'DESC']]
+    });
+
+    if (transaction) {
+      console.log(`[Failed Payment] Found transaction ${transaction.id} with status: ${transaction.status}`);
+      
+      // If already completed, DO NOT mark as failed
+      if (transaction.status === 'completed') {
+        console.log(`[Failed Payment] Transaction ${transaction.id} is completed, not marking as failed`);
+        return res.json({
+          success: false,
+          message: 'Transaction already completed - payment was successful'
+        });
+      }
+      
+      // If already failed, return success (idempotent)
+      if (transaction.status === 'failed') {
+        console.log(`[Failed Payment] Transaction ${transaction.id} already failed`);
+        return res.json({
+          success: true,
+          message: 'Transaction already marked as failed',
+          transaction: {
+            id: transaction.id,
+            amount: parseFloat(transaction.amount),
+            status: 'failed'
+          }
+        });
+      }
+      
+      // If pending, wait to see if verification is in progress
+      if (transaction.status === 'pending') {
+        console.log(`[Failed Payment] Transaction ${transaction.id} is pending, waiting 3s...`);
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        
+        // Reload to get latest status
+        await transaction.reload();
+        console.log(`[Failed Payment] After wait, transaction ${transaction.id} status: ${transaction.status}`);
+        
+        if (transaction.status === 'completed') {
+          console.log(`[Failed Payment] Transaction ${transaction.id} was completed, not marking as failed`);
+          return res.json({
+            success: false,
+            message: 'Transaction was completed - payment was successful'
+          });
+        }
+        
+        if (transaction.status === 'pending') {
+          // Still pending - safe to mark as failed
+          await transaction.update({
+            status: 'failed',
+            description: `${transaction.description} - Payment failed${error_reason ? `: ${error_reason}` : ''}`
+          });
+          
+          console.log(`[Failed Payment] Marked transaction ${transaction.id} as failed`);
+
+          return res.json({
+            success: true,
+            message: 'Failed payment attempt recorded',
+            transaction: {
+              id: transaction.id,
+              amount: parseFloat(transaction.amount),
+              status: 'failed'
+            }
+          });
+        }
+        
+        // Status changed during wait
+        return res.json({
+          success: true,
+          message: `Transaction is now ${transaction.status}, not marking as failed`
+        });
+      }
+    } else {
+      console.log(`[Failed Payment] No transaction found for order ${razorpay_order_id}`);
+      return res.json({
+        success: false,
+        message: 'Transaction not found for this order ID'
+      });
+    }
+  } catch (error) {
+    console.error('Error recording failed payment:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to record failed payment attempt'
     });
   }
 });
@@ -2080,6 +2465,1162 @@ router.post('/wallet/debit', authenticateCustomerToken, [
     res.status(500).json({
       success: false,
       error: 'Failed to debit wallet'
+    });
+  }
+});
+
+// ============================================
+// CHARGING SESSION APIs
+// ============================================
+
+/**
+ * Helper function to generate unique session ID
+ */
+function generateSessionId() {
+  return `SESS_${Date.now()}_${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+}
+
+/**
+ * Helper function to extract meter value from MeterValues log
+ */
+function extractMeterValue(meterValuesLog) {
+  if (!meterValuesLog || !meterValuesLog.messageData) {
+    return null;
+  }
+
+  const meterValue = meterValuesLog.messageData.meterValue;
+  if (!meterValue || !Array.isArray(meterValue) || meterValue.length === 0) {
+    return null;
+  }
+
+  const sampledValues = meterValue[0].sampledValue;
+  if (!sampledValues || !Array.isArray(sampledValues)) {
+    return null;
+  }
+
+  // Find Energy.Active.Import.Register
+  const energySample = sampledValues.find(sample => 
+    sample.measurand === 'Energy.Active.Import.Register' || 
+    sample.measurand === 'energy' ||
+    sample.measurand === 'Energy'
+  );
+
+  if (energySample && energySample.value) {
+    return parseFloat(energySample.value);
+  }
+
+  return null;
+}
+
+/**
+ * POST /api/user/charging/start
+ * Start charging session - Check wallet, deduct amount, start charging
+ */
+router.post('/charging/start', authenticateCustomerToken, [
+  body('deviceId')
+    .notEmpty()
+    .withMessage('Device ID is required'),
+  body('connectorId')
+    .notEmpty()
+    .withMessage('Connector ID is required'),
+  body('amount')
+    .notEmpty()
+    .withMessage('Amount is required')
+    .isFloat({ min: 1 })
+    .withMessage('Amount must be at least ₹1'),
+  body('chargingPointId')
+    .optional()
+    .trim()
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        error: errors.array()[0].msg
+      });
+    }
+
+    const customer = req.customer;
+    const { deviceId, connectorId, amount, chargingPointId } = req.body;
+    const amountValue = parseFloat(amount);
+
+    // Get or create wallet
+    const wallet = await getOrCreateWallet(customer.id);
+    const currentBalance = parseFloat(wallet.balance);
+
+    // Check wallet balance
+    if (currentBalance < amountValue) {
+      return res.status(400).json({
+        success: false,
+        error: 'Insufficient wallet balance. Please top up your wallet first.'
+      });
+    }
+
+    // Check if customer already has an active session
+    const activeSession = await ChargingSession.findOne({
+      where: {
+        customerId: customer.id,
+        status: {
+          [Op.in]: ['pending', 'active']
+        }
+      }
+    });
+
+    if (activeSession) {
+      return res.status(400).json({
+        success: false,
+        error: 'You already have an active charging session. Please stop it before starting a new one.'
+      });
+    }
+
+    // Deduct amount from wallet
+    const newBalance = currentBalance - amountValue;
+    await wallet.update({ balance: newBalance });
+
+    // Create wallet transaction (debit)
+    const walletTransaction = await WalletTransaction.create({
+      walletId: wallet.id,
+      customerId: customer.id,
+      transactionType: 'debit',
+      amount: amountValue,
+      balanceBefore: currentBalance,
+      balanceAfter: newBalance,
+      description: `Charging Session - Device ${deviceId}`,
+      referenceId: null, // Will be updated with transactionId later
+      status: 'completed',
+      transactionCategory: 'charging'
+    });
+
+    // Generate unique session ID
+    const sessionId = generateSessionId();
+
+    // Look up ChargingPoint by chargingPointId string to get the integer id
+    let chargingPointDbId = null;
+    if (chargingPointId) {
+      const chargingPoint = await ChargingPoint.findOne({
+        where: { chargingPointId: chargingPointId },
+        attributes: ['id']
+      });
+      if (chargingPoint) {
+        chargingPointDbId = chargingPoint.id;
+      }
+    }
+
+    // Create charging session record
+    const chargingSession = await ChargingSession.create({
+      customerId: customer.id,
+      chargingPointId: chargingPointDbId, // Use integer id, not string chargingPointId
+      deviceId: deviceId,
+      connectorId: parseInt(connectorId),
+      sessionId: sessionId,
+      transactionId: null, // Will be updated when charger responds
+      status: 'pending',
+      amountRequested: amountValue,
+      amountDeducted: amountValue,
+      energyConsumed: null,
+      finalAmount: null,
+      refundAmount: null,
+      meterStart: null,
+      meterEnd: null,
+      startTime: null,
+      endTime: null,
+      stopReason: null
+    });
+
+    // Call charger remote-start API
+    try {
+      const chargerResponse = await axios.post(
+        `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/charger/remote-start`,
+        {
+          deviceId: deviceId,
+          connectorId: parseInt(connectorId),
+          idTag: `CUSTOMER_${customer.id}` // Use customer ID as idTag
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          timeout: 60000 // 60 seconds timeout
+        }
+      );
+
+      if (chargerResponse.data && chargerResponse.data.success) {
+        // Update session status to active
+        await chargingSession.update({
+          status: 'active',
+          startTime: new Date()
+        });
+
+        res.json({
+          success: true,
+          message: 'Charging started successfully',
+          session: {
+            id: chargingSession.id,
+            sessionId: chargingSession.sessionId,
+            deviceId: chargingSession.deviceId,
+            connectorId: chargingSession.connectorId,
+            amountDeducted: parseFloat(chargingSession.amountDeducted),
+            status: chargingSession.status,
+            startTime: chargingSession.startTime
+          }
+        });
+      } else {
+        // Charger rejected - refund wallet
+        await wallet.update({ balance: currentBalance });
+        await walletTransaction.update({
+          transactionType: 'refund',
+          balanceBefore: newBalance,
+          balanceAfter: currentBalance,
+          description: `Refund - Charging rejected: ${chargerResponse.data.error || 'Unknown error'}`
+        });
+        await chargingSession.update({
+          status: 'failed',
+          refundAmount: amountValue
+        });
+
+        return res.status(400).json({
+          success: false,
+          error: chargerResponse.data.error || 'Charger rejected the charging request'
+        });
+      }
+    } catch (chargerError) {
+      // Charger API error - refund wallet
+      await wallet.update({ balance: currentBalance });
+      await walletTransaction.update({
+        transactionType: 'refund',
+        balanceBefore: newBalance,
+        balanceAfter: currentBalance,
+        description: `Refund - Charging failed: ${chargerError.response?.data?.error || chargerError.message || 'Charger connection error'}`
+      });
+      await chargingSession.update({
+        status: 'failed',
+        refundAmount: amountValue
+      });
+
+      const errorMessage = chargerError.response?.data?.error || chargerError.message || 'Failed to start charging';
+      return res.status(400).json({
+        success: false,
+        error: errorMessage
+      });
+    }
+  } catch (error) {
+    console.error('Error starting charging session:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to start charging session'
+    });
+  }
+});
+
+/**
+ * POST /api/user/charging/stop
+ * Stop charging session - Stop charging, calculate final cost, process refund
+ */
+router.post('/charging/stop', authenticateCustomerToken, [
+  body('deviceId')
+    .notEmpty()
+    .withMessage('Device ID is required'),
+  body('connectorId')
+    .notEmpty()
+    .withMessage('Connector ID is required'),
+  body('transactionId')
+    .optional()
+    .isString()
+    .withMessage('Transaction ID must be a string')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        error: errors.array()[0].msg
+      });
+    }
+
+    const customer = req.customer;
+    const { deviceId, connectorId, transactionId } = req.body;
+
+    // Find active session for this customer
+    const session = await ChargingSession.findOne({
+      where: {
+        customerId: customer.id,
+        deviceId: deviceId,
+        connectorId: parseInt(connectorId),
+        status: {
+          [Op.in]: ['pending', 'active']
+        }
+      },
+      include: [
+        {
+          model: ChargingPoint,
+          as: 'chargingPoint',
+          include: [
+            {
+              model: Tariff,
+              as: 'tariff'
+            }
+          ]
+        }
+      ]
+    });
+
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        error: 'No active charging session found'
+      });
+    }
+
+    // Call charger remote-stop API
+    let stopSuccess = false;
+    let actualTransactionId = transactionId || session.transactionId;
+
+    // If we don't have transactionId yet, try to get it from StartTransaction Response (where transactionId actually comes from)
+    if (!actualTransactionId && session.deviceId && session.startTime) {
+      try {
+        console.log(`[Stop Charging] Looking up transactionId for deviceId: ${session.deviceId}, startTime: ${session.startTime}`);
+        
+        // First, find the StartTransaction log (look within a reasonable time window)
+        const startTimeWindow = new Date(session.startTime);
+        startTimeWindow.setMinutes(startTimeWindow.getMinutes() - 5); // 5 minutes before session start
+        
+        const startTransactionLog = await ChargerData.findOne({
+          where: {
+            deviceId: session.deviceId,
+            message: 'StartTransaction',
+            direction: 'Incoming',
+            createdAt: {
+              [Op.gte]: startTimeWindow,
+              [Op.lte]: new Date(Date.now() + 60000) // Up to 1 minute in future (for clock skew)
+            }
+          },
+          order: [['createdAt', 'DESC']], // Get most recent first
+          limit: 1
+        });
+
+        if (startTransactionLog) {
+          console.log(`[Stop Charging] Found StartTransaction log with messageId: ${startTransactionLog.messageId}`);
+          
+          if (startTransactionLog.messageId) {
+            // The transactionId comes from the Response to StartTransaction, not from StartTransaction itself
+            // Try without deviceId filter first (Response might not have deviceId set)
+            let startResponse = await ChargerData.findOne({
+              where: {
+                message: 'Response',
+                messageId: startTransactionLog.messageId,
+                direction: 'Outgoing',
+                createdAt: {
+                  [Op.gte]: startTimeWindow
+                }
+              },
+              order: [['createdAt', 'ASC']],
+              limit: 1
+            });
+
+            // If not found, try with deviceId
+            if (!startResponse) {
+              startResponse = await ChargerData.findOne({
+                where: {
+                  deviceId: session.deviceId,
+                  message: 'Response',
+                  messageId: startTransactionLog.messageId,
+                  direction: 'Outgoing',
+                  createdAt: {
+                    [Op.gte]: startTimeWindow
+                  }
+                },
+                order: [['createdAt', 'ASC']],
+                limit: 1
+              });
+            }
+
+            if (startResponse) {
+              console.log(`[Stop Charging] Found Response log for messageId: ${startTransactionLog.messageId}`);
+              // Extract transactionId from Response message
+              if (startResponse.messageData && startResponse.messageData.transactionId) {
+                actualTransactionId = startResponse.messageData.transactionId;
+                console.log(`[Stop Charging] ✅ Found transactionId from Response messageData: ${actualTransactionId}`);
+              } else if (startResponse.raw && Array.isArray(startResponse.raw) && startResponse.raw[2]) {
+                if (startResponse.raw[2].transactionId) {
+                  actualTransactionId = startResponse.raw[2].transactionId;
+                  console.log(`[Stop Charging] ✅ Found transactionId from Response raw: ${actualTransactionId}`);
+                } else {
+                  console.log(`[Stop Charging] ⚠️ Response raw[2] exists but no transactionId:`, startResponse.raw[2]);
+                }
+              } else {
+                console.log(`[Stop Charging] ⚠️ Response found but no transactionId in messageData or raw`);
+              }
+            } else {
+              console.log(`[Stop Charging] ⚠️ No Response found for messageId: ${startTransactionLog.messageId}`);
+            }
+
+            // Fallback: try to get from StartTransaction itself (some chargers might include it)
+            if (!actualTransactionId) {
+              if (startTransactionLog.messageData && startTransactionLog.messageData.transactionId) {
+                actualTransactionId = startTransactionLog.messageData.transactionId;
+                console.log(`[Stop Charging] ✅ Found transactionId from StartTransaction messageData: ${actualTransactionId}`);
+              } else if (startTransactionLog.raw && Array.isArray(startTransactionLog.raw) && startTransactionLog.raw[2]) {
+                if (startTransactionLog.raw[2].transactionId) {
+                  actualTransactionId = startTransactionLog.raw[2].transactionId;
+                  console.log(`[Stop Charging] ✅ Found transactionId from StartTransaction raw: ${actualTransactionId}`);
+                } else {
+                  console.log(`[Stop Charging] ⚠️ StartTransaction raw[2] exists but no transactionId:`, startTransactionLog.raw[2]);
+                }
+              } else {
+                console.log(`[Stop Charging] ⚠️ StartTransaction found but no transactionId in messageData or raw`);
+              }
+            }
+          } else {
+            console.log(`[Stop Charging] ⚠️ StartTransaction log found but no messageId`);
+          }
+        } else {
+          console.log(`[Stop Charging] ⚠️ No StartTransaction log found for deviceId: ${session.deviceId} after ${session.startTime}`);
+        }
+      } catch (error) {
+        console.error('[Stop Charging] Error finding transactionId:', error);
+      }
+    }
+
+    if (actualTransactionId) {
+      try {
+        console.log(`[Stop Charging] Calling remote-stop for deviceId: ${deviceId}, transactionId: ${actualTransactionId}`);
+        const chargerResponse = await axios.post(
+          `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/charger/remote-stop`,
+          {
+            deviceId: deviceId,
+            transactionId: actualTransactionId
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            timeout: 60000
+          }
+        );
+
+        stopSuccess = chargerResponse.data && chargerResponse.data.success;
+        console.log(`[Stop Charging] Remote-stop response:`, stopSuccess ? 'Success' : 'Failed', chargerResponse.data);
+        
+        // If remote-stop failed, log it but continue (charger might stop on its own)
+        if (!stopSuccess) {
+          console.warn(`[Stop Charging] Remote-stop API returned success=false. Response:`, chargerResponse.data);
+        }
+      } catch (chargerError) {
+        console.error('[Stop Charging] Error calling remote-stop:', {
+          message: chargerError.message,
+          response: chargerError.response?.data,
+          status: chargerError.response?.status,
+          statusText: chargerError.response?.statusText
+        });
+        
+        // If it's a timeout or connection error, we still want to finalize the session
+        // But log it clearly so we know the charger didn't actually stop
+        if (chargerError.code === 'ECONNREFUSED' || chargerError.code === 'ETIMEDOUT') {
+          console.error(`[Stop Charging] CRITICAL: Cannot reach charger API. Charger may not actually stop!`);
+        }
+        
+        // Continue with session finalization even if remote-stop fails
+        // (charger might have stopped on its own, or we'll handle it separately)
+      }
+    } else {
+      console.warn(`[Stop Charging] ⚠️ No transactionId available for deviceId: ${deviceId}. Cannot call remote-stop.`);
+      console.warn(`[Stop Charging] Session will be finalized, but charger may not actually stop. Please verify charger status manually.`);
+      // Even without transactionId, we should still finalize the session
+      // The charger might have stopped on its own or via another method
+      // Set stopSuccess to false so frontend knows
+      stopSuccess = false;
+    }
+
+    // Get tariff for cost calculation
+    const tariff = session.chargingPoint?.tariff;
+    const baseCharges = tariff ? parseFloat(tariff.baseCharges) : 0;
+    const tax = tariff ? parseFloat(tariff.tax) : 0;
+
+    // Get meter readings from ChargerData
+    let meterStart = session.meterStart;
+    let meterEnd = null;
+    let energyConsumed = 0;
+
+    if (actualTransactionId) {
+      // Get StartTransaction log to find meter_start
+      if (!meterStart && session.startTime) {
+        // Get first MeterValues after session start
+        const firstMeterValues = await ChargerData.findOne({
+          where: {
+            deviceId: deviceId,
+            message: 'MeterValues',
+            direction: 'Incoming',
+            createdAt: {
+              [Op.gte]: session.startTime
+            }
+          },
+          order: [['createdAt', 'ASC']],
+          limit: 1
+        });
+
+        if (firstMeterValues) {
+          meterStart = extractMeterValue(firstMeterValues);
+        }
+      }
+
+      // Wait for StopTransaction to process and final MeterValues to arrive
+      // Try multiple times with increasing delays to get the final meter reading
+      let attempts = 0;
+      const maxAttempts = 5;
+      while (!meterEnd && attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds per attempt
+        
+        const lastMeterValues = await ChargerData.findOne({
+          where: {
+            deviceId: deviceId,
+            message: 'MeterValues',
+            direction: 'Incoming',
+            createdAt: {
+              [Op.gte]: session.startTime || new Date(Date.now() - 24 * 60 * 60 * 1000)
+            }
+          },
+          order: [['createdAt', 'DESC']],
+          limit: 1
+        });
+
+        if (lastMeterValues) {
+          const extractedValue = extractMeterValue(lastMeterValues);
+          if (extractedValue !== null) {
+            meterEnd = extractedValue;
+            console.log(`[Stop Charging] Found meterEnd: ${meterEnd} (attempt ${attempts + 1})`);
+            break;
+          }
+        }
+        attempts++;
+      }
+      
+      if (!meterEnd) {
+        console.warn(`[Stop Charging] Could not find meterEnd after ${maxAttempts} attempts`);
+      }
+    }
+
+    // Calculate energy consumed
+    if (meterStart !== null && meterEnd !== null && meterEnd >= meterStart) {
+      energyConsumed = (meterEnd - meterStart) / 1000; // Convert Wh to kWh
+      if (energyConsumed < 0) energyConsumed = 0;
+    }
+
+    // Calculate final amount based on actual energy consumed
+    let calculatedAmount = 0;
+    if (energyConsumed > 0 && baseCharges > 0) {
+      const baseAmount = energyConsumed * baseCharges;
+      const taxMultiplier = 1 + (tax / 100);
+      calculatedAmount = baseAmount * taxMultiplier;
+    }
+
+    // CRITICAL: Cap finalAmount at amountDeducted - user should NEVER be charged more than prepaid
+    const amountDeducted = parseFloat(session.amountDeducted);
+    let finalAmount = Math.min(calculatedAmount, amountDeducted); // Never exceed prepaid amount
+    
+    console.log(`[Stop Charging] Billing Calculation - Amount Deducted: ₹${amountDeducted}, Energy: ${energyConsumed} kWh, Calculated Amount: ₹${calculatedAmount.toFixed(2)}, Final Amount (Capped): ₹${finalAmount.toFixed(2)}, MeterStart: ${meterStart}, MeterEnd: ${meterEnd}`);
+
+    // Calculate refund (if final amount is less than deducted)
+    let refundAmount = 0;
+    
+    // If we have valid energy consumption data
+    if (energyConsumed > 0 && calculatedAmount > 0) {
+      // Since finalAmount is capped at amountDeducted, refund = amountDeducted - finalAmount
+      if (finalAmount < amountDeducted) {
+        refundAmount = amountDeducted - finalAmount;
+        console.log(`[Stop Charging] Refund: ₹${refundAmount.toFixed(2)} (Used: ₹${finalAmount.toFixed(2)}, Deducted: ₹${amountDeducted.toFixed(2)})`);
+      } else {
+        console.log(`[Stop Charging] No refund (Used all prepaid amount: ₹${finalAmount.toFixed(2)} = ₹${amountDeducted.toFixed(2)})`);
+      }
+      
+      // If calculated amount exceeded prepaid, log a warning
+      if (calculatedAmount > amountDeducted) {
+        console.warn(`[Stop Charging] ⚠️ Calculated amount (₹${calculatedAmount.toFixed(2)}) exceeded prepaid (₹${amountDeducted.toFixed(2)}). Capped at prepaid amount. Auto-stop should have triggered earlier.`);
+      }
+    } 
+    // If energy is 0 but we have meter readings
+    else if (energyConsumed === 0 && meterStart !== null && meterEnd !== null) {
+      // Check if meter readings are the same (no charging happened)
+      const meterDiff = Math.abs(meterEnd - meterStart);
+      if (meterDiff < 1) { // Less than 1 Wh difference (essentially no charging)
+        // No charging happened - refund full amount
+        refundAmount = amountDeducted;
+        console.log(`[Stop Charging] Full refund: ₹${refundAmount} (No charging - meter unchanged)`);
+      } else {
+        // Meter readings changed but energy calculated as 0 (might be rounding or calculation issue)
+        // Recalculate energy with better precision
+        const energyWh = meterEnd - meterStart;
+        if (energyWh > 0) {
+          energyConsumed = energyWh / 1000; // Convert Wh to kWh
+          const baseAmount = energyConsumed * baseCharges;
+          const taxMultiplier = 1 + (tax / 100);
+          const recalculatedAmount = baseAmount * taxMultiplier;
+          // Cap at amountDeducted
+          const recalculatedFinalAmount = Math.min(recalculatedAmount, amountDeducted);
+          
+          if (recalculatedFinalAmount < amountDeducted) {
+            refundAmount = amountDeducted - recalculatedFinalAmount;
+            console.log(`[Stop Charging] Recalculated partial refund: ₹${refundAmount.toFixed(2)} (Energy: ${energyConsumed} kWh, Used: ₹${recalculatedFinalAmount.toFixed(2)}, Capped from ₹${recalculatedAmount.toFixed(2)})`);
+          }
+          
+          // Update finalAmount with recalculated value (capped)
+          finalAmount = recalculatedFinalAmount;
+        } else {
+          // No energy consumed - refund full
+          refundAmount = amountDeducted;
+          console.log(`[Stop Charging] Full refund: ₹${refundAmount} (Meter readings changed but energyWh <= 0)`);
+        }
+      }
+    }
+    // If we don't have meter readings, check session duration
+    else if (energyConsumed === 0 && (meterStart === null || meterEnd === null)) {
+      // If session was very short (less than 30 seconds), likely no charging happened
+      const sessionDuration = session.startTime ? (new Date() - new Date(session.startTime)) / 1000 : 0;
+      if (sessionDuration < 30) {
+        // Very short session, likely no charging - refund full amount
+        refundAmount = amountDeducted;
+        console.log(`[Stop Charging] Full refund: ₹${refundAmount} (Very short session: ${sessionDuration.toFixed(1)}s)`);
+      } else {
+        // Session was longer but no meter readings - wait a bit more and try again
+        console.warn(`[Stop Charging] No meter readings after ${sessionDuration.toFixed(1)}s. Waiting 5 more seconds...`);
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        
+        // Try one more time to get meter readings
+        const retryMeterValues = await ChargerData.findOne({
+          where: {
+            deviceId: deviceId,
+            message: 'MeterValues',
+            direction: 'Incoming',
+            createdAt: {
+              [Op.gte]: session.startTime
+            }
+          },
+          order: [['createdAt', 'DESC']],
+          limit: 1
+        });
+        
+        if (retryMeterValues) {
+          meterEnd = extractMeterValue(retryMeterValues);
+          if (meterEnd !== null && meterStart !== null && meterEnd >= meterStart) {
+            energyConsumed = (meterEnd - meterStart) / 1000;
+            if (energyConsumed > 0 && baseCharges > 0) {
+              const baseAmount = energyConsumed * baseCharges;
+              const taxMultiplier = 1 + (tax / 100);
+              const retryCalculatedAmount = baseAmount * taxMultiplier;
+              // Cap at amountDeducted
+              const retryFinalAmount = Math.min(retryCalculatedAmount, amountDeducted);
+              
+              if (retryFinalAmount < amountDeducted) {
+                refundAmount = amountDeducted - retryFinalAmount;
+                console.log(`[Stop Charging] Retry successful - Partial refund: ₹${refundAmount.toFixed(2)} (Capped from ₹${retryCalculatedAmount.toFixed(2)})`);
+              }
+              
+              // Update finalAmount with retry value (capped)
+              finalAmount = retryFinalAmount;
+            }
+          }
+        }
+        
+        // If still no meter readings, refund full to be safe
+        if (refundAmount === 0 && energyConsumed === 0) {
+          refundAmount = amountDeducted;
+          console.warn(`[Stop Charging] Full refund: ₹${refundAmount} (No meter readings after retry)`);
+        }
+      }
+    }
+
+    // Update session status to 'stopped' IMMEDIATELY to prevent frontend loop
+    // This must happen FIRST so the active session API returns null immediately
+    await session.update({
+      status: 'stopped',
+      transactionId: actualTransactionId,
+      energyConsumed: energyConsumed,
+      finalAmount: finalAmount,
+      refundAmount: refundAmount,
+      meterStart: meterStart,
+      meterEnd: meterEnd,
+      endTime: new Date(),
+      stopReason: 'Remote'
+    });
+    
+    // Reload session to ensure we have the latest data
+    await session.reload();
+    
+    console.log(`[Stop Charging] Session ${session.sessionId} updated to 'stopped' status with endTime: ${session.endTime}`);
+
+    // Update wallet if refund is needed (after session update to prevent race conditions)
+    if (refundAmount > 0) {
+      // Check if refund transaction already exists for this session to prevent duplicates
+      const existingRefund = await WalletTransaction.findOne({
+        where: {
+          customerId: customer.id,
+          referenceId: session.sessionId,
+          transactionType: 'refund',
+          transactionCategory: 'refund'
+        }
+      });
+
+      if (!existingRefund) {
+        const wallet = await getOrCreateWallet(customer.id);
+        const currentBalance = parseFloat(wallet.balance);
+        const newBalance = currentBalance + refundAmount;
+
+        await wallet.update({ balance: newBalance });
+
+        // Create refund transaction
+        await WalletTransaction.create({
+          walletId: wallet.id,
+          customerId: customer.id,
+          transactionType: 'refund',
+          amount: refundAmount,
+          balanceBefore: currentBalance,
+          balanceAfter: newBalance,
+          description: `Refund - Charging Session ${session.sessionId} (Energy: ${energyConsumed.toFixed(2)} kWh, Used: ₹${finalAmount.toFixed(2)}, Refunded: ₹${refundAmount.toFixed(2)})`,
+          referenceId: session.sessionId,
+          status: 'completed',
+          transactionCategory: 'refund'
+        });
+        
+        console.log(`[Stop Charging] Wallet refund processed: ₹${refundAmount} (Balance: ₹${currentBalance} → ₹${newBalance})`);
+      } else {
+        console.log(`[Stop Charging] Refund transaction already exists for session ${session.sessionId}, skipping duplicate`);
+      }
+    }
+
+    // Return response with stopSuccess status
+    res.json({
+      success: true,
+      message: stopSuccess 
+        ? 'Charging stopped successfully' 
+        : 'Session finalized, but charger remote-stop may have failed. Please verify charger status.',
+      stopSuccess: stopSuccess, // Include this so frontend knows if charger actually stopped
+      session: {
+        id: session.id,
+        sessionId: session.sessionId,
+        energyConsumed: parseFloat(energyConsumed.toFixed(3)),
+        finalAmount: parseFloat(finalAmount.toFixed(2)),
+        refundAmount: parseFloat(refundAmount.toFixed(2)),
+        amountDeducted: parseFloat(session.amountDeducted),
+        startTime: session.startTime,
+        endTime: session.endTime
+      }
+    });
+  } catch (error) {
+    console.error('Error stopping charging session:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to stop charging session'
+    });
+  }
+});
+
+/**
+ * GET /api/user/charging/active-session
+ * Get active charging session for the customer
+ */
+router.get('/charging/active-session', authenticateCustomerToken, async (req, res) => {
+  try {
+    const customer = req.customer;
+
+    // Find active session (exclude sessions with endTime set, as they are stopped)
+    const session = await ChargingSession.findOne({
+      where: {
+        customerId: customer.id,
+        status: {
+          [Op.in]: ['pending', 'active']
+        },
+        endTime: null
+      },
+      include: [
+        {
+          model: ChargingPoint,
+          as: 'chargingPoint',
+          include: [
+            {
+              model: Station,
+              as: 'station',
+              attributes: ['id', 'stationId', 'stationName']
+            },
+            {
+              model: Tariff,
+              as: 'tariff'
+            }
+          ]
+        }
+      ],
+      order: [['createdAt', 'DESC']]
+    });
+
+    if (!session) {
+      return res.json({
+        success: true,
+        session: null
+      });
+    }
+
+    // CRITICAL: Double-check by deviceId - if no active sessions exist for this deviceId, charging has stopped
+    // This catches cases where CMS stopped the session but the customer's session query still found it
+    const deviceId = session.deviceId;
+    const activeSessionsForDevice = await ChargingSession.count({
+      where: {
+        deviceId: deviceId,
+        status: {
+          [Op.in]: ['pending', 'active']
+        },
+        endTime: null
+      }
+    });
+
+    // If no active sessions exist for this deviceId, the session was stopped (possibly from CMS)
+    if (activeSessionsForDevice === 0) {
+      console.log(`[Active Session] No active sessions found for deviceId ${deviceId} - session was stopped`);
+      return res.json({
+        success: true,
+        session: null
+      });
+    }
+
+    // Reload session to ensure we have the latest data
+    await session.reload();
+
+    // Double-check session is still active after reload
+    if (session.status && ['stopped', 'completed', 'failed'].includes(session.status)) {
+      console.log(`[Active Session] Session ${session.sessionId} has status ${session.status} - returning null`);
+      return res.json({
+        success: true,
+        session: null
+      });
+    }
+
+    // Double-check endTime is still null
+    if (session.endTime) {
+      console.log(`[Active Session] Session ${session.sessionId} has endTime ${session.endTime} - returning null`);
+      return res.json({
+        success: true,
+        session: null
+      });
+    }
+
+    // Get current meter reading for real-time energy calculation
+    let currentEnergy = 0;
+    let meterNow = null;
+
+    if (session.deviceId) {
+      // Get latest MeterValues
+      const latestMeterValues = await ChargerData.findOne({
+        where: {
+          deviceId: session.deviceId,
+          message: 'MeterValues',
+          direction: 'Incoming'
+        },
+        order: [['createdAt', 'DESC']],
+        limit: 1
+      });
+
+      if (latestMeterValues) {
+        meterNow = extractMeterValue(latestMeterValues);
+      }
+
+      // Get meter_start from first MeterValues after session start
+      let meterStart = session.meterStart;
+      if (!meterStart && session.startTime) {
+        const startMeterValues = await ChargerData.findOne({
+          where: {
+            deviceId: session.deviceId,
+            message: 'MeterValues',
+            direction: 'Incoming',
+            createdAt: {
+              [Op.gte]: session.startTime
+            }
+          },
+          order: [['createdAt', 'ASC']],
+          limit: 1
+        });
+
+        if (startMeterValues) {
+          meterStart = extractMeterValue(startMeterValues);
+          await session.update({ meterStart: meterStart });
+        }
+      }
+
+      // Calculate current energy
+      if (meterStart !== null && meterNow !== null && meterNow >= meterStart) {
+        currentEnergy = (meterNow - meterStart) / 1000; // Convert Wh to kWh
+        if (currentEnergy < 0) currentEnergy = 0;
+      }
+    }
+
+    // Calculate current cost
+    let currentCost = 0;
+    const tariff = session.chargingPoint?.tariff;
+    if (currentEnergy > 0 && tariff) {
+      const baseCharges = parseFloat(tariff.baseCharges) || 0;
+      const tax = parseFloat(tariff.tax) || 0;
+      const baseAmount = currentEnergy * baseCharges;
+      const taxMultiplier = 1 + (tax / 100);
+      currentCost = baseAmount * taxMultiplier;
+    }
+
+    // AUTO-STOP: Check if cost has reached 95% of prepaid amount
+    const amountDeducted = parseFloat(session.amountDeducted);
+    // Stop at 95% threshold to prevent overcharging
+    const stopThreshold = amountDeducted * 0.95;
+    const shouldAutoStop = amountDeducted > 0 && currentCost >= stopThreshold;
+    
+    // Note: Auto-stop is handled by frontend to avoid circular API calls
+    // Frontend will call stop charging endpoint when shouldAutoStop is true
+
+    res.json({
+      success: true,
+      session: {
+        id: session.id,
+        sessionId: session.sessionId,
+        deviceId: session.deviceId,
+        deviceName: session.chargingPoint?.deviceName || session.deviceId,
+        connectorId: session.connectorId,
+        transactionId: session.transactionId,
+        amountDeducted: parseFloat(session.amountDeducted),
+        energy: parseFloat(currentEnergy.toFixed(3)),
+        cost: parseFloat(currentCost.toFixed(2)),
+        status: session.status,
+        startTime: session.startTime,
+        endTime: session.endTime, // Include endTime so frontend can detect CMS stops
+        shouldAutoStop: shouldAutoStop, // Let frontend know if auto-stop should trigger
+        station: session.chargingPoint?.station ? {
+          stationId: session.chargingPoint.station.stationId,
+          stationName: session.chargingPoint.station.stationName
+        } : null,
+        tariff: tariff ? {
+          tariffId: tariff.tariffId,
+          tariffName: tariff.tariffName,
+          baseCharges: parseFloat(tariff.baseCharges),
+          tax: parseFloat(tariff.tax),
+          currency: tariff.currency
+        } : null
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching active session:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch active session'
+    });
+  }
+});
+
+// ============================================
+// SESSIONS API ROUTES
+// ============================================
+
+/**
+ * GET /api/user/sessions
+ * Get completed charging sessions for the customer
+ */
+router.get('/sessions', authenticateCustomerToken, [
+  query('fromDate').optional().isISO8601().withMessage('From date must be a valid ISO8601 date'),
+  query('toDate').optional().isISO8601().withMessage('To date must be a valid ISO8601 date'),
+  query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
+  query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        error: errors.array()[0].msg
+      });
+    }
+
+    const customer = req.customer;
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const offset = (page - 1) * limit;
+    
+    // Parse dates and set proper time boundaries
+    let fromDate = null;
+    let toDate = null;
+    
+    if (req.query.fromDate) {
+      fromDate = new Date(req.query.fromDate);
+      // Set to start of day (00:00:00.000) in local timezone
+      fromDate.setHours(0, 0, 0, 0);
+    }
+    
+    if (req.query.toDate) {
+      toDate = new Date(req.query.toDate);
+      // Set to end of day (23:59:59.999) in local timezone to include all sessions on that day
+      toDate.setHours(23, 59, 59, 999);
+    }
+
+    // Build where clause
+    const whereClause = {
+      customerId: customer.id,
+      status: {
+        [Op.in]: ['stopped', 'completed'] // Only completed/stopped sessions
+      }
+    };
+
+    // Add date filters
+    if (fromDate || toDate) {
+      whereClause.endTime = {};
+      if (fromDate) {
+        whereClause.endTime[Op.gte] = fromDate;
+      }
+      if (toDate) {
+        whereClause.endTime[Op.lte] = toDate;
+      }
+    }
+
+    // Get sessions with related data
+    const { count, rows: sessions } = await ChargingSession.findAndCountAll({
+      where: whereClause,
+      include: [
+        {
+          model: ChargingPoint,
+          as: 'chargingPoint',
+          include: [
+            {
+              model: Station,
+              as: 'station',
+              attributes: ['id', 'stationId', 'stationName']
+            },
+            {
+              model: Tariff,
+              as: 'tariff',
+              attributes: ['id', 'tariffId', 'tariffName', 'baseCharges', 'tax', 'currency']
+            }
+          ]
+        }
+      ],
+      order: [['endTime', 'DESC'], ['createdAt', 'DESC']],
+      limit: limit,
+      offset: offset
+    });
+
+    // Format sessions for response
+    const formattedSessions = sessions.map(session => {
+      const tariff = session.chargingPoint?.tariff;
+      const baseCharges = tariff ? parseFloat(tariff.baseCharges) : 0;
+      const tax = tariff ? parseFloat(tariff.tax) : 0;
+
+      return {
+        id: session.id,
+        sessionId: session.sessionId,
+        transactionId: session.transactionId,
+        deviceId: session.deviceId,
+        deviceName: session.chargingPoint?.deviceName || session.deviceId,
+        connectorId: session.connectorId,
+        stationName: session.chargingPoint?.station?.stationName || 'N/A',
+        stationId: session.chargingPoint?.station?.stationId || null,
+        startTime: session.startTime,
+        endTime: session.endTime,
+        energy: parseFloat(session.energyConsumed || 0),
+        billedAmount: parseFloat(session.finalAmount || 0),
+        amountDeducted: parseFloat(session.amountDeducted),
+        refundAmount: parseFloat(session.refundAmount || 0),
+        baseCharges: baseCharges,
+        tax: tax,
+        currency: tariff ? tariff.currency : 'INR',
+        status: session.status,
+        stopReason: session.stopReason
+      };
+    });
+
+    const totalPages = Math.ceil(count / limit);
+
+    res.json({
+      success: true,
+      sessions: formattedSessions,
+      total: count,
+      page: page,
+      limit: limit,
+      totalPages: totalPages
+    });
+  } catch (error) {
+    console.error('Error fetching sessions:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch sessions'
+    });
+  }
+});
+
+/**
+ * GET /api/user/sessions/:sessionId
+ * Get single session details
+ */
+router.get('/sessions/:sessionId', authenticateCustomerToken, async (req, res) => {
+  try {
+    const customer = req.customer;
+    const { sessionId } = req.params;
+
+    const session = await ChargingSession.findOne({
+      where: {
+        sessionId: sessionId,
+        customerId: customer.id
+      },
+      include: [
+        {
+          model: ChargingPoint,
+          as: 'chargingPoint',
+          include: [
+            {
+              model: Station,
+              as: 'station',
+              attributes: ['id', 'stationId', 'stationName']
+            },
+            {
+              model: Tariff,
+              as: 'tariff',
+              attributes: ['id', 'tariffId', 'tariffName', 'baseCharges', 'tax', 'currency']
+            }
+          ]
+        }
+      ]
+    });
+
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        error: 'Session not found'
+      });
+    }
+
+    const tariff = session.chargingPoint?.tariff;
+    const baseCharges = tariff ? parseFloat(tariff.baseCharges) : 0;
+    const tax = tariff ? parseFloat(tariff.tax) : 0;
+
+    res.json({
+      success: true,
+      session: {
+        id: session.id,
+        sessionId: session.sessionId,
+        transactionId: session.transactionId,
+        deviceId: session.deviceId,
+        deviceName: session.chargingPoint?.deviceName || session.deviceId,
+        connectorId: session.connectorId,
+        stationName: session.chargingPoint?.station?.stationName || 'N/A',
+        stationId: session.chargingPoint?.station?.stationId || null,
+        startTime: session.startTime,
+        endTime: session.endTime,
+        energy: parseFloat(session.energyConsumed || 0),
+        billedAmount: parseFloat(session.finalAmount || 0),
+        amountDeducted: parseFloat(session.amountDeducted),
+        refundAmount: parseFloat(session.refundAmount || 0),
+        baseCharges: baseCharges,
+        tax: tax,
+        currency: tariff ? tariff.currency : 'INR',
+        status: session.status,
+        stopReason: session.stopReason,
+        meterStart: session.meterStart ? parseFloat(session.meterStart) : null,
+        meterEnd: session.meterEnd ? parseFloat(session.meterEnd) : null
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching session:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch session'
     });
   }
 });

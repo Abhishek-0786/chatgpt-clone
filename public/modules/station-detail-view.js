@@ -5,7 +5,7 @@ import { showError, showSuccess, showWarning } from '../utils/notifications.js';
 import { loadChargingStationsModule } from './charging-stations.js';
 
 // Export function to load station detail view
-export async function loadStationDetailView(stationId) {
+export async function loadStationDetailView(stationId, activeTab = 'details') {
     try {
         // Fetch station details
         const stationResponse = await getChargingStation(stationId);
@@ -467,20 +467,20 @@ export async function loadStationDetailView(stationId) {
             <!-- Tabs -->
             <div class="tabs-container">
                 <ul class="tabs-list">
-                    <li class="tab-item active" data-tab="details" onclick="window.switchStationTab('details', '${stationId}')">DETAILS</li>
-                    <li class="tab-item" data-tab="points" onclick="window.switchStationTab('points', '${stationId}')">CHARGING POINTS</li>
+                    <li class="tab-item ${activeTab === 'details' ? 'active' : ''}" data-tab="details" onclick="window.switchStationTab('details', '${stationId}')">DETAILS</li>
+                    <li class="tab-item ${activeTab === 'points' ? 'active' : ''}" data-tab="points" onclick="window.switchStationTab('points', '${stationId}')">CHARGING POINTS</li>
                 </ul>
             </div>
             
             <!-- Tab Contents -->
             <div id="tabContents">
                 <!-- Details Tab (Overview and Details both show this) -->
-                <div id="detailsTab" class="tab-content active">
+                <div id="detailsTab" class="tab-content ${activeTab === 'details' ? 'active' : ''}">
                     ${generateDetailsTab(station)}
                 </div>
                 
                 <!-- Charging Points Tab -->
-                <div id="pointsTab" class="tab-content">
+                <div id="pointsTab" class="tab-content ${activeTab === 'points' ? 'active' : ''}">
                     <div class="loading-spinner">
                         <div class="spinner-border text-primary" role="status">
                             <span class="visually-hidden">Loading...</span>
@@ -491,8 +491,12 @@ export async function loadStationDetailView(stationId) {
         </div>
         `;
         
-        // Load initial tab data
-        loadChargingPointsTab(stationId);
+        // If points tab is active, load it immediately
+        if (activeTab === 'points') {
+            // Load charging points tab (this will set up the table and load data)
+            loadChargingPointsTab(stationId);
+        }
+        // Note: We don't pre-load the points tab if details is active to avoid unnecessary API calls
         
     } catch (error) {
         console.error('Error loading station detail view:', error);
@@ -869,6 +873,10 @@ async function refreshChargingPointsTab(stationId) {
 
 // Switch Tab Function
 export function switchStationTab(tabName, stationId) {
+    // Update URL with tab parameter
+    const url = `/cms.html?module=charging-stations&station=${stationId}&tab=${tabName}`;
+    window.history.pushState({ module: 'charging-stations', stationId: stationId, tab: tabName }, '', url);
+    
     // Clear refresh interval when switching tabs
     if (stationPointsRefreshInterval) {
         clearInterval(stationPointsRefreshInterval);
@@ -939,7 +947,7 @@ export function goBackToStationsList() {
         stationPointsRefreshInterval = null;
     }
     
-    // Update URL and load stations list
+    // Update URL and load stations list (this will restart the auto-refresh)
     const url = `/cms.html?module=charging-stations`;
     window.history.pushState({ module: 'charging-stations' }, '', url);
     loadChargingStationsModule();
@@ -947,15 +955,15 @@ export function goBackToStationsList() {
 
 // View charging point from station detail
 async function viewPointFromStation(chargingPointId) {
-    // Push state to browser history for point detail view
-    const url = `/cms.html?module=charging-points&point=${chargingPointId}`;
-    window.history.pushState({ module: 'charging-points', chargingPointId: chargingPointId, view: 'detail' }, '', url);
+    // Push state to browser history for point detail view (default to details tab)
+    const url = `/cms.html?module=charging-points&point=${chargingPointId}&tab=details`;
+    window.history.pushState({ module: 'charging-points', chargingPointId: chargingPointId, view: 'detail', tab: 'details' }, '', url);
     
-    // Dynamically import and load charging point detail view
+    // Dynamically import and load charging point detail view (default to details tab)
     try {
         const detailModule = await import('./charging-point-detail-view.js');
         window.currentChargingPointId = chargingPointId; // Store for reloading
-        detailModule.loadChargingPointDetailView(chargingPointId);
+        detailModule.loadChargingPointDetailView(chargingPointId, 'details');
     } catch (error) {
         console.error('Error loading charging point detail view:', error);
         showError(error.message || 'Failed to load charging point details');

@@ -1,5 +1,5 @@
 // Start Charging Popup Module
-import { startCharging } from '../services/api.js';
+import { startCharging, stopCharging } from '../services/api.js';
 import { showSuccess, showError } from '../../utils/notifications.js';
 
 // Show start charging popup
@@ -92,60 +92,94 @@ window.handleStartCharging = async function(event) {
         return;
     }
     
+    // Get submit button for loading state
+    const submitBtn = event.target.querySelector('button[type="submit"]');
+    const originalBtnText = submitBtn ? submitBtn.innerHTML : '';
+    
     try {
-        // TODO: Call API to start charging
-        // const response = await startCharging(deviceId, connectorId, amount);
+        // Show loading state
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Starting...';
+        }
         
-        // TEMPORARY: Mock success
-        showSuccess(`Charging started! Amount: ₹${amount.toFixed(2)}`);
-        window.closeStartChargingModal();
+        // Call API to start charging
+        const response = await startCharging(deviceId, connectorId, amount, chargingPointId);
         
-        // Navigate to active session page (locked - user must stop charging to leave)
-        setTimeout(async () => {
-            const { loadActiveSession } = await import('./active-session.js');
-            await loadActiveSession();
-        }, 500);
+        if (response.success) {
+            showSuccess(`Charging started! Amount deducted: ₹${amount.toFixed(2)}`);
+            window.closeStartChargingModal();
+            
+            // Navigate to active session page (locked - user must stop charging to leave)
+            setTimeout(async () => {
+                const { loadActiveSession } = await import('./active-session.js');
+                await loadActiveSession();
+            }, 500);
+        } else {
+            showError(response.error || 'Failed to start charging');
+            // Reset button
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalBtnText;
+            }
+        }
     } catch (error) {
         console.error('Error starting charging:', error);
         showError(error.message || 'Failed to start charging');
+        // Reset button
+        if (submitBtn) {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalBtnText;
+        }
     }
 };
 
 // Stop charging
 window.stopCharging = async function(chargingPointId, deviceId, connectorId, transactionId) {
-    if (!confirm('Are you sure you want to stop charging?')) {
+    // Use custom confirmation modal if available, otherwise use browser confirm
+    const confirmed = window.showConfirmModal 
+        ? await window.showConfirmModal('Stop Charging', 'Are you sure you want to stop charging? Any unused amount will be refunded to your wallet.')
+        : confirm('Are you sure you want to stop charging?');
+    
+    if (!confirmed) {
         return;
     }
     
     try {
-        // TODO: Call API to stop charging
-        // const response = await stopCharging(deviceId, connectorId, transactionId);
+        // Call API to stop charging
+        const response = await stopCharging(deviceId, connectorId, transactionId);
         
-        // TEMPORARY: Mock success
-        showSuccess('Charging stopped successfully');
-        
-        // Reload current view to update charger status
-        setTimeout(() => {
-            const appMain = document.getElementById('appMain');
-            if (appMain) {
-                // Check if we're on charger detail page
-                const chargerDetailBackBtn = appMain.querySelector('button[onclick*="goBackToStationDetail"]');
-                if (chargerDetailBackBtn) {
-                    // We're on charger detail page, reload it
-                    window.location.reload();
-                } else {
-                    // Check if we're on station detail page
-                    const stationDetailBackBtn = appMain.querySelector('button[onclick*="loadStationsModule"]');
-                    if (stationDetailBackBtn) {
-                        // We're on station detail view, reload it
-                        window.location.reload();
-                    } else {
-                        // Go back to stations list
-                        window.loadStationsModule();
-                    }
-                }
+        if (response.success) {
+            let message = 'Charging stopped successfully';
+            if (response.session && response.session.refundAmount > 0) {
+                message += `. Refund: ₹${response.session.refundAmount.toFixed(2)}`;
             }
-        }, 1000);
+            showSuccess(message);
+            
+            // Navigate back - check if we came from station detail or dashboard
+            setTimeout(async () => {
+                try {
+                    // Check if we have station info in session storage (set when navigating from station detail)
+                    const lastStationId = sessionStorage.getItem('lastStationId');
+                    const lastStationName = sessionStorage.getItem('lastStationName');
+                    
+                    if (lastStationId) {
+                        // Reload station detail page
+                        const { loadStationDetail } = await import('./station-detail.js');
+                        await loadStationDetail(lastStationId, lastStationName);
+                    } else {
+                        // Navigate to dashboard
+                        const { loadDashboard } = await import('./dashboard.js');
+                        await loadDashboard();
+                    }
+                } catch (error) {
+                    // If navigation fails, try to reload current page
+                    window.location.reload();
+                }
+            }, 1000);
+        } else {
+            showError(response.error || 'Failed to stop charging');
+        }
     } catch (error) {
         console.error('Error stopping charging:', error);
         showError(error.message || 'Failed to stop charging');

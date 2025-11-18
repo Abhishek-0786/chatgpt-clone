@@ -1,8 +1,11 @@
 const express = require('express');
 const { body, validationResult, query } = require('express-validator');
-const { Tariff, Station, ChargingPoint, Connector } = require('../models');
+const { Tariff, Station, ChargingPoint, Connector, Customer, Vehicle, WalletTransaction, Wallet } = require('../models');
 const { Op } = require('sequelize');
 const ChargerData = require('../models/ChargerData');
+const ChargingSession = require('../models/ChargingSession');
+const Charger = require('../models/Charger');
+const sequelize = require('../config/database');
 
 const router = express.Router();
 
@@ -474,7 +477,6 @@ router.get('/stations', [
       order: [['createdAt', 'DESC']]
     });
 
-    const Charger = require('../models/Charger');
     const ChargingPoint = require('../models/ChargingPoint');
 
     // Calculate online/offline stats and session statistics for each station
@@ -642,7 +644,6 @@ router.get('/stations/:stationId', async (req, res) => {
     }
 
     // Calculate real-time status based on charging points
-    const Charger = require('../models/Charger');
     const ChargingPoint = require('../models/ChargingPoint');
     
     // Get all charging points for this station
@@ -1115,7 +1116,6 @@ router.get('/stations/:stationId/points', async (req, res) => {
     });
 
     const totalPages = Math.ceil(count / limit);
-    const Charger = require('../models/Charger');
 
     // Format charging points with real-time status
     const formattedPoints = await Promise.all(chargingPoints.map(async (point) => {
@@ -1436,7 +1436,6 @@ router.get('/charging-points', [
     });
 
     const totalPages = Math.ceil(count / limit);
-    const Charger = require('../models/Charger');
     const ChargerData = require('../models/ChargerData');
 
     // Helper function to check if charging point has active transaction
@@ -1694,7 +1693,6 @@ router.get('/charging-points', [
 router.get('/charging-points/:chargingPointId', async (req, res) => {
   try {
     const { chargingPointId } = req.params;
-    const Charger = require('../models/Charger');
 
     const chargingPoint = await ChargingPoint.findOne({
       where: {
@@ -2283,6 +2281,181 @@ function extractMeterValue(meterValuesLog) {
 }
 
 /**
+ * Calculate session statistics for a charging point within a date range
+ * Returns: { sessions: count, energy: total kWh, billedAmount: total amount }
+ */
+async function calculateSessionStatsForDateRange(deviceId, chargingPoint, startDate, endDate) {
+  try {
+    // Get all StartTransaction messages for this device within date range
+    // These are the sessions that STARTED in this date range
+    const startTransactions = await ChargerData.findAll({
+      where: {
+        deviceId: deviceId,
+        message: 'StartTransaction',
+        direction: 'Incoming',
+        timestamp: {
+          [Op.gte]: startDate,
+          [Op.lte]: endDate
+        }
+      },
+      order: [['timestamp', 'DESC']],
+      limit: 10000
+    });
+
+    // Get all StopTransaction messages for this device (regardless of date)
+    // We need all stops to match with starts, even if stop is outside the date range
+    // A session is counted on the day it STARTED, not the day it ended
+    const stopTransactions = await ChargerData.findAll({
+      where: {
+        deviceId: deviceId,
+        message: 'StopTransaction',
+        direction: 'Incoming'
+      },
+      order: [['timestamp', 'DESC']],
+      limit: 10000
+    });
+
+    // Create a map of transactionId -> StopTransaction
+    const stopTransactionMap = new Map();
+    stopTransactions.forEach(stop => {
+      let transactionId = null;
+      if (stop.messageData && stop.messageData.transactionId) {
+        transactionId = stop.messageData.transactionId;
+      } else if (stop.raw && Array.isArray(stop.raw) && stop.raw[2] && stop.raw[2].transactionId) {
+        transactionId = stop.raw[2].transactionId;
+      }
+      if (transactionId) {
+        stopTransactionMap.set(transactionId.toString(), stop);
+      }
+    });
+
+    let totalSessions = 0;
+    let totalEnergy = 0;
+    let totalBilledAmount = 0;
+    const processedTransactionIds = new Set();
+
+    // Get tariff details
+    const tariff = chargingPoint.tariff;
+    const baseCharges = tariff ? parseFloat(tariff.baseCharges) : 0;
+    const tax = tariff ? parseFloat(tariff.tax) : 0;
+
+    for (const start of startTransactions) {
+      // Get transactionId from StartTransaction response
+      let transactionId = null;
+      const startResponse = await ChargerData.findOne({
+        where: {
+          message: 'Response',
+          messageId: start.messageId,
+          direction: 'Outgoing'
+        }
+      });
+
+      if (startResponse) {
+        if (startResponse.messageData && startResponse.messageData.transactionId) {
+          transactionId = startResponse.messageData.transactionId;
+        } else if (startResponse.raw && Array.isArray(startResponse.raw) && startResponse.raw[2] && startResponse.raw[2].transactionId) {
+          transactionId = startResponse.raw[2].transactionId;
+        }
+      }
+
+      // Fallback: try to get from StartTransaction itself
+      if (!transactionId && start.messageData && start.messageData.transactionId) {
+        transactionId = start.messageData.transactionId;
+      } else if (!transactionId && start.raw && Array.isArray(start.raw)) {
+        const payload = start.raw[2];
+        if (payload && payload.transactionId) {
+          transactionId = payload.transactionId;
+        }
+      }
+
+      if (!transactionId || processedTransactionIds.has(transactionId.toString())) {
+        continue;
+      }
+
+      // Check if there's a StopTransaction for this transactionId
+      const stop = stopTransactionMap.get(transactionId.toString());
+      if (!stop) {
+        continue; // No stop transaction, skip (it's active or incomplete)
+      }
+
+      processedTransactionIds.add(transactionId.toString());
+
+      const startTime = new Date(start.timestamp || start.createdAt);
+      const endTime = new Date(stop.timestamp || stop.createdAt);
+
+      // Get meter_start from first MeterValues after StartTransaction
+      let meterStart = null;
+      const startMeterValues = await ChargerData.findOne({
+        where: {
+          deviceId: deviceId,
+          message: 'MeterValues',
+          direction: 'Incoming',
+          timestamp: {
+            [Op.gte]: startTime,
+            [Op.lte]: endTime
+          }
+        },
+        order: [['timestamp', 'ASC']],
+        limit: 1
+      });
+
+      if (startMeterValues) {
+        meterStart = extractMeterValue(startMeterValues);
+      }
+
+      // Get meter_end from last MeterValues before StopTransaction
+      let meterEnd = null;
+      const endMeterValues = await ChargerData.findOne({
+        where: {
+          deviceId: deviceId,
+          message: 'MeterValues',
+          direction: 'Incoming',
+          timestamp: {
+            [Op.gte]: startTime,
+            [Op.lte]: endTime
+          }
+        },
+        order: [['timestamp', 'DESC']],
+        limit: 1
+      });
+
+      if (endMeterValues) {
+        meterEnd = extractMeterValue(endMeterValues);
+      }
+
+      // Calculate energy: (meter_end - meter_start) / 1000
+      let energy = 0;
+      if (meterStart !== null && meterEnd !== null && meterEnd >= meterStart) {
+        energy = (meterEnd - meterStart) / 1000;
+        if (energy < 0) energy = 0; // Prevent negative values
+      }
+
+      // Calculate billed amount: (Energy × Base Charge) × (1 + Tax/100)
+      const baseAmount = energy * baseCharges;
+      const taxMultiplier = 1 + (tax / 100);
+      const billedAmount = baseAmount * taxMultiplier;
+
+      totalSessions++;
+      totalEnergy += energy;
+      totalBilledAmount += billedAmount;
+    }
+
+    return {
+      sessions: totalSessions,
+      energy: parseFloat(totalEnergy.toFixed(2)),
+      billedAmount: parseFloat(totalBilledAmount.toFixed(2))
+    };
+  } catch (error) {
+    console.error(`Error calculating session stats for deviceId ${deviceId}:`, error);
+    return {
+      sessions: 0,
+      energy: 0,
+      billedAmount: 0
+    };
+  }
+}
+
+/**
  * Calculate session statistics for a charging point
  * Returns: { sessions: count, energy: total kWh, billedAmount: total amount }
  */
@@ -2560,7 +2733,6 @@ router.get('/sessions/active', [
       const deviceId = start.deviceId;
       
       // Check if charger is actually online (lastSeen within 5 minutes)
-      const Charger = require('../models/Charger');
       const charger = await Charger.findOne({
         where: { deviceId: deviceId },
         attributes: ['lastSeen']
@@ -2683,6 +2855,66 @@ router.get('/sessions/active', [
         .substring(0, 12);
       const sessionId = `SESS-${sessionIdHash.toUpperCase()}`;
 
+      // Try to find matching ChargingSession record to get entered amount and refund
+      let enteredAmount = 0;
+      let refundAmount = 0;
+      try {
+        // First try to find by transactionId and startTime (most accurate)
+        let chargingSession = await ChargingSession.findOne({
+          where: {
+            deviceId: deviceId,
+            connectorId: connectorId,
+            transactionId: transactionId.toString(),
+            startTime: {
+              [Op.gte]: new Date(startTime.getTime() - 60000), // Within 1 minute
+              [Op.lte]: new Date(startTime.getTime() + 60000)
+            }
+          },
+          order: [['createdAt', 'DESC']],
+          limit: 1
+        });
+
+        // If not found, try to find by deviceId, connectorId, and startTime (broader match)
+        if (!chargingSession) {
+          chargingSession = await ChargingSession.findOne({
+            where: {
+              deviceId: deviceId,
+              connectorId: connectorId,
+              startTime: {
+                [Op.gte]: new Date(startTime.getTime() - 300000), // Within 5 minutes
+                [Op.lte]: new Date(startTime.getTime() + 300000)
+              }
+            },
+            order: [['createdAt', 'DESC']],
+            limit: 1
+          });
+        }
+
+        // If still not found, try to find by deviceId and endTime (for CMS-stopped sessions)
+        if (!chargingSession) {
+          chargingSession = await ChargingSession.findOne({
+            where: {
+              deviceId: deviceId,
+              connectorId: connectorId,
+              endTime: {
+                [Op.gte]: new Date(endTime.getTime() - 300000), // Within 5 minutes
+                [Op.lte]: new Date(endTime.getTime() + 300000)
+              },
+              stopReason: 'Remote (CMS)'
+            },
+            order: [['createdAt', 'DESC']],
+            limit: 1
+          });
+        }
+
+        if (chargingSession) {
+          enteredAmount = parseFloat(chargingSession.amountRequested || chargingSession.amountDeducted || 0);
+          refundAmount = parseFloat(chargingSession.refundAmount || 0);
+        }
+      } catch (error) {
+        console.error('Error fetching ChargingSession for entered amount:', error);
+      }
+
       activeSessions.push({
         transactionId: transactionId.toString(), // Transaction ID from charger
         sessionId: sessionId, // Unique session ID we generate
@@ -2693,9 +2925,9 @@ router.get('/sessions/active', [
         startTime: startTime.toISOString(),
         endTime: null,
         energy: parseFloat(energy.toFixed(2)),
-        enteredAmount: 0, // TODO: Get from payment data if available
+        enteredAmount: parseFloat(enteredAmount.toFixed(2)),
         billedAmount: parseFloat(billedAmount.toFixed(2)),
-        refund: 0,
+        refund: parseFloat(refundAmount.toFixed(2)),
         mode: 'OCPP', // Default mode
         sessionDuration: sessionDuration,
         stopReason: null,
@@ -2980,6 +3212,66 @@ router.get('/sessions/completed', [
         .substring(0, 12);
       const sessionId = `SESS-${sessionIdHash.toUpperCase()}`;
 
+      // Try to find matching ChargingSession record to get entered amount and refund
+      let enteredAmount = 0;
+      let refundAmount = 0;
+      try {
+        // First try to find by transactionId and startTime (most accurate)
+        let chargingSession = await ChargingSession.findOne({
+          where: {
+            deviceId: deviceId,
+            connectorId: connectorId,
+            transactionId: transactionId.toString(),
+            startTime: {
+              [Op.gte]: new Date(startTime.getTime() - 60000), // Within 1 minute
+              [Op.lte]: new Date(startTime.getTime() + 60000)
+            }
+          },
+          order: [['createdAt', 'DESC']],
+          limit: 1
+        });
+
+        // If not found, try to find by deviceId, connectorId, and startTime (broader match)
+        if (!chargingSession) {
+          chargingSession = await ChargingSession.findOne({
+            where: {
+              deviceId: deviceId,
+              connectorId: connectorId,
+              startTime: {
+                [Op.gte]: new Date(startTime.getTime() - 300000), // Within 5 minutes
+                [Op.lte]: new Date(startTime.getTime() + 300000)
+              }
+            },
+            order: [['createdAt', 'DESC']],
+            limit: 1
+          });
+        }
+
+        // If still not found, try to find by deviceId and endTime (for CMS-stopped sessions)
+        if (!chargingSession) {
+          chargingSession = await ChargingSession.findOne({
+            where: {
+              deviceId: deviceId,
+              connectorId: connectorId,
+              endTime: {
+                [Op.gte]: new Date(endTime.getTime() - 300000), // Within 5 minutes
+                [Op.lte]: new Date(endTime.getTime() + 300000)
+              },
+              stopReason: 'Remote (CMS)'
+            },
+            order: [['createdAt', 'DESC']],
+            limit: 1
+          });
+        }
+
+        if (chargingSession) {
+          enteredAmount = parseFloat(chargingSession.amountRequested || chargingSession.amountDeducted || 0);
+          refundAmount = parseFloat(chargingSession.refundAmount || 0);
+        }
+      } catch (error) {
+        console.error('Error fetching ChargingSession for entered amount:', error);
+      }
+
       completedSessions.push({
         transactionId: transactionId.toString(), // Transaction ID from charger
         sessionId: sessionId, // Unique session ID we generate
@@ -2990,9 +3282,9 @@ router.get('/sessions/completed', [
         startTime: startTime.toISOString(),
         endTime: endTime.toISOString(),
         energy: parseFloat(energy.toFixed(2)),
-        enteredAmount: 0, // TODO: Get from payment data if available
+        enteredAmount: parseFloat(enteredAmount.toFixed(2)),
         billedAmount: parseFloat(billedAmount.toFixed(2)),
-        refund: 0,
+        refund: parseFloat(refundAmount.toFixed(2)),
         mode: 'OCPP', // Default mode
         sessionDuration: sessionDuration,
         stopReason: stopReason || 'Unknown',
@@ -3037,6 +3329,1032 @@ router.get('/sessions/completed', [
     res.status(500).json({
       success: false,
       error: 'Failed to fetch completed sessions',
+      message: error.message
+    });
+  }
+});
+
+// ============================================
+// CUSTOMERS ROUTES
+// ============================================
+
+/**
+ * GET /api/cms/customers
+ * Get all customers with their statistics
+ * Query params: searchTerm, fromDate, toDate
+ */
+router.get('/customers', [
+  query('searchTerm').optional().isString(),
+  query('fromDate').optional().isISO8601(),
+  query('toDate').optional().isISO8601()
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { searchTerm = '', fromDate, toDate } = req.query;
+
+    // Build where clause for customers
+    const where = {};
+
+    // Add search filter
+    if (searchTerm) {
+      where[Op.or] = [
+        { fullName: { [Op.iLike]: `%${searchTerm}%` } },
+        { phone: { [Op.iLike]: `%${searchTerm}%` } },
+        { email: { [Op.iLike]: `%${searchTerm}%` } }
+      ];
+    }
+
+    // Add date filter
+    if (fromDate || toDate) {
+      where.createdAt = {};
+      if (fromDate) {
+        where.createdAt[Op.gte] = new Date(fromDate);
+      }
+      if (toDate) {
+        const endDate = new Date(toDate);
+        endDate.setHours(23, 59, 59, 999);
+        where.createdAt[Op.lte] = endDate;
+      }
+    }
+
+    // Get customers with their default vehicle
+    const customers = await Customer.findAll({
+      where,
+      include: [
+        {
+          model: Vehicle,
+          as: 'vehicles',
+          required: false,
+          separate: true,
+          order: [['createdAt', 'ASC']],
+          limit: 1
+        }
+      ],
+      order: [['createdAt', 'DESC']]
+    });
+
+    // Get statistics for each customer
+    const customersWithStats = await Promise.all(
+      customers.map(async (customer) => {
+        // Get charging sessions statistics
+        const sessions = await ChargingSession.findAll({
+          where: {
+            customerId: customer.id,
+            status: {
+              [Op.in]: ['completed', 'stopped']
+            }
+          },
+          attributes: [
+            [sequelize.fn('COUNT', sequelize.col('id')), 'totalSessions'],
+            [sequelize.fn('SUM', sequelize.col('energyConsumed')), 'totalEnergy'],
+            [sequelize.fn('MAX', sequelize.col('endTime')), 'lastActive']
+          ],
+          raw: true
+        });
+
+        // Calculate average duration
+        const sessionsWithDuration = await ChargingSession.findAll({
+          where: {
+            customerId: customer.id,
+            status: {
+              [Op.in]: ['completed', 'stopped']
+            },
+            startTime: { [Op.not]: null },
+            endTime: { [Op.not]: null }
+          },
+          attributes: ['startTime', 'endTime']
+        });
+
+        let avgDurationFormatted = '00:00:00';
+        if (sessionsWithDuration.length > 0) {
+          const totalDurationMs = sessionsWithDuration.reduce((sum, session) => {
+            const duration = new Date(session.endTime) - new Date(session.startTime);
+            return sum + duration;
+          }, 0);
+          const avgDurationMs = totalDurationMs / sessionsWithDuration.length;
+          
+          // Convert to HH:MM:SS format
+          const hours = Math.floor(avgDurationMs / (1000 * 60 * 60));
+          const minutes = Math.floor((avgDurationMs % (1000 * 60 * 60)) / (1000 * 60));
+          const seconds = Math.floor((avgDurationMs % (1000 * 60)) / 1000);
+          
+          avgDurationFormatted = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+        }
+
+        const stats = sessions[0] || {};
+        const defaultVehicle = customer.vehicles && customer.vehicles[0];
+
+        return {
+          id: customer.id,
+          customerName: customer.fullName,
+          phone: customer.phone,
+          email: customer.email,
+          noSessions: parseInt(stats.totalSessions) || 0,
+          totalEnergy: parseFloat(stats.totalEnergy) || 0,
+          avgDuration: avgDurationFormatted,
+          defaultVehicle: defaultVehicle 
+            ? `${defaultVehicle.model}, ${defaultVehicle.make}` 
+            : 'undefined, undefined',
+          lastActive: stats.lastActive || null,
+          createdAt: customer.createdAt
+        };
+      })
+    );
+
+    res.json({
+      success: true,
+      customers: customersWithStats,
+      total: customersWithStats.length
+    });
+  } catch (error) {
+    console.error('Error fetching customers:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch customers',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/cms/customers/:customerId/wallet-transactions
+ * Get wallet transactions for a specific customer
+ */
+router.get('/customers/:customerId/wallet-transactions', [
+  query('fromDate').optional().isISO8601(),
+  query('toDate').optional().isISO8601()
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { customerId } = req.params;
+    const { fromDate, toDate } = req.query;
+
+    // Verify customer exists
+    const customer = await Customer.findByPk(customerId);
+    if (!customer) {
+      return res.status(404).json({
+        success: false,
+        error: 'Customer not found'
+      });
+    }
+
+    // Build where clause
+    const where = {
+      customerId: customerId
+    };
+
+    // Add date filter
+    if (fromDate || toDate) {
+      where.createdAt = {};
+      if (fromDate) {
+        where.createdAt[Op.gte] = new Date(fromDate);
+      }
+      if (toDate) {
+        const endDate = new Date(toDate);
+        endDate.setHours(23, 59, 59, 999);
+        where.createdAt[Op.lte] = endDate;
+      }
+    }
+
+    // Get wallet transactions
+    const transactions = await WalletTransaction.findAll({
+      where,
+      order: [['createdAt', 'DESC']]
+    });
+
+    // Format transactions
+    const formattedTransactions = transactions.map((txn) => ({
+      id: txn.id,
+      customerId: txn.customerId,
+      customerName: customer.fullName,
+      transactionId: `TXN${String(txn.id).padStart(6, '0')}`,
+      dateTime: txn.createdAt,
+      type: (txn.transactionType === 'credit' || txn.transactionType === 'refund') ? 'Credit' : 'Debit',
+      amount: parseFloat(txn.amount),
+      balance: parseFloat(txn.balanceAfter),
+      description: txn.description,
+      referenceId: txn.referenceId || '-',
+      status: txn.status
+    }));
+
+    res.json({
+      success: true,
+      transactions: formattedTransactions,
+      total: formattedTransactions.length,
+      customerName: customer.fullName
+    });
+  } catch (error) {
+    console.error('Error fetching wallet transactions:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch wallet transactions',
+      message: error.message
+    });
+  }
+});
+
+// ============================================
+// DASHBOARD STATISTICS
+// ============================================
+
+/**
+ * Helper function to check if a charger has a fault
+ */
+async function hasFault(deviceId) {
+  try {
+    const ChargerData = require('../models/ChargerData');
+    
+    // First check Charger table status
+    const charger = await Charger.findOne({
+      where: { deviceId: deviceId },
+      attributes: ['status']
+    });
+
+    if (charger && charger.status) {
+      const statusLower = charger.status.toLowerCase();
+      if (statusLower === 'faulted' || statusLower === 'fault') {
+        return true;
+      }
+    }
+
+    // Also check for recent StatusNotification with errorCode
+    const recentStatus = await ChargerData.findOne({
+      where: {
+        deviceId: deviceId,
+        message: 'StatusNotification',
+        direction: 'Incoming'
+      },
+      order: [['timestamp', 'DESC']],
+      limit: 1
+    });
+
+    if (recentStatus && recentStatus.messageData) {
+      const errorCode = recentStatus.messageData.errorCode;
+      // If errorCode exists and is not 'NoError', consider it a fault
+      if (errorCode && errorCode !== 'NoError' && errorCode !== null && errorCode !== '') {
+        return true;
+      }
+      
+      // Also check connectorStatus for fault
+      const connectorStatus = recentStatus.messageData.connectorStatus;
+      if (connectorStatus) {
+        const statusLower = connectorStatus.toLowerCase();
+        if (statusLower === 'faulted' || statusLower === 'unavailable') {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  } catch (error) {
+    console.error('Error checking fault:', error);
+    return false;
+  }
+}
+
+/**
+ * GET /api/cms/dashboard/stats
+ * Get dashboard statistics and overview
+ */
+router.get('/dashboard/stats', async (req, res) => {
+  try {
+    // Date calculations
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const weekStart = new Date(now);
+    weekStart.setDate(now.getDate() - 7);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    
+    // Get total customers
+    const totalCustomers = await Customer.count();
+    
+    // Get active sessions
+    const activeSessions = await ChargingSession.count({
+      where: {
+        status: {
+          [Op.in]: ['pending', 'active']
+        }
+      }
+    });
+    
+    // Calculate total billed amount, energy, and sessions using the same method as stations list
+    // (using calculateSessionStats which calculates from MeterValues - same as stations table)
+    const allStations = await Station.findAll({
+      where: { deleted: false },
+      attributes: ['id']
+    });
+    
+    let totalBilledAmount = 0;
+    let totalEnergy = 0;
+    let totalSessionsCount = 0;
+    
+    for (const station of allStations) {
+      const chargingPoints = await ChargingPoint.findAll({
+        where: {
+          stationId: station.id,
+          deleted: false
+        },
+        include: [
+          {
+            model: Tariff,
+            as: 'tariff',
+            attributes: ['id', 'tariffId', 'tariffName', 'baseCharges', 'tax', 'currency']
+          }
+        ],
+        attributes: ['id', 'deviceId']
+      });
+      
+      for (const cp of chargingPoints) {
+        if (cp.deviceId) {
+          const sessionStats = await calculateSessionStats(cp.deviceId, cp);
+          totalSessionsCount += sessionStats.sessions;
+          totalEnergy += sessionStats.energy;
+          totalBilledAmount += sessionStats.billedAmount;
+        }
+      }
+    }
+    
+    const totalRevenue = parseFloat(totalBilledAmount.toFixed(2));
+    const totalEnergyRounded = parseFloat(totalEnergy.toFixed(2));
+    const totalSessions = totalSessionsCount;
+    
+    // Get total stations
+    const totalStations = await Station.count({
+      where: {
+        deleted: false
+      }
+    });
+    
+    // Get total chargers
+    const totalChargers = await ChargingPoint.count({
+      where: {
+        deleted: false
+      }
+    });
+    
+    // Calculate real-time station status based on charging point lastSeen (same as stations list)
+    const allStationsForStatus = await Station.findAll({
+      where: { deleted: false },
+      attributes: ['id', 'stationName']
+    });
+    
+    let stationsOnline = 0;
+    let stationsOffline = 0;
+    const offlineStationsList = [];
+    const OFFLINE_THRESHOLD = 5 * 60 * 1000; // 5 minutes
+    
+    for (const station of allStationsForStatus) {
+      const chargingPoints = await ChargingPoint.findAll({
+        where: {
+          stationId: station.id,
+          deleted: false
+        },
+        attributes: ['id', 'deviceId']
+      });
+      
+      let onlineCPs = 0;
+      
+      for (const cp of chargingPoints) {
+        if (cp.deviceId) {
+          const charger = await Charger.findOne({
+            where: { deviceId: cp.deviceId },
+            attributes: ['lastSeen']
+          });
+          
+          if (charger && charger.lastSeen) {
+            const lastActiveTime = new Date(charger.lastSeen);
+            const now = new Date();
+            const timeDiff = now - lastActiveTime;
+            const isOnline = timeDiff <= OFFLINE_THRESHOLD;
+            
+            if (isOnline) {
+              onlineCPs++;
+            }
+          }
+        }
+      }
+      
+      // Station is online if at least 1 CP is online
+      if (onlineCPs >= 1) {
+        stationsOnline++;
+      } else {
+        stationsOffline++;
+        offlineStationsList.push({
+          id: station.id,
+          stationName: station.stationName,
+          status: 'Offline'
+        });
+      }
+    }
+    
+    const offlineStations = offlineStationsList.slice(0, 10); // Limit to 10
+    
+    // Get charger status breakdown
+    const chargersAvailable = await ChargingPoint.count({
+      where: {
+        deleted: false,
+        cStatus: {
+          [Op.in]: ['Available', 'Online']
+        }
+      }
+    });
+    
+    const chargersBusy = await ChargingPoint.count({
+      where: {
+        deleted: false,
+        cStatus: 'Charging'
+      }
+    });
+    
+    const chargersUnavailable = await ChargingPoint.count({
+      where: {
+        deleted: false,
+        cStatus: {
+          [Op.in]: ['Unavailable', 'Offline']
+        }
+      }
+    });
+    
+    // Get faulted chargers
+    const allChargers = await ChargingPoint.findAll({
+      where: { deleted: false },
+      attributes: ['id', 'deviceId', 'deviceName']
+    });
+    
+    const faultedChargersList = [];
+    for (const charger of allChargers) {
+      const hasFaultStatus = await hasFault(charger.deviceId);
+      if (hasFaultStatus) {
+        faultedChargersList.push({
+          id: charger.id,
+          deviceName: charger.deviceName,
+          deviceId: charger.deviceId
+        });
+      }
+    }
+    const chargersFaulted = faultedChargersList.length;
+    
+    // Today's stats - calculate using same method as stations list (calculateSessionStatsForDateRange)
+    let todayBilledAmount = 0;
+    let todayEnergy = 0;
+    let todaySessions = 0;
+    
+    for (const station of allStations) {
+      const chargingPoints = await ChargingPoint.findAll({
+        where: {
+          stationId: station.id,
+          deleted: false
+        },
+        include: [
+          {
+            model: Tariff,
+            as: 'tariff',
+            attributes: ['id', 'tariffId', 'tariffName', 'baseCharges', 'tax', 'currency']
+          }
+        ],
+        attributes: ['id', 'deviceId']
+      });
+      
+      for (const cp of chargingPoints) {
+        if (cp.deviceId) {
+          // Get session stats for today only
+          const sessionStats = await calculateSessionStatsForDateRange(cp.deviceId, cp, todayStart, now);
+          todaySessions += sessionStats.sessions;
+          todayEnergy += sessionStats.energy;
+          todayBilledAmount += sessionStats.billedAmount;
+        }
+      }
+    }
+    
+    const todayRevenue = parseFloat(todayBilledAmount.toFixed(2));
+    const todayEnergyRounded = parseFloat(todayEnergy.toFixed(2));
+    
+    const todayNewCustomers = await Customer.count({
+      where: {
+        createdAt: {
+          [Op.gte]: todayStart
+        }
+      }
+    });
+    
+    // Week stats - calculate using same method as stations list
+    let weekBilledAmount = 0;
+    let weekEnergy = 0;
+    let weekSessions = 0;
+    
+    for (const station of allStations) {
+      const chargingPoints = await ChargingPoint.findAll({
+        where: {
+          stationId: station.id,
+          deleted: false
+        },
+        include: [
+          {
+            model: Tariff,
+            as: 'tariff',
+            attributes: ['id', 'tariffId', 'tariffName', 'baseCharges', 'tax', 'currency']
+          }
+        ],
+        attributes: ['id', 'deviceId']
+      });
+      
+      for (const cp of chargingPoints) {
+        if (cp.deviceId) {
+          const sessionStats = await calculateSessionStatsForDateRange(cp.deviceId, cp, weekStart, now);
+          weekSessions += sessionStats.sessions;
+          weekEnergy += sessionStats.energy;
+          weekBilledAmount += sessionStats.billedAmount;
+        }
+      }
+    }
+    
+    const weekRevenue = parseFloat(weekBilledAmount.toFixed(2));
+    
+    const weekNewCustomers = await Customer.count({
+      where: {
+        createdAt: {
+          [Op.gte]: weekStart
+        }
+      }
+    });
+    
+    // Month stats - calculate using same method as stations list
+    let monthBilledAmount = 0;
+    let monthEnergy = 0;
+    let monthSessions = 0;
+    
+    for (const station of allStations) {
+      const chargingPoints = await ChargingPoint.findAll({
+        where: {
+          stationId: station.id,
+          deleted: false
+        },
+        include: [
+          {
+            model: Tariff,
+            as: 'tariff',
+            attributes: ['id', 'tariffId', 'tariffName', 'baseCharges', 'tax', 'currency']
+          }
+        ],
+        attributes: ['id', 'deviceId']
+      });
+      
+      for (const cp of chargingPoints) {
+        if (cp.deviceId) {
+          const sessionStats = await calculateSessionStatsForDateRange(cp.deviceId, cp, monthStart, now);
+          monthSessions += sessionStats.sessions;
+          monthEnergy += sessionStats.energy;
+          monthBilledAmount += sessionStats.billedAmount;
+        }
+      }
+    }
+    
+    const monthRevenue = parseFloat(monthBilledAmount.toFixed(2));
+    
+    const monthNewCustomers = await Customer.count({
+      where: {
+        createdAt: {
+          [Op.gte]: monthStart
+        }
+      }
+    });
+    
+    // Top performing stations by energy (using calculateSessionStats - same as dashboard)
+    let formattedTopStationsByEnergy = [];
+    try {
+      const stationsForTop = await Station.findAll({
+        where: { deleted: false },
+        attributes: ['id', 'stationName', 'stationId']
+      });
+      
+      const stationStats = [];
+      
+      for (const station of stationsForTop) {
+        const chargingPoints = await ChargingPoint.findAll({
+          where: {
+            stationId: station.id,
+            deleted: false
+          },
+          include: [
+            {
+              model: Tariff,
+              as: 'tariff',
+              attributes: ['id', 'tariffId', 'tariffName', 'baseCharges', 'tax', 'currency']
+            }
+          ],
+          attributes: ['id', 'deviceId']
+        });
+        
+        let totalEnergy = 0;
+        let totalSessions = 0;
+        
+        for (const cp of chargingPoints) {
+          if (cp.deviceId) {
+            const sessionStats = await calculateSessionStats(cp.deviceId, cp);
+            totalSessions += sessionStats.sessions;
+            totalEnergy += sessionStats.energy;
+          }
+        }
+        
+        if (totalSessions > 0) {
+          stationStats.push({
+            stationId: station.stationId,
+            stationName: station.stationName || 'Unknown',
+            energy: parseFloat(totalEnergy.toFixed(2)),
+            sessions: totalSessions
+          });
+        }
+      }
+      
+      // Sort by energy descending and take top 5
+      formattedTopStationsByEnergy = stationStats
+        .sort((a, b) => b.energy - a.energy)
+        .slice(0, 5);
+    } catch (error) {
+      console.error('Error fetching top stations by energy:', error);
+      formattedTopStationsByEnergy = [];
+    }
+    
+    // Top sessions by energy (individual sessions, using MeterValues calculation)
+    // Note: This uses stored energyConsumed for performance, but we could calculate from MeterValues if needed
+    // For now, using energyConsumed as it's already calculated and stored
+    let formattedTopSessionsByEnergy = [];
+    try {
+      const topSessions = await ChargingSession.findAll({
+        where: {
+          status: {
+            [Op.in]: ['completed', 'stopped']
+          },
+          energyConsumed: {
+            [Op.ne]: null,
+            [Op.gt]: 0
+          }
+        },
+        include: [
+          {
+            model: ChargingPoint,
+            as: 'chargingPoint',
+            attributes: ['id', 'deviceName', 'deviceId'],
+            include: [
+              {
+                model: Station,
+                as: 'station',
+                attributes: ['id', 'stationName', 'stationId'],
+                where: { deleted: false },
+                required: true
+              }
+            ],
+            where: { deleted: false },
+            required: true
+          },
+          {
+            model: Customer,
+            as: 'customer',
+            attributes: ['id', 'fullName'],
+            required: true
+          }
+        ],
+        attributes: ['id', 'energyConsumed', 'startTime'],
+        order: [['energyConsumed', 'DESC']],
+        limit: 5
+      });
+      
+      formattedTopSessionsByEnergy = topSessions.map(session => ({
+        sessionId: session.id,
+        stationId: session.chargingPoint?.station?.stationId || null,
+        energy: parseFloat(session.energyConsumed) || 0,
+        stationName: session.chargingPoint?.station?.stationName || 'Unknown',
+        chargerName: session.chargingPoint?.deviceName || 'Unknown',
+        customerName: session.customer?.fullName || 'Unknown',
+        startTime: session.startTime
+      }));
+    } catch (error) {
+      console.error('Error fetching top sessions by energy:', error);
+      formattedTopSessionsByEnergy = [];
+    }
+    
+    // Calculate average session duration
+    const completedSessions = await ChargingSession.findAll({
+      attributes: ['startTime', 'endTime'],
+      where: {
+        status: {
+          [Op.in]: ['completed', 'stopped']
+        },
+        endTime: {
+          [Op.ne]: null
+        }
+      },
+      limit: 100 // Last 100 sessions for average
+    });
+    
+    let avgDuration = '00:00:00';
+    if (completedSessions.length > 0) {
+      const totalDurationMs = completedSessions.reduce((sum, session) => {
+        const duration = new Date(session.endTime) - new Date(session.startTime);
+        return sum + duration;
+      }, 0);
+      const avgDurationMs = totalDurationMs / completedSessions.length;
+      const hours = Math.floor(avgDurationMs / (1000 * 60 * 60));
+      const minutes = Math.floor((avgDurationMs % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((avgDurationMs % (1000 * 60)) / 1000);
+      avgDuration = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    }
+    
+    // Get recent sessions (last 10)
+    const recentSessions = await ChargingSession.findAll({
+      limit: 10,
+      where: {
+        startTime: {
+          [Op.ne]: null
+        }
+      },
+      order: [['startTime', 'DESC']],
+      include: [
+        {
+          model: Customer,
+          as: 'customer',
+          attributes: ['fullName']
+        },
+        {
+          model: ChargingPoint,
+          as: 'chargingPoint',
+          attributes: ['deviceName', 'deviceId'],
+          include: [
+            {
+              model: Station,
+              as: 'station',
+              attributes: ['stationName']
+            },
+            {
+              model: Tariff,
+              as: 'tariff',
+              attributes: ['id', 'baseCharges', 'tax']
+            }
+          ]
+        }
+      ]
+    });
+    
+    // Format recent sessions with billed amount calculation
+    const formattedRecentSessions = recentSessions
+      .filter(session => session.startTime !== null)
+      .map(session => {
+        const energy = parseFloat(session.energyConsumed) || 0;
+        const tariff = session.chargingPoint?.tariff;
+        const baseCharges = tariff ? parseFloat(tariff.baseCharges) || 0 : 0;
+        const tax = tariff ? parseFloat(tariff.tax) || 0 : 0;
+        
+        // Calculate billed amount: (Energy × Base Charge) × (1 + Tax/100)
+        const baseAmount = energy * baseCharges;
+        const taxMultiplier = 1 + (tax / 100);
+        const billedAmount = baseAmount * taxMultiplier;
+        
+        return {
+          customerName: session.customer?.fullName || 'Unknown',
+          stationName: session.chargingPoint?.station?.stationName || session.chargingPoint?.deviceName || 'Unknown',
+          amount: parseFloat(session.finalAmount) || parseFloat(session.amountDeducted) || 0,
+          startTime: session.startTime,
+          status: session.status,
+          energy: parseFloat(energy.toFixed(2)),
+          billedAmount: parseFloat(billedAmount.toFixed(2))
+        };
+      });
+    
+    // Get recent customers (last 10)
+    const recentCustomers = await Customer.findAll({
+      limit: 10,
+      order: [['createdAt', 'DESC']],
+      attributes: ['id', 'fullName', 'phone', 'createdAt']
+    });
+    
+    // Get low balance customers (wallet balance < 100)
+    let lowBalanceCustomers = [];
+    try {
+      lowBalanceCustomers = await Customer.findAll({
+        include: [
+          {
+            model: Wallet,
+            as: 'wallet',
+            attributes: ['balance'],
+            where: {
+              balance: {
+                [Op.lt]: 100
+              }
+            },
+            required: true
+          }
+        ],
+        attributes: ['id', 'fullName', 'phone'],
+        limit: 10
+      });
+    } catch (error) {
+      console.error('Error fetching low balance customers:', error);
+      lowBalanceCustomers = [];
+    }
+    
+    // Calculate month-over-month changes (mock for now)
+    const customersChange = 12.5;
+    const sessionsChange = 18.3;
+    const revenueChange = 23.7;
+    const energyChange = 15.8;
+    
+    res.json({
+      success: true,
+      stats: {
+        totalCustomers,
+        activeSessions,
+        totalSessions,
+        totalRevenue,
+        totalEnergy,
+        totalStations,
+        totalChargers,
+        avgDuration,
+        stationsOnline,
+        chargersAvailable,
+        customersChange,
+        sessionsChange,
+        revenueChange,
+        energyChange
+      },
+      todayStats: {
+        sessions: todaySessions,
+        revenue: todayRevenue,
+        energy: todayEnergyRounded,
+        newCustomers: todayNewCustomers
+      },
+      weekStats: {
+        sessions: weekSessions,
+        revenue: weekRevenue,
+        energy: parseFloat(weekEnergy.toFixed(2)),
+        newCustomers: weekNewCustomers
+      },
+      monthStats: {
+        sessions: monthSessions,
+        revenue: monthRevenue,
+        energy: parseFloat(monthEnergy.toFixed(2)),
+        newCustomers: monthNewCustomers
+      },
+      stationStatus: {
+        online: stationsOnline,
+        offline: stationsOffline,
+        offlineStations: offlineStations.map(s => ({
+          id: s.id,
+          name: s.stationName,
+          status: s.status
+        }))
+      },
+      chargerStatus: {
+        available: chargersAvailable,
+        busy: chargersBusy,
+        unavailable: chargersUnavailable,
+        faulted: chargersFaulted,
+        faultedChargers: faultedChargersList.map(c => ({
+          id: c.id,
+          name: c.deviceName,
+          deviceId: c.deviceId
+        }))
+      },
+      topStationsByEnergy: formattedTopStationsByEnergy,
+      topSessionsByEnergy: formattedTopSessionsByEnergy,
+      alerts: {
+        offlineStations: offlineStations.map(s => ({
+          id: s.id,
+          name: s.stationName,
+          status: s.status
+        })),
+        faultedChargers: faultedChargersList.map(c => ({
+          id: c.id,
+          name: c.deviceName,
+          deviceId: c.deviceId
+        })),
+        lowBalanceCustomers: lowBalanceCustomers.map(c => ({
+          id: c.id,
+          name: c.fullName,
+          phone: c.phone,
+          balance: parseFloat(c.wallet?.balance) || 0
+        }))
+      },
+      recentSessions: formattedRecentSessions,
+      recentCustomers
+    });
+  } catch (error) {
+    console.error('Error fetching dashboard stats:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch dashboard statistics',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/cms/dashboard/charts
+ * Get chart data for sessions and revenue over time
+ * Query params: period (7, 30, 90 days)
+ */
+router.get('/dashboard/charts', async (req, res) => {
+  try {
+    const period = parseInt(req.query.period) || 30;
+    const now = new Date();
+    const startDate = new Date(now);
+    startDate.setDate(now.getDate() - period);
+    startDate.setHours(0, 0, 0, 0); // Start of day
+    
+    // Generate all dates in the period
+    const allDates = [];
+    for (let i = 0; i < period; i++) {
+      const date = new Date(startDate);
+      date.setDate(startDate.getDate() + i);
+      const dateStr = date.toISOString().split('T')[0];
+      allDates.push(dateStr);
+    }
+    
+    // Initialize maps for sessions and revenue
+    const sessionsMap = new Map();
+    const revenueMap = new Map();
+    
+    // Initialize all dates with 0
+    allDates.forEach(dateStr => {
+      sessionsMap.set(dateStr, 0);
+      revenueMap.set(dateStr, 0);
+    });
+    
+    // Get all stations and calculate stats for each date using same method as dashboard stats
+    const allStations = await Station.findAll({
+      where: { deleted: false },
+      attributes: ['id']
+    });
+    
+    // Calculate stats for each date
+    for (const dateStr of allDates) {
+      const dateStart = new Date(dateStr);
+      dateStart.setHours(0, 0, 0, 0);
+      const dateEnd = new Date(dateStr);
+      dateEnd.setHours(23, 59, 59, 999);
+      
+      let daySessions = 0;
+      let dayRevenue = 0;
+      
+      for (const station of allStations) {
+        const chargingPoints = await ChargingPoint.findAll({
+          where: {
+            stationId: station.id,
+            deleted: false
+          },
+          include: [
+            {
+              model: Tariff,
+              as: 'tariff',
+              attributes: ['id', 'tariffId', 'tariffName', 'baseCharges', 'tax', 'currency']
+            }
+          ],
+          attributes: ['id', 'deviceId']
+        });
+        
+        for (const cp of chargingPoints) {
+          if (cp.deviceId) {
+            // Calculate stats for this specific date using calculateSessionStatsForDateRange
+            const sessionStats = await calculateSessionStatsForDateRange(cp.deviceId, cp, dateStart, dateEnd);
+            daySessions += sessionStats.sessions;
+            dayRevenue += sessionStats.billedAmount;
+          }
+        }
+      }
+      
+      sessionsMap.set(dateStr, daySessions);
+      revenueMap.set(dateStr, parseFloat(dayRevenue.toFixed(2)));
+    }
+    
+    // Format data for charts
+    const sessionsChartData = allDates.map(date => ({
+      date: date,
+      count: sessionsMap.get(date) || 0
+    }));
+    
+    const revenueChartData = allDates.map(date => ({
+      date: date,
+      revenue: revenueMap.get(date) || 0
+    }));
+    
+    res.json({
+      success: true,
+      period: period,
+      sessions: sessionsChartData,
+      revenue: revenueChartData
+    });
+  } catch (error) {
+    console.error('Error fetching chart data:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch chart data',
       message: error.message
     });
   }

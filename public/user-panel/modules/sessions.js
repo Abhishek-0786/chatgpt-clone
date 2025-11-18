@@ -3,7 +3,31 @@ import { updateActiveNav, updatePageTitle } from '../app.js';
 import { getSessions } from '../services/api.js';
 import { showError } from '../../utils/notifications.js';
 
+// Global state for infinite scrolling
+let currentPage = 1;
+let totalPages = 1;
+let isLoading = false;
+let hasMorePages = true;
+let currentDateFilter = null;
+let scrollObserver = null;
+
 export async function loadSessionsModule() {
+    // Store current page in sessionStorage for refresh persistence
+    sessionStorage.setItem('lastPage', 'sessions');
+    
+    // Reset state
+    currentPage = 1;
+    totalPages = 1;
+    isLoading = false;
+    hasMorePages = true;
+    currentDateFilter = null;
+    
+    // Disconnect existing observer if any
+    if (scrollObserver) {
+        scrollObserver.disconnect();
+        scrollObserver = null;
+    }
+    
     updateActiveNav('sessions');
     updatePageTitle('My Sessions');
     
@@ -36,147 +60,232 @@ export async function loadSessionsModule() {
             <div id="sessionsList">
                 <div class="spinner"></div>
             </div>
+            <!-- Sentinel element for infinite scroll (always visible) -->
+            <div id="sessionsScrollSentinel" style="height: 20px;"></div>
+            <!-- Loading indicator for infinite scroll -->
+            <div id="sessionsLoadingIndicator" style="display: none; text-align: center; padding: 20px;">
+                <div class="spinner"></div>
+                <p style="margin-top: 10px; color: var(--text-secondary); font-size: 14px;">Loading more sessions...</p>
+            </div>
+            <!-- End of list indicator -->
+            <div id="sessionsEndIndicator" style="display: none; text-align: center; padding: 20px; color: var(--text-secondary); font-size: 14px;">
+                <i class="fas fa-check-circle"></i> All sessions loaded
+            </div>
         </div>
     `;
     
     // Load only completed sessions
-    await loadSessions('completed');
+    await loadSessions('completed', null, true);
+    
+    // Setup infinite scroll observer
+    setupInfiniteScroll();
 }
 
 
-// Load sessions
-async function loadSessions(filter = 'completed', dateFilter = null) {
+// Load sessions with pagination support
+async function loadSessions(filter = 'completed', dateFilter = null, reset = false) {
+    // Prevent concurrent loads
+    if (isLoading) {
+        return;
+    }
+    
+    // If resetting, start from page 1
+    if (reset) {
+        currentPage = 1;
+        hasMorePages = true;
+        currentDateFilter = dateFilter;
+    }
+    
+    // Check if we have more pages to load
+    if (!hasMorePages) {
+        return;
+    }
+    
     try {
-        const params = { status: 'completed' }; // Only load completed sessions
+        isLoading = true;
+        const params = {
+            page: currentPage,
+            limit: 20 // Load 20 sessions per page
+        };
         
-        // TEMPORARY: Mock data for testing
-        // TODO: Remove this and use real API
-        const allMockSessions = [
-            {
-                sessionId: 'SESS-001',
-                stationName: 'Spring House Station',
-                startTime: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-                status: 'completed',
-                energy: 15.5,
-                sessionDuration: '2h 30m',
-                billedAmount: 250.50
-            },
-            {
-                sessionId: 'SESS-002',
-                stationName: 'Modern EV Charging',
-                startTime: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-                status: 'completed',
-                energy: 8.2,
-                sessionDuration: '1h 15m',
-                billedAmount: 132.00
-            },
-            {
-                sessionId: 'SESS-003',
-                stationName: 'Spring House Station',
-                startTime: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-                status: 'completed',
-                energy: 22.8,
-                sessionDuration: '3h 45m',
-                billedAmount: 365.20
-            },
-            {
-                sessionId: 'SESS-004',
-                stationName: 'EV Power Station',
-                startTime: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
-                status: 'completed',
-                energy: 12.3,
-                sessionDuration: '1h 45m',
-                billedAmount: 198.50
-            },
-            {
-                sessionId: 'SESS-005',
-                stationName: 'Green Energy Hub',
-                startTime: new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(),
-                status: 'completed',
-                energy: 18.7,
-                sessionDuration: '2h 15m',
-                billedAmount: 301.20
-            }
-        ];
-        
-        // Apply date filter if provided
-        let mockSessions = allMockSessions;
-        if (dateFilter && (dateFilter.fromDate || dateFilter.toDate)) {
-            mockSessions = allMockSessions.filter(session => {
-                const sessionDate = new Date(session.startTime);
-                sessionDate.setHours(0, 0, 0, 0);
-                
-                if (dateFilter.fromDate) {
-                    const fromDate = new Date(dateFilter.fromDate);
-                    fromDate.setHours(0, 0, 0, 0);
-                    if (sessionDate < fromDate) return false;
-                }
-                
-                if (dateFilter.toDate) {
-                    const toDate = new Date(dateFilter.toDate);
-                    toDate.setHours(23, 59, 59, 999);
-                    if (sessionDate > toDate) return false;
-                }
-                
-                return true;
-            });
+        // Add date filters if provided
+        if (dateFilter && dateFilter.fromDate) {
+            params.fromDate = dateFilter.fromDate;
+        }
+        if (dateFilter && dateFilter.toDate) {
+            params.toDate = dateFilter.toDate;
         }
         
         const container = document.getElementById('sessionsList');
+        const loadingIndicator = document.getElementById('sessionsLoadingIndicator');
+        const endIndicator = document.getElementById('sessionsEndIndicator');
         
-        // Uncomment below when backend is ready:
-        // const response = await getSessions(params);
-        // if (response.success && response.sessions && response.sessions.length > 0) {
+        // Show loading indicator only if not resetting (i.e., loading more)
+        if (reset) {
+            container.innerHTML = '<div class="spinner"></div>';
+            loadingIndicator.style.display = 'none';
+            endIndicator.style.display = 'none';
+        } else {
+            loadingIndicator.style.display = 'block';
+        }
         
-        if (mockSessions && mockSessions.length > 0) {
-            container.innerHTML = mockSessions.map(session => `
-                <div class="card" style="cursor: pointer;" onclick="window.viewSessionDetail('${session.sessionId}')">
-                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 12px;">
+        // Call real API
+        const response = await getSessions(params);
+        
+        if (!response.success) {
+            throw new Error(response.error || 'Failed to load sessions');
+        }
+        
+        const sessions = response.sessions || [];
+        totalPages = response.totalPages || 1;
+        hasMorePages = currentPage < totalPages;
+        
+        if (sessions.length > 0) {
+            const sessionsHTML = sessions.map(session => {
+                // Calculate session duration
+                let sessionDuration = 'N/A';
+                if (session.startTime && session.endTime) {
+                    const start = new Date(session.startTime);
+                    const end = new Date(session.endTime);
+                    const durationMs = end - start;
+                    const hours = Math.floor(durationMs / (1000 * 60 * 60));
+                    const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
+                    const seconds = Math.floor((durationMs % (1000 * 60)) / 1000);
+                    
+                    if (hours > 0) {
+                        sessionDuration = `${hours}h ${minutes}m`;
+                    } else if (minutes > 0) {
+                        sessionDuration = `${minutes}m ${seconds}s`;
+                    } else {
+                        sessionDuration = `${seconds}s`;
+                    }
+                }
+                
+                // Get amounts
+                const enteredAmount = parseFloat(session.amountDeducted || 0);
+                const refundAmount = parseFloat(session.refundAmount || 0);
+                const finalCost = parseFloat(session.billedAmount || 0);
+                
+                // Create status message with entered amount and refund
+                let statusMessage = 'Charging Session';
+                if (enteredAmount > 0) {
+                    statusMessage = `Entered: ₹${enteredAmount.toFixed(2)}`;
+                }
+                
+                return `
+                <div class="card" style="cursor: pointer; padding: 12px; margin-bottom: 12px;" onclick="window.viewSessionDetail('${session.sessionId}')">
+                    <div style="display: flex; justify-content: space-between; align-items: start; margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border-color);">
                         <div style="flex: 1;">
-                            <div style="font-weight: 600; margin-bottom: 4px;">${session.stationName || 'Station'}</div>
-                            <div style="font-size: 12px; color: var(--text-secondary);">
+                            <div style="font-size: 14px; font-weight: 600; margin-bottom: 4px;">${statusMessage}</div>
+                            ${refundAmount > 0 ? `<div style="font-size: 12px; color: #28a745; margin-bottom: 4px; font-weight: 500;">
+                                <i class="fas fa-undo"></i> Refund: ₹${refundAmount.toFixed(2)}
+                            </div>` : ''}
+                            <div style="font-size: 11px; color: var(--text-secondary);">
                                 ${formatDate(session.startTime)}
                             </div>
                         </div>
-                        <span class="badge ${session.status === 'active' ? 'badge-success' : 'badge-info'}">
-                            ${session.status || 'Completed'}
+                        <span class="badge badge-info" style="font-size: 10px; padding: 4px 8px;">
+                            Completed
                         </span>
                     </div>
-                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 12px;">
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
                         <div>
-                            <div style="font-size: 12px; color: var(--text-secondary);">Energy</div>
-                            <div style="font-size: 16px; font-weight: 600;">${parseFloat(session.energy || 0).toFixed(2)} kWh</div>
+                            <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 2px;">Energy</div>
+                            <div style="font-size: 14px; font-weight: 600;">${parseFloat(session.energy || 0).toFixed(2)} kWh</div>
                         </div>
                         <div>
-                            <div style="font-size: 12px; color: var(--text-secondary);">Duration</div>
-                            <div style="font-size: 16px; font-weight: 600;">${session.sessionDuration || 'N/A'}</div>
+                            <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 2px;">Duration</div>
+                            <div style="font-size: 14px; font-weight: 600;">${sessionDuration}</div>
                         </div>
                         <div>
-                            <div style="font-size: 12px; color: var(--text-secondary);">Cost</div>
-                            <div style="font-size: 16px; font-weight: 600;">₹${parseFloat(session.billedAmount || 0).toFixed(2)}</div>
+                            <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 2px;">Cost</div>
+                            <div style="font-size: 14px; font-weight: 600;">₹${finalCost.toFixed(2)}</div>
                         </div>
                     </div>
                 </div>
-            `).join('');
-        } else {
-            container.innerHTML = `
-                <div class="empty-state">
-                    <i class="fas fa-history"></i>
-                    <h3>No Sessions Found</h3>
-                    <p>Your charging sessions will appear here</p>
-                </div>
             `;
+            }).join('');
+            
+            if (reset) {
+                container.innerHTML = sessionsHTML;
+            } else {
+                container.innerHTML += sessionsHTML;
+            }
+            
+            // Update page number for next load
+            currentPage++;
+            
+            // Show/hide end indicator
+            if (!hasMorePages) {
+                endIndicator.style.display = 'block';
+            } else {
+                endIndicator.style.display = 'none';
+            }
+        } else {
+            if (reset) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <i class="fas fa-history"></i>
+                        <h3>No Sessions Found</h3>
+                        <p>Your charging sessions will appear here</p>
+                    </div>
+                `;
+            }
+            hasMorePages = false;
+            endIndicator.style.display = 'block';
         }
+        
+        loadingIndicator.style.display = 'none';
     } catch (error) {
         console.error('Error loading sessions:', error);
         showError('Failed to load sessions');
-        document.getElementById('sessionsList').innerHTML = `
-            <div class="empty-state">
-                <i class="fas fa-exclamation-circle"></i>
-                <h3>Error Loading Sessions</h3>
-                <p>Please try again later</p>
-            </div>
-        `;
+        const container = document.getElementById('sessionsList');
+        if (reset) {
+            container.innerHTML = `
+                <div class="empty-state">
+                    <i class="fas fa-exclamation-circle"></i>
+                    <h3>Error Loading Sessions</h3>
+                    <p>Please try again later</p>
+                </div>
+            `;
+        }
+        document.getElementById('sessionsLoadingIndicator').style.display = 'none';
+    } finally {
+        isLoading = false;
+    }
+}
+
+// Setup infinite scroll observer
+function setupInfiniteScroll() {
+    // Disconnect existing observer if any
+    if (scrollObserver) {
+        scrollObserver.disconnect();
+    }
+    
+    // Create intersection observer to detect when user scrolls near bottom
+    const options = {
+        root: null, // Use viewport as root
+        rootMargin: '100px', // Trigger 100px before bottom
+        threshold: 0.1
+    };
+    
+    scrollObserver = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting && hasMorePages && !isLoading) {
+                console.log('Loading more sessions...', { currentPage, totalPages, hasMorePages });
+                // Load next page
+                loadSessions('completed', currentDateFilter, false);
+            }
+        });
+    }, options);
+    
+    // Observe the sentinel element (always visible, better for infinite scroll)
+    const sentinel = document.getElementById('sessionsScrollSentinel');
+    if (sentinel) {
+        scrollObserver.observe(sentinel);
+        console.log('Infinite scroll observer set up');
+    } else {
+        console.error('Sentinel element not found for infinite scroll');
     }
 }
 
@@ -235,7 +344,14 @@ window.applyDateFilter = async function() {
         toDate: toDate
     };
     
-    await loadSessions('completed', dateFilter);
+    // Reset and reload with new filter
+    await loadSessions('completed', dateFilter, true);
+    
+    // Re-setup infinite scroll observer
+    if (scrollObserver) {
+        scrollObserver.disconnect();
+    }
+    setupInfiniteScroll();
 };
 
 // Clear date filter
@@ -254,7 +370,14 @@ window.clearDateFilter = async function() {
         toDateInput.max = today;
     }
     
-    await loadSessions('completed', null);
+    // Reset and reload without filter
+    await loadSessions('completed', null, true);
+    
+    // Re-setup infinite scroll observer
+    if (scrollObserver) {
+        scrollObserver.disconnect();
+    }
+    setupInfiniteScroll();
 };
 
 // View session detail

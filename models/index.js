@@ -12,6 +12,7 @@ const Connector = require('./Connector');
 const Vehicle = require('./Vehicle');
 const Wallet = require('./Wallet');
 const WalletTransaction = require('./WalletTransaction');
+const ChargingSession = require('./ChargingSession');
 
 // Define associations
 User.hasMany(Chat, { foreignKey: 'userId', as: 'chats' });
@@ -49,6 +50,12 @@ WalletTransaction.belongsTo(Wallet, { foreignKey: 'walletId', as: 'wallet' });
 Customer.hasMany(WalletTransaction, { foreignKey: 'customerId', as: 'walletTransactions' });
 WalletTransaction.belongsTo(Customer, { foreignKey: 'customerId', as: 'customer' });
 
+Customer.hasMany(ChargingSession, { foreignKey: 'customerId', as: 'chargingSessions' });
+ChargingSession.belongsTo(Customer, { foreignKey: 'customerId', as: 'customer' });
+
+ChargingPoint.hasMany(ChargingSession, { foreignKey: 'chargingPointId', as: 'sessions' });
+ChargingSession.belongsTo(ChargingPoint, { foreignKey: 'chargingPointId', as: 'chargingPoint' });
+
 // Sync database
 const syncDatabase = async () => {
   try {
@@ -77,5 +84,6 @@ module.exports = {
   Vehicle,
   Wallet,
   WalletTransaction,
+  ChargingSession,
   syncDatabase
 };

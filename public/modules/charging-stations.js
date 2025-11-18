@@ -4,6 +4,19 @@ import { formatDate } from '../utils/helpers.js';
 import { openAddStationForm } from './add-station-form.js';
 import { showSuccess, showError, showConfirm } from '../utils/notifications.js';
 
+// Global variables for auto-refresh
+let stationsRefreshInterval = null;
+let currentStationsPage = 1;
+let currentStationsLimit = 10;
+
+// Export function to clear refresh interval (called when navigating away)
+export function clearStationsRefreshInterval() {
+    if (stationsRefreshInterval) {
+        clearInterval(stationsRefreshInterval);
+        stationsRefreshInterval = null;
+    }
+}
+
 // Export main function to load module
 export function loadChargingStationsModule() {
     const moduleContent = document.getElementById('moduleContent');
@@ -283,13 +296,36 @@ export function loadChargingStationsModule() {
         </div>
     `;
     
+    // Clear any existing refresh interval
+    if (stationsRefreshInterval) {
+        clearInterval(stationsRefreshInterval);
+        stationsRefreshInterval = null;
+    }
+    
     // Load stations data
     loadStationsData();
+    
+    // Set up auto-refresh every 5 seconds
+    stationsRefreshInterval = setInterval(() => {
+        // Only refresh if we're still on the stations list (not on detail view)
+        const urlParams = new URLSearchParams(window.location.search);
+        const module = urlParams.get('module');
+        const stationId = urlParams.get('station');
+        
+        if (module === 'charging-stations' && !stationId) {
+            // We're on the stations list, refresh with current page
+            loadStationsData(currentStationsPage, currentStationsLimit);
+        }
+    }, 10000);
 }
 
 // Export data loading function
 export async function loadStationsData(page = 1, limit = 10) {
     try {
+        // Update current page and limit for auto-refresh
+        currentStationsPage = page;
+        currentStationsLimit = limit;
+        
         // Use API service to get real data from backend
         const data = await getChargingStations({ page, limit });
         
@@ -297,13 +333,16 @@ export async function loadStationsData(page = 1, limit = 10) {
         displayStations(data);
     } catch (error) {
         console.error('Error loading stations:', error);
-        document.getElementById('stationsTableBody').innerHTML = `
-            <tr>
-                <td colspan="15" class="text-center text-danger">
-                    Error loading stations. Please try again.
-                </td>
-            </tr>
-        `;
+        const tbody = document.getElementById('stationsTableBody');
+        if (tbody) {
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="15" class="text-center text-danger">
+                        Error loading stations. Please try again.
+                    </td>
+                </tr>
+            `;
+        }
     }
 }
 
@@ -462,14 +501,17 @@ export async function editStation(stationId) {
 }
 
 export async function viewStation(stationId) {
-    // Push state to browser history for station detail view
-    const url = `/cms.html?module=charging-stations&station=${stationId}`;
-    window.history.pushState({ module: 'charging-stations', stationId: stationId, view: 'detail' }, '', url);
+    // Clear refresh interval when navigating to detail view
+    clearStationsRefreshInterval();
+    
+    // Push state to browser history for station detail view (default to details tab)
+    const url = `/cms.html?module=charging-stations&station=${stationId}&tab=details`;
+    window.history.pushState({ module: 'charging-stations', stationId: stationId, view: 'detail', tab: 'details' }, '', url);
     
     // Dynamically import and load station detail view
     try {
         const detailModule = await import('./station-detail-view.js');
-        detailModule.loadStationDetailView(stationId);
+        detailModule.loadStationDetailView(stationId, 'details');
     } catch (error) {
         console.error('Error loading station detail view:', error);
         showError(error.message || 'Failed to load station details');

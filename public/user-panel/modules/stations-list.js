@@ -4,6 +4,9 @@ import { getStations } from '../services/api.js';
 import { showError } from '../../utils/notifications.js';
 
 export async function loadStationsModule() {
+    // Store current page in sessionStorage for refresh persistence
+    sessionStorage.setItem('lastPage', 'stations');
+    
     updateActiveNav('stations');
     updatePageTitle('Charging Stations');
     
@@ -11,11 +14,45 @@ export async function loadStationsModule() {
     
     appMain.innerHTML = `
         <div class="stations-container">
+            <!-- Location Search Box -->
+            <div class="card" style="padding: 12px; margin-bottom: 16px;">
+                <div style="display: flex; align-items: center; gap: 12px; background: var(--bg-color); border-radius: 12px; padding: 8px 12px;">
+                    <i class="fas fa-search" style="color: var(--text-secondary); font-size: 16px;"></i>
+                    <input 
+                        type="text" 
+                        id="locationSearchInputStations" 
+                        placeholder="Search by city, state, or address..." 
+                        style="flex: 1; border: none; background: transparent; outline: none; font-size: 14px; color: var(--text-primary);"
+                        onkeyup="if(event.key === 'Enter') window.searchStationsByLocationInList()"
+                    />
+                    <button 
+                        onclick="window.clearLocationSearchInList()" 
+                        id="clearLocationBtnStations" 
+                        style="display: none; background: none; border: none; color: var(--text-secondary); cursor: pointer; padding: 4px 8px; font-size: 14px;"
+                    >
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+            
             <div id="stationsList">
                 <div class="spinner"></div>
             </div>
         </div>
     `;
+    
+    // Setup search input event listeners
+    const searchInput = document.getElementById('locationSearchInputStations');
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            const clearBtn = document.getElementById('clearLocationBtnStations');
+            if (this.value.trim()) {
+                clearBtn.style.display = 'block';
+            } else {
+                clearBtn.style.display = 'none';
+            }
+        });
+    }
     
     // Load stations list
     await loadStationsList();
@@ -36,12 +73,21 @@ window.viewStationDetail = async function(stationId) {
 };
 
 // Load stations list
-async function loadStationsList() {
+async function loadStationsList(location = null) {
     try {
         const container = document.getElementById('stationsList');
         
+        // Build API params
+        const params = {};
+        if (location && location.trim()) {
+            params.location = location.trim();
+        } else {
+            // If no location, sort by last active
+            params.sortBy = 'lastActive';
+        }
+        
         // Fetch stations from API
-        const response = await getStations();
+        const response = await getStations(params);
         const stations = response.success && response.stations ? response.stations : [];
         
         if (stations && stations.length > 0) {
@@ -112,3 +158,21 @@ async function loadStationsList() {
         `;
     }
 }
+
+// Search stations by location in stations list
+window.searchStationsByLocationInList = async function() {
+    const searchInput = document.getElementById('locationSearchInputStations');
+    const location = searchInput ? searchInput.value.trim() : '';
+    await loadStationsList(location);
+};
+
+// Clear location search in stations list
+window.clearLocationSearchInList = async function() {
+    const searchInput = document.getElementById('locationSearchInputStations');
+    const clearBtn = document.getElementById('clearLocationBtnStations');
+    if (searchInput) {
+        searchInput.value = '';
+        clearBtn.style.display = 'none';
+    }
+    await loadStationsList(null);
+};

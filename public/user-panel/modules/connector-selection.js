@@ -4,6 +4,18 @@ import { getChargingPointDetail } from '../services/api.js';
 import { showError } from '../../utils/notifications.js';
 
 export async function loadConnectorSelection(chargingPointId, deviceId, deviceName, stationId, stationName) {
+    // Store page info in sessionStorage for refresh persistence
+    if (chargingPointId && deviceId && stationId) {
+        sessionStorage.setItem('lastPage', 'connector-selection');
+        sessionStorage.setItem('lastChargingPointId', chargingPointId);
+        sessionStorage.setItem('lastDeviceId', deviceId);
+        sessionStorage.setItem('lastDeviceName', deviceName || '');
+        sessionStorage.setItem('lastStationId', stationId);
+        if (stationName) {
+            sessionStorage.setItem('lastStationName', stationName);
+        }
+    }
+    
     updatePageTitle('Select Connector');
     
     const appMain = document.getElementById('appMain');

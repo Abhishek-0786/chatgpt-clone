@@ -26,8 +26,87 @@ document.addEventListener('DOMContentLoaded', async () => {
             document.getElementById('loadingScreen').style.display = 'none';
             document.getElementById('appContainer').style.display = 'flex';
             
-            // Load dashboard by default
-            await loadDashboard();
+            // Check for active session first
+            const { getActiveSession } = await import('./services/api.js');
+            const sessionResponse = await getActiveSession().catch(() => ({ success: false, session: null }));
+            const activeSession = sessionResponse.success ? sessionResponse.session : null;
+            
+            // If there's an active session, load it
+            if (activeSession && activeSession.status && !['stopped', 'completed', 'failed'].includes(activeSession.status)) {
+                const { loadActiveSession } = await import('./modules/active-session.js');
+                await loadActiveSession();
+            } else {
+                // Check URL parameters or sessionStorage for which page to load
+                const urlParams = new URLSearchParams(window.location.search);
+                const page = urlParams.get('page') || sessionStorage.getItem('lastPage') || 'dashboard';
+                
+                // Load the appropriate page
+                switch(page) {
+                    case 'stations':
+                        await loadStationsModule();
+                        break;
+                    case 'wallet':
+                        await loadWalletModule();
+                        break;
+                    case 'sessions':
+                        await loadSessionsModule();
+                        break;
+                    case 'profile':
+                        await loadProfileModule();
+                        break;
+                    case 'vehicles':
+                        await window.loadVehiclesModule();
+                        break;
+                    case 'station-detail':
+                        // Load station detail page if stationId is stored
+                        const lastStationId = sessionStorage.getItem('lastStationId');
+                        const lastStationName = sessionStorage.getItem('lastStationName');
+                        if (lastStationId) {
+                            const { loadStationDetail } = await import('./modules/station-detail.js');
+                            await loadStationDetail(lastStationId, lastStationName);
+                        } else {
+                            // Fallback to dashboard if no stationId found
+                            await loadDashboard();
+                        }
+                        break;
+                    case 'charger-detail':
+                        // Load charger detail page if parameters are stored
+                        const lastChargingPointId = sessionStorage.getItem('lastChargingPointId');
+                        const lastDeviceId = sessionStorage.getItem('lastDeviceId');
+                        const lastStationIdForCharger = sessionStorage.getItem('lastStationId');
+                        const lastStationNameForCharger = sessionStorage.getItem('lastStationName');
+                        if (lastChargingPointId && lastDeviceId && lastStationIdForCharger) {
+                            const { loadChargerDetail } = await import('./modules/charger-detail.js');
+                            await loadChargerDetail(lastChargingPointId, lastDeviceId, lastStationIdForCharger, lastStationNameForCharger);
+                        } else {
+                            // Fallback to dashboard if parameters not found
+                            await loadDashboard();
+                        }
+                        break;
+                    case 'connector-selection':
+                        // Load connector selection page if parameters are stored
+                        const lastChargingPointIdForConnector = sessionStorage.getItem('lastChargingPointId');
+                        const lastDeviceIdForConnector = sessionStorage.getItem('lastDeviceId');
+                        const lastDeviceName = sessionStorage.getItem('lastDeviceName');
+                        const lastStationIdForConnector = sessionStorage.getItem('lastStationId');
+                        const lastStationNameForConnector = sessionStorage.getItem('lastStationName');
+                        if (lastChargingPointIdForConnector && lastDeviceIdForConnector && lastStationIdForConnector) {
+                            const { loadConnectorSelection } = await import('./modules/connector-selection.js');
+                            await loadConnectorSelection(lastChargingPointIdForConnector, lastDeviceIdForConnector, lastDeviceName, lastStationIdForConnector, lastStationNameForConnector);
+                        } else {
+                            // Fallback to dashboard if parameters not found
+                            await loadDashboard();
+                        }
+                        break;
+                    case 'active-session':
+                        // Load active session page (will redirect to dashboard if no active session)
+                        const { loadActiveSession } = await import('./modules/active-session.js');
+                        await loadActiveSession();
+                        break;
+                    default:
+                        await loadDashboard();
+                }
+            }
             
             // Check for active session and show banner
             checkActiveSession();

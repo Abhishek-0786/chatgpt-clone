@@ -4,6 +4,9 @@ import { getVehicles, getVehicle, createVehicle, updateVehicle, deleteVehicle as
 import { showSuccess, showError } from '../../utils/notifications.js';
 
 export async function loadVehiclesModule() {
+    // Store current page in sessionStorage for refresh persistence
+    sessionStorage.setItem('lastPage', 'vehicles');
+    
     updateActiveNav('vehicles');
     updatePageTitle('My Vehicles');
     

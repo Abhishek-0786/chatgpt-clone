@@ -3,9 +3,83 @@ const router = express.Router();
 const { Op } = require('sequelize');
 const Charger = require('../models/Charger');
 const ChargerData = require('../models/ChargerData');
+const ChargingSession = require('../models/ChargingSession');
+const ChargingPoint = require('../models/ChargingPoint');
+const Wallet = require('../models/Wallet');
+const WalletTransaction = require('../models/WalletTransaction');
 const fs = require('fs');
 const path = require('path');
 const { sendOcppCall, connections } = require('../websocket-server');
+
+// Helper function to extract meter value from ChargerData
+function extractMeterValue(meterValuesLog) {
+  try {
+    if (!meterValuesLog || !meterValuesLog.messageData) {
+      return null;
+    }
+
+    const messageData = meterValuesLog.messageData;
+    
+    // Check if meterValue is directly in messageData
+    if (messageData.meterValue && Array.isArray(messageData.meterValue) && messageData.meterValue.length > 0) {
+      const meterValue = messageData.meterValue[0];
+      if (meterValue.sampledValue && Array.isArray(meterValue.sampledValue)) {
+        for (const sampledValue of meterValue.sampledValue) {
+          if (sampledValue.measurand === 'Energy.Active.Import.Register' || 
+              sampledValue.measurand === 'Energy.Active.Import.Interval' ||
+              sampledValue.measurand === 'Energy.Active.Import.Export') {
+            const value = parseFloat(sampledValue.value);
+            if (!isNaN(value)) {
+              return value;
+            }
+          }
+        }
+      }
+    }
+
+    // Check raw OCPP message format
+    if (meterValuesLog.raw && Array.isArray(meterValuesLog.raw) && meterValuesLog.raw.length > 2) {
+      const payload = meterValuesLog.raw[2];
+      if (payload && payload.meterValue && Array.isArray(payload.meterValue) && payload.meterValue.length > 0) {
+        const meterValue = payload.meterValue[0];
+        if (meterValue.sampledValue && Array.isArray(meterValue.sampledValue)) {
+          for (const sampledValue of meterValue.sampledValue) {
+            if (sampledValue.measurand === 'Energy.Active.Import.Register' || 
+                sampledValue.measurand === 'Energy.Active.Import.Interval' ||
+                sampledValue.measurand === 'Energy.Active.Import.Export') {
+              const value = parseFloat(sampledValue.value);
+              if (!isNaN(value)) {
+                return value;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return null;
+  } catch (error) {
+    console.error('Error extracting meter value:', error);
+    return null;
+  }
+}
+
+// Helper function to get or create wallet
+async function getOrCreateWallet(customerId) {
+  let wallet = await Wallet.findOne({
+    where: { customerId }
+  });
+
+  if (!wallet) {
+    wallet = await Wallet.create({
+      customerId,
+      balance: 0.00,
+      currency: 'INR'
+    });
+  }
+
+  return wallet;
+}
 
 // JSON file path
 const DATA_FILE_PATH = path.join(__dirname, '..', 'data', 'charger-data.json');
@@ -835,6 +909,180 @@ router.post('/remote-stop', async (req, res) => {
         if (recentRemoteStartRequests.has(deviceId)) {
           console.log(`✅ [RATE LIMIT] Charging stopped for ${deviceId}, clearing rate limit to allow new request`);
           recentRemoteStartRequests.delete(deviceId);
+        }
+        
+        // Update ChargingSession when stopped from CMS
+        // Check if there are any active sessions for this deviceId and update them
+        try {
+          const activeSessions = await ChargingSession.findAll({
+            where: {
+              deviceId: deviceId,
+              status: {
+                [Op.in]: ['pending', 'active']
+              },
+              endTime: null
+            },
+            include: [
+              {
+                model: ChargingPoint,
+                as: 'chargingPoint',
+                include: [
+                  {
+                    model: require('../models/Tariff'),
+                    as: 'tariff'
+                  }
+                ]
+              }
+            ],
+            order: [['createdAt', 'DESC']]
+          });
+          
+          if (activeSessions.length > 0) {
+            // Process each active session with refund calculation
+            for (const session of activeSessions) {
+              // Get tariff for cost calculation
+              const tariff = session.chargingPoint?.tariff;
+              const baseCharges = tariff ? parseFloat(tariff.baseCharges) : 0;
+              const tax = tariff ? parseFloat(tariff.tax) : 0;
+
+              // Get meter readings
+              let meterStart = session.meterStart;
+              let meterEnd = null;
+              let energyConsumed = 0;
+
+              // Get meter_start if not set
+              if (!meterStart && session.startTime) {
+                const firstMeterValues = await ChargerData.findOne({
+                  where: {
+                    deviceId: deviceId,
+                    message: 'MeterValues',
+                    direction: 'Incoming',
+                    createdAt: {
+                      [Op.gte]: session.startTime
+                    }
+                  },
+                  order: [['createdAt', 'ASC']],
+                  limit: 1
+                });
+
+                if (firstMeterValues) {
+                  meterStart = extractMeterValue(firstMeterValues);
+                }
+              }
+
+              // Wait a bit for final meter readings after stop
+              await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3 seconds
+
+              // Get latest meter reading
+              const lastMeterValues = await ChargerData.findOne({
+                where: {
+                  deviceId: deviceId,
+                  message: 'MeterValues',
+                  direction: 'Incoming',
+                  createdAt: {
+                    [Op.gte]: session.startTime || new Date(Date.now() - 24 * 60 * 60 * 1000)
+                  }
+                },
+                order: [['createdAt', 'DESC']],
+                limit: 1
+              });
+
+              if (lastMeterValues) {
+                meterEnd = extractMeterValue(lastMeterValues);
+              }
+
+              // Calculate energy consumed
+              if (meterStart !== null && meterEnd !== null && meterEnd >= meterStart) {
+                energyConsumed = (meterEnd - meterStart) / 1000; // Convert Wh to kWh
+                if (energyConsumed < 0) energyConsumed = 0;
+              }
+
+              // Calculate final amount
+              let calculatedAmount = 0;
+              if (energyConsumed > 0 && baseCharges > 0) {
+                const baseAmount = energyConsumed * baseCharges;
+                const taxMultiplier = 1 + (tax / 100);
+                calculatedAmount = baseAmount * taxMultiplier;
+              }
+
+              // Cap finalAmount at amountDeducted
+              const amountDeducted = parseFloat(session.amountDeducted);
+              let finalAmount = Math.min(calculatedAmount, amountDeducted);
+
+              // Calculate refund
+              let refundAmount = 0;
+              if (energyConsumed > 0 && calculatedAmount > 0) {
+                if (finalAmount < amountDeducted) {
+                  refundAmount = amountDeducted - finalAmount;
+                }
+              } else if (energyConsumed === 0) {
+                // No energy consumed - refund full amount
+                refundAmount = amountDeducted;
+              }
+
+              // Update session with all calculated values
+              await session.update({
+                status: 'stopped',
+                endTime: new Date(),
+                stopReason: 'Remote (CMS)',
+                energyConsumed: energyConsumed,
+                finalAmount: finalAmount,
+                refundAmount: refundAmount,
+                meterStart: meterStart,
+                meterEnd: meterEnd
+              });
+
+              console.log(`✅ [Remote Stop] Updated session ${session.sessionId} - Energy: ${energyConsumed.toFixed(3)} kWh, Final: ₹${finalAmount.toFixed(2)}, Refund: ₹${refundAmount.toFixed(2)}`);
+
+              // Update wallet if refund is needed
+              if (refundAmount > 0 && session.customerId) {
+                try {
+                  // Check if refund transaction already exists for this session to prevent duplicates
+                  const existingRefund = await WalletTransaction.findOne({
+                    where: {
+                      customerId: session.customerId,
+                      referenceId: session.sessionId,
+                      transactionType: 'refund',
+                      transactionCategory: 'refund'
+                    }
+                  });
+
+                  if (!existingRefund) {
+                    const wallet = await getOrCreateWallet(session.customerId);
+                    const currentBalance = parseFloat(wallet.balance);
+                    const newBalance = currentBalance + refundAmount;
+
+                    await wallet.update({ balance: newBalance });
+
+                    // Create refund transaction
+                    await WalletTransaction.create({
+                      walletId: wallet.id,
+                      customerId: session.customerId,
+                      transactionType: 'refund',
+                      amount: refundAmount,
+                      balanceBefore: currentBalance,
+                      balanceAfter: newBalance,
+                      description: `Refund - Charging Session ${session.sessionId} (Energy: ${energyConsumed.toFixed(2)} kWh, Used: ₹${finalAmount.toFixed(2)}, Refunded: ₹${refundAmount.toFixed(2)})`,
+                      referenceId: session.sessionId,
+                      status: 'completed',
+                      transactionCategory: 'refund'
+                    });
+
+                    console.log(`✅ [Remote Stop] Wallet refund processed: ₹${refundAmount} (Balance: ₹${currentBalance} → ₹${newBalance})`);
+                  } else {
+                    console.log(`✅ [Remote Stop] Refund transaction already exists for session ${session.sessionId}, skipping duplicate`);
+                  }
+                } catch (walletError) {
+                  console.error('⚠️ [Remote Stop] Error updating wallet:', walletError);
+                }
+              }
+            }
+          } else {
+            console.log(`⚠️ [Remote Stop] No active sessions found for deviceId: ${deviceId}`);
+          }
+        } catch (sessionError) {
+          // Log error but don't fail the request - charger stop was successful
+          console.error('⚠️ [Remote Stop] Error updating sessions:', sessionError);
         }
         
         res.json({

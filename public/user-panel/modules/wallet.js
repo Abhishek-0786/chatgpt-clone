@@ -1,80 +1,87 @@
 // Wallet Module
 import { updateActiveNav, updatePageTitle, updateWalletBalance } from '../app.js';
-import { getWalletBalance, getWalletTransactions, createTopupOrder, verifyTopupPayment, getCurrentUserProfile, getCurrentUser } from '../services/api.js';
+import { getWalletBalance, getWalletTransactions, createTopupOrder, verifyTopupPayment, recordFailedPayment, getCurrentUserProfile, getCurrentUser } from '../services/api.js';
 import { showError, showSuccess } from '../../utils/notifications.js';
 
+// Infinite scroll state
+let walletTransactionsPage = 1;
+let walletTransactionsLoading = false;
+let walletTransactionsHasMore = true;
+let walletTransactionsObserver = null;
+
 export async function loadWalletModule() {
+    // Store current page in sessionStorage for refresh persistence
+    sessionStorage.setItem('lastPage', 'wallet');
+    
     updateActiveNav('wallet');
     updatePageTitle('Wallet');
     
     const appMain = document.getElementById('appMain');
     
     try {
-        // Fetch wallet balance and transactions from API
-        const [balanceResponse, transactionsResponse] = await Promise.all([
-            getWalletBalance(),
-            getWalletTransactions({ limit: 20 })
-        ]);
+        // Reset infinite scroll state
+        walletTransactionsPage = 1;
+        walletTransactionsLoading = false;
+        walletTransactionsHasMore = true;
         
+        // Fetch wallet balance
+        const balanceResponse = await getWalletBalance();
         const balance = balanceResponse.success ? balanceResponse.balance : 0;
-        const transactions = transactionsResponse.success ? transactionsResponse.transactions : [];
         
         // Update wallet balance in header
         updateWalletBalance(balance);
         
         appMain.innerHTML = `
-            <!-- Wallet Balance Card -->
-            <div class="card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
-                <div style="text-align: center;">
-                    <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Total Balance</div>
-                    <div style="font-size: 48px; font-weight: 700; margin-bottom: 16px;">
-                        ₹${parseFloat(balance || 0).toFixed(2)}
+            <div style="max-width: 100%; overflow-x: hidden;">
+                <!-- Wallet Balance Card -->
+                <div class="card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; margin-bottom: 16px;">
+                    <div style="text-align: center;">
+                        <div style="font-size: 14px; opacity: 0.9; margin-bottom: 8px;">Total Balance</div>
+                        <div style="font-size: 48px; font-weight: 700; margin-bottom: 16px; word-break: break-word;">
+                            ₹${parseFloat(balance || 0).toFixed(2)}
+                        </div>
+                        <button class="btn" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);" onclick="window.showTopUpModal()">
+                            <i class="fas fa-plus"></i> Top Up Wallet
+                        </button>
                     </div>
-                    <button class="btn" style="background: rgba(255,255,255,0.2); color: white; border: 1px solid rgba(255,255,255,0.3);" onclick="window.showTopUpModal()">
-                        <i class="fas fa-plus"></i> Top Up Wallet
-                    </button>
                 </div>
-            </div>
-            
-            <!-- Quick Top-up Amounts -->
-            <div class="card">
-                <h3 class="card-title">Quick Top-up</h3>
-                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
-                    <button class="btn btn-outline" onclick="window.topUpAmount(100)">₹100</button>
-                    <button class="btn btn-outline" onclick="window.topUpAmount(500)">₹500</button>
-                    <button class="btn btn-outline" onclick="window.topUpAmount(1000)">₹1000</button>
+                
+                <!-- Quick Top-up Amounts -->
+                <div class="card" style="margin-bottom: 16px; overflow-x: hidden;">
+                    <h3 class="card-title">Quick Top-up</h3>
+                    <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; max-width: 100%;">
+                        <button class="btn btn-outline" onclick="window.topUpAmount(100)" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 10px 8px; font-size: 14px;">₹100</button>
+                        <button class="btn btn-outline" onclick="window.topUpAmount(500)" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 10px 8px; font-size: 14px;">₹500</button>
+                        <button class="btn btn-outline" onclick="window.topUpAmount(1000)" style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding: 10px 8px; font-size: 14px;">₹1000</button>
+                    </div>
                 </div>
-            </div>
-            
-            <!-- Transaction History -->
-            <div class="card">
-                <h3 class="card-title">Transaction History</h3>
-                <div id="transactionsList">
-                    ${transactions.length > 0 ? transactions.map(txn => `
-                        <div style="padding: 12px 0; border-bottom: 1px solid var(--border-color);">
-                            <div style="display: flex; justify-content: space-between; align-items: center;">
-                                <div>
-                                    <div style="font-weight: 600; margin-bottom: 4px;">${txn.description || 'Transaction'}</div>
-                                    <div style="font-size: 12px; color: var(--text-secondary);">${formatDate(txn.createdAt)}</div>
-                                    ${txn.status === 'pending' ? `<span class="badge badge-warning" style="font-size: 10px; margin-top: 4px;">Pending</span>` : ''}
-                                </div>
-                                <div style="text-align: right;">
-                                    <div style="font-size: 18px; font-weight: 600; color: ${txn.transactionType === 'credit' ? 'var(--success-color)' : 'var(--danger-color)'};">
-                                        ${txn.transactionType === 'credit' ? '+' : '-'}₹${parseFloat(txn.amount || 0).toFixed(2)}
-                                    </div>
-                                    <div style="font-size: 12px; color: var(--text-secondary);">Balance: ₹${parseFloat(txn.balanceAfter || 0).toFixed(2)}</div>
-                                </div>
-                            </div>
-                        </div>
-                    `).join('') : `
-                        <div class="empty-state" style="padding: 40px 20px;">
-                            <i class="fas fa-wallet"></i>
-                            <p>No transactions yet</p>
-                        </div>
-                    `}
+                
+                <!-- Transaction History -->
+                <div class="card" style="margin-bottom: 16px;">
+                    <h3 class="card-title">Transaction History</h3>
+                    <div id="transactionsList" style="max-width: 100%; overflow-x: hidden;">
+                        <div class="spinner"></div>
+                    </div>
+                    <!-- Sentinel element for infinite scroll (always visible) -->
+                    <div id="walletScrollSentinel" style="height: 20px;"></div>
+                    <!-- Loading indicator for infinite scroll -->
+                    <div id="walletLoadingIndicator" style="display: none; text-align: center; padding: 16px; color: var(--text-secondary); font-size: 12px;">
+                        <div class="spinner"></div>
+                        <p style="margin-top: 10px;">Loading more transactions...</p>
+                    </div>
+                    <!-- End of list indicator -->
+                    <div id="walletEndIndicator" style="display: none; text-align: center; padding: 16px; color: var(--text-secondary); font-size: 12px;">
+                        <i class="fas fa-check-circle"></i> All transactions loaded
+                    </div>
                 </div>
             </div>
         `;
+        
+        // Load initial transactions
+        await loadWalletTransactions();
+        
+        // Setup infinite scroll observer
+        setupWalletInfiniteScroll();
     } catch (error) {
         console.error('Error loading wallet:', error);
         showError('Failed to load wallet');
@@ -85,6 +92,157 @@ export async function loadWalletModule() {
                 <p>Please try again later</p>
             </div>
         `;
+    }
+}
+
+// Load wallet transactions with pagination
+async function loadWalletTransactions() {
+    if (walletTransactionsLoading || !walletTransactionsHasMore) {
+        return;
+    }
+    
+    walletTransactionsLoading = true;
+    const loadingIndicator = document.getElementById('walletLoadingIndicator');
+    const transactionsList = document.getElementById('transactionsList');
+    
+    try {
+        if (walletTransactionsPage === 1) {
+            transactionsList.innerHTML = '<div class="spinner"></div>';
+        } else if (loadingIndicator) {
+            loadingIndicator.style.display = 'block';
+        }
+        
+        const response = await getWalletTransactions({ 
+            page: walletTransactionsPage, 
+            limit: 20 
+        });
+        
+        if (!response.success) {
+            throw new Error(response.error || 'Failed to load transactions');
+        }
+        
+        const transactions = response.transactions || [];
+        const pagination = response.pagination || {};
+        const totalPages = pagination.totalPages || 1;
+        const hasMore = walletTransactionsPage < totalPages;
+        
+        if (transactions.length === 0 && walletTransactionsPage === 1) {
+            transactionsList.innerHTML = `
+                <div class="empty-state" style="padding: 40px 20px;">
+                    <i class="fas fa-wallet"></i>
+                    <p>No transactions yet</p>
+                </div>
+            `;
+            walletTransactionsHasMore = false;
+            const endIndicator = document.getElementById('walletEndIndicator');
+            if (endIndicator) endIndicator.style.display = 'none';
+            return;
+        }
+        
+        // Remove spinner on first load
+        if (walletTransactionsPage === 1) {
+            transactionsList.innerHTML = '';
+        }
+        
+        // Append new transactions
+        const transactionsHTML = transactions.map(txn => {
+            // Truncate long descriptions to prevent overflow
+            let description = txn.description || 'Transaction';
+            if (description.length > 60) {
+                description = description.substring(0, 57) + '...';
+            }
+            
+            // Determine status badge and styling
+            let statusBadge = '';
+            let amountColor = txn.transactionType === 'credit' || txn.transactionType === 'refund' ? 'var(--success-color)' : 'var(--danger-color)';
+            
+            if (txn.status === 'pending') {
+                statusBadge = '<span class="badge badge-warning" style="font-size: 10px; margin-top: 4px;">Pending</span>';
+            } else if (txn.status === 'failed') {
+                statusBadge = '<span class="badge badge-danger" style="font-size: 10px; margin-top: 4px;">Failed</span>';
+                amountColor = 'var(--text-secondary)'; // Gray out failed transactions
+            } else if (txn.status === 'completed') {
+                // No badge for completed transactions
+            }
+            
+            return `
+            <div style="padding: 12px 0; border-bottom: 1px solid var(--border-color); word-wrap: break-word; overflow-wrap: break-word; ${txn.status === 'failed' ? 'opacity: 0.7;' : ''}">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
+                    <div style="flex: 1; min-width: 0;">
+                        <div style="font-weight: 600; margin-bottom: 4px; word-wrap: break-word; overflow-wrap: break-word;">${description}</div>
+                        <div style="font-size: 12px; color: var(--text-secondary);">${formatDate(txn.createdAt)}</div>
+                        ${statusBadge}
+                    </div>
+                    <div style="text-align: right; flex-shrink: 0;">
+                        <div style="font-size: 18px; font-weight: 600; color: ${amountColor}; white-space: nowrap;">
+                            ${txn.status === 'failed' ? '' : (txn.transactionType === 'credit' || txn.transactionType === 'refund' ? '+' : '-')}₹${parseFloat(txn.amount || 0).toFixed(2)}
+                        </div>
+                        ${txn.status !== 'failed' ? `<div style="font-size: 12px; color: var(--text-secondary); white-space: nowrap;">Balance: ₹${parseFloat(txn.balanceAfter || 0).toFixed(2)}</div>` : '<div style="font-size: 12px; color: var(--text-secondary); white-space: nowrap;">Not processed</div>'}
+                    </div>
+                </div>
+            </div>
+        `;
+        }).join('');
+        
+        transactionsList.insertAdjacentHTML('beforeend', transactionsHTML);
+        
+        walletTransactionsPage++;
+        walletTransactionsHasMore = hasMore;
+        
+        // Show/hide end indicator
+        const endIndicator = document.getElementById('walletEndIndicator');
+        if (!hasMore && transactions.length > 0) {
+            if (endIndicator) endIndicator.style.display = 'block';
+        } else {
+            if (endIndicator) endIndicator.style.display = 'none';
+        }
+    } catch (error) {
+        console.error('Error loading wallet transactions:', error);
+        showError('Failed to load transactions');
+        if (walletTransactionsPage === 1) {
+            transactionsList.innerHTML = `
+                <div class="empty-state" style="padding: 40px 20px;">
+                    <i class="fas fa-exclamation-circle"></i>
+                    <p>Failed to load transactions</p>
+                </div>
+            `;
+        }
+    } finally {
+        walletTransactionsLoading = false;
+        if (loadingIndicator) {
+            loadingIndicator.style.display = 'none';
+        }
+    }
+}
+
+// Setup infinite scroll observer
+function setupWalletInfiniteScroll() {
+    // Clean up existing observer
+    if (walletTransactionsObserver) {
+        walletTransactionsObserver.disconnect();
+    }
+    
+    // Create intersection observer
+    walletTransactionsObserver = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting && walletTransactionsHasMore && !walletTransactionsLoading) {
+                console.log('Loading more wallet transactions...', { currentPage: walletTransactionsPage, hasMore: walletTransactionsHasMore });
+                loadWalletTransactions();
+            }
+        });
+    }, {
+        root: null,
+        rootMargin: '100px', // Start loading 100px before reaching bottom
+        threshold: 0.1
+    });
+    
+    // Observe the sentinel element (always visible, better for infinite scroll)
+    const sentinel = document.getElementById('walletScrollSentinel');
+    if (sentinel) {
+        walletTransactionsObserver.observe(sentinel);
+        console.log('Wallet infinite scroll observer set up');
+    } else {
+        console.error('Wallet sentinel element not found for infinite scroll');
     }
 }
 
@@ -262,6 +420,13 @@ window.handleTopUpSubmit = async function(event) {
             }
         }
         
+        // Store order ID for tracking failed attempts
+        const currentOrderId = order.id;
+        let paymentAttempted = false;
+        let paymentSucceeded = false;
+        let paymentVerificationInProgress = false; // Track if verification is happening
+        let paymentHandlerCalled = false; // Track if handler was called (payment succeeded in Razorpay)
+        
         // Initialize Razorpay Checkout
         const options = {
             key: key,
@@ -271,6 +436,16 @@ window.handleTopUpSubmit = async function(event) {
             description: `Wallet Top-up - ₹${amount}`,
             order_id: order.id,
             handler: async function(response) {
+                // Mark that payment succeeded in Razorpay
+                paymentHandlerCalled = true;
+                paymentSucceeded = true;
+                paymentVerificationInProgress = true;
+                
+                console.log('[Razorpay Handler] Payment succeeded, starting verification...', {
+                    orderId: response.razorpay_order_id,
+                    paymentId: response.razorpay_payment_id
+                });
+                
                 // Payment successful - verify payment
                 try {
                     // Show loading again for verification
@@ -285,6 +460,8 @@ window.handleTopUpSubmit = async function(event) {
                         razorpay_payment_id: response.razorpay_payment_id,
                         razorpay_signature: response.razorpay_signature
                     });
+                    
+                    console.log('[Razorpay Handler] Verification response:', verifyResponse);
                     
                     // Reset button state
                     if (payNowBtn && payNowText && payNowLoader) {
@@ -308,11 +485,21 @@ window.handleTopUpSubmit = async function(event) {
                             await loadDashboard();
                         }
                     } else {
-                        showError(verifyResponse.error || 'Payment verification failed');
+                        // Payment verification failed - DO NOT mark as failed because payment succeeded in Razorpay
+                        // The money will be captured by Razorpay, we need to contact support
+                        paymentSucceeded = false;
+                        console.error('[Razorpay Handler] Verification failed:', verifyResponse.error);
+                        console.error('[Razorpay Handler] Payment succeeded in Razorpay but verification failed. Payment ID:', response.razorpay_payment_id);
+                        showError('Payment received but verification failed. Please contact support with payment ID: ' + response.razorpay_payment_id);
+                        // DO NOT record as failed - payment was captured by Razorpay
                     }
                 } catch (error) {
-                    console.error('Error verifying payment:', error);
-                    showError('Failed to verify payment. Please contact support.');
+                    // Payment verification error - DO NOT mark as failed because payment succeeded in Razorpay
+                    paymentSucceeded = false;
+                    console.error('[Razorpay Handler] Error verifying payment:', error);
+                    console.error('[Razorpay Handler] Payment ID:', response.razorpay_payment_id);
+                    showError('Payment received but verification failed. Please contact support with payment ID: ' + response.razorpay_payment_id);
+                    // DO NOT record as failed - payment was captured by Razorpay
                     // Reset button state on error
                     if (payNowBtn && payNowText && payNowLoader) {
                         payNowBtn.disabled = false;
@@ -320,6 +507,8 @@ window.handleTopUpSubmit = async function(event) {
                         payNowLoader.style.display = 'none';
                         if (customAmountInput) customAmountInput.disabled = false;
                     }
+                } finally {
+                    paymentVerificationInProgress = false;
                 }
             },
             prefill: {
@@ -331,21 +520,97 @@ window.handleTopUpSubmit = async function(event) {
                 color: '#dc3545'
             },
             modal: {
-                ondismiss: function() {
-                    // User closed the payment modal - reset button state
+                ondismiss: async function() {
+                    const modalClosedAt = Date.now();
+                    const modalOpenDuration = modalClosedAt - modalOpenTime;
+                    
+                    console.log('[Razorpay Modal] ondismiss called', { 
+                        paymentAttempted, 
+                        paymentSucceeded, 
+                        paymentHandlerCalled,
+                        paymentVerificationInProgress,
+                        modalOpenDuration: `${modalOpenDuration}ms`
+                    });
+                    
+                    // If modal was open for less than 1 second, user just closed it immediately
+                    // Don't record as failed (user didn't attempt payment)
+                    if (modalOpenDuration < 1000) {
+                        console.log('[Razorpay Modal] Modal closed too quickly (<1s), user did not attempt payment');
+                        return;
+                    }
+                    
+                    // Wait to see if payment handler is being called
+                    // This prevents race condition where ondismiss is called before handler
+                    console.log('[Razorpay Modal] Waiting 3 seconds to check if payment succeeded...');
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                    
+                    // Only record as failed if handler was NOT called
+                    // If handler was called, payment succeeded in Razorpay (even if verification fails)
+                    if (!paymentHandlerCalled && !paymentSucceeded && !paymentVerificationInProgress) {
+                        // Double-check: wait a bit more to ensure handler isn't still processing
+                        await new Promise(resolve => setTimeout(resolve, 2000));
+                        
+                        // Final check after waiting
+                        if (!paymentHandlerCalled && !paymentSucceeded && !paymentVerificationInProgress) {
+                            console.log('[Razorpay Modal] Recording payment as failed after ${modalOpenDuration}ms');
+                            try {
+                                await recordFailedPayment(currentOrderId, 'Payment attempt failed or cancelled');
+                                console.log('[Razorpay Modal] Failed payment attempt recorded from ondismiss');
+                            } catch (error) {
+                                console.error('Error recording failed payment:', error);
+                            }
+                        } else {
+                            console.log('[Razorpay Modal] Payment handler was called during wait, not recording as failed');
+                        }
+                    } else {
+                        console.log('[Razorpay Modal] Not recording failed payment:', { 
+                            paymentHandlerCalled,
+                            paymentSucceeded, 
+                            paymentVerificationInProgress 
+                        });
+                    }
+                    
+                    // Reset button state
                     if (payNowBtn && payNowText && payNowLoader) {
                         payNowBtn.disabled = false;
                         payNowText.style.display = 'flex';
                         payNowLoader.style.display = 'none';
                         if (customAmountInput) customAmountInput.disabled = false;
                     }
-                    console.log('Payment cancelled by user');
                 }
             }
         };
         
         const razorpay = new Razorpay(options);
+        
+        // Track when user actually attempts payment (not just opens modal)
+        // Set a timeout to detect if user interacts with payment options
+        const modalOpenTime = Date.now();
+        let checkPaymentAttempt = setInterval(() => {
+            // If modal has been open for more than 2 seconds, assume user is attempting payment
+            if (Date.now() - modalOpenTime > 2000) {
+                paymentAttempted = true;
+                clearInterval(checkPaymentAttempt);
+                console.log('[Razorpay Modal] Payment attempt detected (modal open for 2+ seconds)');
+            }
+        }, 500);
+        
+        // Listen for Razorpay payment failed event
+        // When this fires, we know the user definitely attempted payment
+        razorpay.on('payment.failed', async function(response) {
+            paymentAttempted = true; // User definitely attempted payment
+            clearInterval(checkPaymentAttempt);
+            console.log('[Razorpay Event] payment.failed event:', response);
+            console.log('[Razorpay Event] Payment attempt confirmed - waiting for ondismiss to record failure');
+            // Don't record as failed here - wait for ondismiss to confirm handler wasn't called
+        });
+        
         razorpay.open();
+        
+        // Clear interval when modal is closed (handled in ondismiss)
+        setTimeout(() => {
+            clearInterval(checkPaymentAttempt);
+        }, 300000); // Clear after 5 minutes max
         
     } catch (error) {
         console.error('Error processing top-up:', error);

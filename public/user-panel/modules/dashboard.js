@@ -4,6 +4,9 @@ import { getWalletBalance, getActiveSession, getStations } from '../services/api
 import { showError } from '../../utils/notifications.js';
 
 export async function loadDashboard() {
+    // Store current page in sessionStorage for refresh persistence
+    sessionStorage.setItem('lastPage', 'dashboard');
+    
     updateActiveNav('dashboard');
     updatePageTitle('GenX EV');
     
@@ -72,6 +75,27 @@ export async function loadDashboard() {
             </div>
             ` : ''}
             
+            <!-- Location Search Box -->
+            <div class="card" style="padding: 12px;">
+                <div style="display: flex; align-items: center; gap: 12px; background: var(--bg-color); border-radius: 12px; padding: 8px 12px;">
+                    <i class="fas fa-search" style="color: var(--text-secondary); font-size: 16px;"></i>
+                    <input 
+                        type="text" 
+                        id="locationSearchInput" 
+                        placeholder="Search by city, state, or address..." 
+                        style="flex: 1; border: none; background: transparent; outline: none; font-size: 14px; color: var(--text-primary);"
+                        onkeyup="if(event.key === 'Enter') window.searchStationsByLocation()"
+                    />
+                    <button 
+                        onclick="window.clearLocationSearch()" 
+                        id="clearLocationBtn" 
+                        style="display: none; background: none; border: none; color: var(--text-secondary); cursor: pointer; padding: 4px 8px; font-size: 14px;"
+                    >
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+            
             <!-- Stations List -->
             <div id="stationsList">
                 <div class="spinner"></div>
@@ -84,6 +108,19 @@ export async function loadDashboard() {
                 </button>
             </div>
         `;
+        
+        // Setup search input event listeners
+        const searchInput = document.getElementById('locationSearchInput');
+        if (searchInput) {
+            searchInput.addEventListener('input', function() {
+                const clearBtn = document.getElementById('clearLocationBtn');
+                if (this.value.trim()) {
+                    clearBtn.style.display = 'block';
+                } else {
+                    clearBtn.style.display = 'none';
+                }
+            });
+        }
         
         // Load stations
         loadStations();
@@ -102,14 +139,23 @@ export async function loadDashboard() {
 }
 
 // Load stations
-async function loadStations() {
+async function loadStations(location = null) {
     try {
         const DASHBOARD_LIMIT = 5;
         const container = document.getElementById('stationsList');
         const viewAllBtn = document.getElementById('viewAllStationsBtn');
         
+        // Build API params
+        const params = {};
+        if (location && location.trim()) {
+            params.location = location.trim();
+        } else {
+            // If no location, sort by last active
+            params.sortBy = 'lastActive';
+        }
+        
         // Fetch stations from API
-        const response = await getStations();
+        const response = await getStations(params);
         const allStations = response.success && response.stations ? response.stations : [];
         const stations = allStations.slice(0, DASHBOARD_LIMIT);
         const hasMoreStations = allStations.length > DASHBOARD_LIMIT;
@@ -199,5 +245,23 @@ async function loadStations() {
 window.viewStationFromDashboard = async function(stationId, stationName) {
     const { loadStationDetail } = await import('./station-detail.js');
     await loadStationDetail(stationId, stationName);
+};
+
+// Search stations by location
+window.searchStationsByLocation = async function() {
+    const searchInput = document.getElementById('locationSearchInput');
+    const location = searchInput ? searchInput.value.trim() : '';
+    await loadStations(location);
+};
+
+// Clear location search
+window.clearLocationSearch = async function() {
+    const searchInput = document.getElementById('locationSearchInput');
+    const clearBtn = document.getElementById('clearLocationBtn');
+    if (searchInput) {
+        searchInput.value = '';
+        clearBtn.style.display = 'none';
+    }
+    await loadStations(null);
 };
 

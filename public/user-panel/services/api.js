@@ -186,22 +186,61 @@ export async function getChargingPointDetail(chargingPointId) {
 // CHARGING CONTROL APIs
 // ============================================
 
-export async function startCharging(deviceId, connectorId) {
-    return apiCall('/charging/start', {
-        method: 'POST',
-        body: JSON.stringify({ deviceId, connectorId })
-    });
+export async function startCharging(deviceId, connectorId, amount, chargingPointId = null) {
+    try {
+        return await apiCall('/charging/start', {
+            method: 'POST',
+            body: JSON.stringify({ 
+                deviceId, 
+                connectorId, 
+                amount,
+                chargingPointId 
+            })
+        });
+    } catch (error) {
+        return {
+            success: false,
+            error: error.message || 'Failed to start charging'
+        };
+    }
 }
 
 export async function stopCharging(deviceId, connectorId, transactionId) {
-    return apiCall('/charging/stop', {
-        method: 'POST',
-        body: JSON.stringify({ deviceId, connectorId, transactionId })
-    });
+    try {
+        // Build request body - only include transactionId if it's valid
+        const body = { deviceId, connectorId };
+        if (transactionId && transactionId !== 'null' && transactionId !== 'undefined' && transactionId !== '') {
+            body.transactionId = transactionId;
+        }
+        
+        console.log('[API] Stop charging request:', body);
+        
+        const response = await apiCall('/charging/stop', {
+            method: 'POST',
+            body: JSON.stringify(body)
+        });
+        
+        console.log('[API] Stop charging response:', response);
+        return response;
+    } catch (error) {
+        console.error('[API] Stop charging error:', error);
+        return {
+            success: false,
+            error: error.message || 'Failed to stop charging'
+        };
+    }
 }
 
 export async function getActiveSession() {
-    return apiCall('/charging/active-session');
+    try {
+        return await apiCall('/charging/active-session');
+    } catch (error) {
+        return {
+            success: false,
+            session: null,
+            error: error.message || 'Failed to fetch active session'
+        };
+    }
 }
 
 // ============================================
@@ -257,6 +296,23 @@ export async function verifyTopupPayment(paymentData) {
         return {
             success: false,
             error: error.message || 'Failed to verify payment'
+        };
+    }
+}
+
+export async function recordFailedPayment(orderId, errorReason = null) {
+    try {
+        return await apiCall('/wallet/topup/failed', {
+            method: 'POST',
+            body: JSON.stringify({
+                razorpay_order_id: orderId,
+                error_reason: errorReason
+            })
+        });
+    } catch (error) {
+        return {
+            success: false,
+            error: error.message || 'Failed to record failed payment'
         };
     }
 }

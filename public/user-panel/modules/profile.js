@@ -4,6 +4,9 @@ import { getCurrentUserProfile, updateProfile, changePassword, logout } from '..
 import { showSuccess, showError } from '../../utils/notifications.js';
 
 export async function loadProfileModule() {
+    // Store current page in sessionStorage for refresh persistence
+    sessionStorage.setItem('lastPage', 'profile');
+    
     updateActiveNav('profile');
     updatePageTitle('Profile');
     

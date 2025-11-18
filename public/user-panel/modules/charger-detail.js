@@ -4,6 +4,17 @@ import { getActiveSession, getChargingPointDetail } from '../services/api.js';
 import { showError } from '../../utils/notifications.js';
 
 export async function loadChargerDetail(chargingPointId, deviceId, stationId, stationName) {
+    // Store page info in sessionStorage for refresh persistence
+    if (chargingPointId && deviceId && stationId) {
+        sessionStorage.setItem('lastPage', 'charger-detail');
+        sessionStorage.setItem('lastChargingPointId', chargingPointId);
+        sessionStorage.setItem('lastDeviceId', deviceId);
+        sessionStorage.setItem('lastStationId', stationId);
+        if (stationName) {
+            sessionStorage.setItem('lastStationName', stationName);
+        }
+    }
+    
     const appMain = document.getElementById('appMain');
     
     try {

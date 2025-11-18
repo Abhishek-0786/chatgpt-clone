@@ -273,28 +273,82 @@ export async function getTariffs(params = {}) {
 
 // Customers API
 export async function getCustomers(params = {}) {
-    // TODO: Replace with actual API call
-    // return await fetch(`${API_BASE_URL}/customers?${new URLSearchParams(params)}`).then(res => res.json());
-    
-    return {
-        customers: [],
-        total: 0,
-        page: params.page || 1,
-        limit: params.limit || 10
-    };
+    try {
+        // Build query parameters
+        const queryParams = {};
+        
+        if (params.searchTerm) {
+            queryParams.searchTerm = params.searchTerm;
+        }
+        
+        if (params.fromDate) {
+            queryParams.fromDate = params.fromDate;
+        }
+        
+        if (params.toDate) {
+            queryParams.toDate = params.toDate;
+        }
+        
+        const queryString = new URLSearchParams(queryParams).toString();
+        const url = queryString ? `${API_BASE_URL}/customers?${queryString}` : `${API_BASE_URL}/customers`;
+        
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || errorData.message || `HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Error fetching customers:', error);
+        throw error;
+    }
 }
 
 // Customer Wallet Transactions API
-export async function getCustomerWalletTransactions(params = {}) {
-    // TODO: Replace with actual API call
-    // return await fetch(`${API_BASE_URL}/customers/wallet-transactions?${new URLSearchParams(params)}`).then(res => res.json());
-    
-    return {
-        transactions: [],
-        total: 0,
-        page: params.page || 1,
-        limit: params.limit || 10
-    };
+export async function getCustomerWalletTransactions(customerId, params = {}) {
+    try {
+        // Build query parameters
+        const queryParams = {};
+        
+        if (params.fromDate) {
+            queryParams.fromDate = params.fromDate;
+        }
+        
+        if (params.toDate) {
+            queryParams.toDate = params.toDate;
+        }
+        
+        const queryString = new URLSearchParams(queryParams).toString();
+        const url = queryString 
+            ? `${API_BASE_URL}/customers/${customerId}/wallet-transactions?${queryString}` 
+            : `${API_BASE_URL}/customers/${customerId}/wallet-transactions`;
+        
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || errorData.message || `HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Error fetching customer wallet transactions:', error);
+        throw error;
+    }
 }
 
 // Create Charging Station API

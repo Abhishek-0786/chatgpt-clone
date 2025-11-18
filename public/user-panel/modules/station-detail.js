@@ -6,6 +6,16 @@ import { showError } from '../../utils/notifications.js';
 export async function loadStationDetail(stationId, stationName) {
     updatePageTitle(stationName || 'Station Details');
     
+    // Store station info in session storage for navigation after stopping charging
+    if (stationId) {
+        sessionStorage.setItem('lastStationId', stationId);
+        if (stationName) {
+            sessionStorage.setItem('lastStationName', stationName);
+        }
+        // Store page type for refresh persistence
+        sessionStorage.setItem('lastPage', 'station-detail');
+    }
+    
     const appMain = document.getElementById('appMain');
     
     try {

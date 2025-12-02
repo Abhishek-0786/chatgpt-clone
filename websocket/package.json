@@ -1,0 +1,28 @@
+{
+  "name": "ocpp-websocket-service",
+  "version": "1.0.0",
+  "description": "OCPP WebSocket Service - Standalone microservice",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "keywords": [
+    "ocpp",
+    "websocket",
+    "ev-charging"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "amqplib": "^0.10.3",
+    "axios": "^1.12.2",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "ioredis": "^5.8.2",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}

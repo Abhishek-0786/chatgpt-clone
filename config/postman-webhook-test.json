@@ -1,0 +1,72 @@
+{
+  "method": "POST",
+  "url": "https://nondynamically-trispermous-man.ngrok-free.dev/api/payment/webhook",
+  "headers": {
+    "X-Razorpay-Signature": "add08bbc1f6a17e812a181688b89502c8323b41a316cbb848031e7a699ffd86e",
+    "Content-Type": "application/json"
+  },
+  "body": {
+    "entity": "event",
+    "account_id": "acc_xxxxxxxxxxxxx",
+    "event": "payment.captured",
+    "contains": [
+      "payment"
+    ],
+    "payload": {
+      "payment": {
+        "entity": {
+          "id": "pay_test123456789",
+          "entity": "payment",
+          "amount": 10000,
+          "currency": "INR",
+          "status": "captured",
+          "order_id": "order_test123456789",
+          "invoice_id": null,
+          "international": false,
+          "method": "card",
+          "amount_refunded": 0,
+          "refund_status": null,
+          "captured": true,
+          "description": "Test payment",
+          "card_id": null,
+          "bank": null,
+          "wallet": null,
+          "vpa": null,
+          "email": "test@example.com",
+          "contact": "+919999999999",
+          "notes": {
+            "customerId": "1"
+          },
+          "fee": 236,
+          "tax": 36,
+          "error_code": null,
+          "error_description": null,
+          "error_source": null,
+          "error_step": null,
+          "error_reason": null,
+          "acquirer_data": {},
+          "created_at": 1638364800
+        }
+      },
+      "order": {
+        "entity": {
+          "id": "order_test123456789",
+          "entity": "order",
+          "amount": 10000,
+          "amount_paid": 10000,
+          "amount_due": 0,
+          "currency": "INR",
+          "receipt": "wallet_topup_1_1638364800",
+          "status": "paid",
+          "attempts": 1,
+          "notes": {
+            "customerId": "1",
+            "type": "wallet_topup"
+          },
+          "created_at": 1638364800
+        }
+      }
+    },
+    "created_at": 1638364800
+  }
+}

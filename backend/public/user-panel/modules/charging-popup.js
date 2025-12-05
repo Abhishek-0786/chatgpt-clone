@@ -1,6 +1,9 @@
 // Start Charging Popup Module
-import { startCharging, stopCharging, getVehicles } from '../services/api.js';
+import { startCharging, stopCharging, getVehicles, getWalletBalance } from '../services/api.js';
 import { showSuccess, showError } from '../../utils/notifications.js';
+
+// Store wallet balance for validation
+let currentWalletBalance = 0;
 
 // Show start charging popup
 window.showStartChargingPopup = async function(chargingPointId, deviceId, deviceName, connectorId, pricePerKwh) {
@@ -18,6 +21,15 @@ window.showStartChargingPopup = async function(chargingPointId, deviceId, device
         return;
     }
     
+    // Fetch current wallet balance
+    try {
+        const walletResponse = await getWalletBalance();
+        currentWalletBalance = walletResponse.success ? parseFloat(walletResponse.balance || 0) : 0;
+    } catch (error) {
+        console.error('Error fetching wallet balance:', error);
+        currentWalletBalance = 0;
+    }
+    
     const modal = document.getElementById('startChargingModal');
     const form = document.getElementById('startChargingForm');
     const chargerNameInput = document.getElementById('chargingChargerName');
@@ -29,6 +41,7 @@ window.showStartChargingPopup = async function(chargingPointId, deviceId, device
         form.dataset.deviceId = deviceId || '';
         form.dataset.connectorId = connectorId || '';
         form.dataset.pricePerKwh = pricePerKwh || 0;
+        form.dataset.walletBalance = currentWalletBalance; // Store balance in form dataset
         
         // Display price per kWh
         if (priceDisplay && pricePerKwh) {
@@ -38,14 +51,56 @@ window.showStartChargingPopup = async function(chargingPointId, deviceId, device
         // Reset amount input and hide estimated cost
         const amountInput = document.getElementById('chargingAmountInput');
         const estimatedCostGroup = document.getElementById('estimatedCostGroup');
+        const amountErrorMsg = document.getElementById('amountErrorMsg');
         if (amountInput) {
             amountInput.value = '';
+            amountInput.max = currentWalletBalance; // Set max attribute
+            // Remove old event listeners by cloning the element
+            const newAmountInput = amountInput.cloneNode(true);
+            amountInput.parentNode.replaceChild(newAmountInput, amountInput);
+            
+            // Add input restriction to prevent typing values greater than balance
+            newAmountInput.addEventListener('input', function(e) {
+                const value = parseFloat(e.target.value) || 0;
+                if (value > currentWalletBalance) {
+                    e.target.value = currentWalletBalance.toFixed(2);
+                    // Trigger the calculation function to update UI
+                    window.calculateEstimatedCost();
+                }
+            });
+            
+            // Prevent pasting values greater than balance
+            newAmountInput.addEventListener('paste', function(e) {
+                setTimeout(() => {
+                    const value = parseFloat(e.target.value) || 0;
+                    if (value > currentWalletBalance) {
+                        e.target.value = currentWalletBalance.toFixed(2);
+                        window.calculateEstimatedCost();
+                    }
+                }, 0);
+            });
         }
         if (estimatedCostGroup) {
             estimatedCostGroup.style.display = 'none';
         }
+        if (amountErrorMsg) {
+            amountErrorMsg.style.display = 'none';
+        }
         
         modal.style.display = 'flex';
+    }
+};
+
+// Restrict amount input to wallet balance (for main popup)
+window.restrictAmountInputMain = function(inputElement) {
+    const form = document.getElementById('startChargingForm');
+    if (!form) return;
+    
+    const walletBalance = parseFloat(form.dataset.walletBalance || 0);
+    const value = parseFloat(inputElement.value) || 0;
+    
+    if (value > walletBalance) {
+        inputElement.value = walletBalance.toFixed(2);
     }
 };
 
@@ -54,18 +109,55 @@ window.calculateEstimatedCost = function() {
     const amountInput = document.getElementById('chargingAmountInput');
     const form = document.getElementById('startChargingForm');
     const pricePerKwh = parseFloat(form?.dataset.pricePerKwh || 0);
+    const walletBalance = parseFloat(form?.dataset.walletBalance || 0);
     const estimatedCostGroup = document.getElementById('estimatedCostGroup');
     const estimatedEnergy = document.getElementById('estimatedEnergy');
     const estimatedCost = document.getElementById('estimatedCost');
+    const amountErrorMsg = document.getElementById('amountErrorMsg');
+    const submitBtn = form?.querySelector('button[type="submit"]');
     
     if (!amountInput || !form || !pricePerKwh || pricePerKwh === 0) {
         if (estimatedCostGroup) {
             estimatedCostGroup.style.display = 'none';
         }
+        if (amountErrorMsg) {
+            amountErrorMsg.style.display = 'none';
+        }
         return;
     }
     
     const amount = parseFloat(amountInput.value) || 0;
+    
+    // Validate amount against wallet balance
+    if (amount > walletBalance) {
+        // Show error message
+        if (amountErrorMsg) {
+            amountErrorMsg.textContent = `Amount cannot exceed wallet balance (₹${walletBalance.toFixed(2)})`;
+            amountErrorMsg.style.display = 'block';
+            amountErrorMsg.style.color = '#dc3545';
+        }
+        // Change input border to red
+        amountInput.style.borderColor = '#dc3545';
+        // Disable submit button
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.style.background = '#cccccc';
+            submitBtn.style.cursor = 'not-allowed';
+            submitBtn.style.opacity = '0.6';
+        }
+        // Hide estimated cost
+        if (estimatedCostGroup) {
+            estimatedCostGroup.style.display = 'none';
+        }
+        return;
+    } else {
+        // Clear error message
+        if (amountErrorMsg) {
+            amountErrorMsg.style.display = 'none';
+        }
+        // Reset input border
+        amountInput.style.borderColor = '';
+    }
     
     if (amount > 0 && estimatedCostGroup && estimatedEnergy && estimatedCost) {
         // Calculate estimated energy: amount / price per kWh
@@ -77,9 +169,24 @@ window.calculateEstimatedCost = function() {
         estimatedEnergy.textContent = `${estimatedKwh.toFixed(2)} kWh`;
         estimatedCost.textContent = `₹${totalCost.toFixed(2)}`;
         estimatedCostGroup.style.display = 'block';
+        
+        // Enable submit button if amount is valid
+        if (submitBtn && amount >= 1 && amount <= walletBalance) {
+            submitBtn.disabled = false;
+            submitBtn.style.background = '';
+            submitBtn.style.cursor = 'pointer';
+            submitBtn.style.opacity = '1';
+        }
     } else {
         if (estimatedCostGroup) {
             estimatedCostGroup.style.display = 'none';
+        }
+        // Disable submit button if amount is invalid
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.style.background = '#cccccc';
+            submitBtn.style.cursor = 'not-allowed';
+            submitBtn.style.opacity = '0.6';
         }
     }
 };
@@ -100,9 +207,16 @@ window.handleStartCharging = async function(event) {
     const chargingPointId = event.target.dataset.chargingPointId;
     const deviceId = event.target.dataset.deviceId;
     const connectorId = parseInt(event.target.dataset.connectorId);
+    const walletBalance = parseFloat(event.target.dataset.walletBalance || 0);
     
     if (!amount || amount < 1) {
         showError('Please enter a valid amount (minimum ₹1.00)');
+        return;
+    }
+    
+    // Validate amount against wallet balance
+    if (amount > walletBalance) {
+        showError(`Amount cannot exceed wallet balance (₹${walletBalance.toFixed(2)}). Please enter a lower amount or top up your wallet.`);
         return;
     }
     

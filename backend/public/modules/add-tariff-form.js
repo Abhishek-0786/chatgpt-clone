@@ -25,7 +25,7 @@ export function openAddTariffForm() {
             }
             
             .tariff-modal {
-                background-color: #ffffff;
+                background-color: var(--card-bg);
                 border-radius: 8px;
                 width: 100%;
                 max-width: 600px;
@@ -39,7 +39,7 @@ export function openAddTariffForm() {
                 justify-content: space-between;
                 align-items: center;
                 padding: 20px 25px;
-                border-bottom: 1px solid #e0e0e0;
+                border-bottom: 1px solid var(--border-color);
             }
             
             .modal-header h3 {
@@ -60,7 +60,7 @@ export function openAddTariffForm() {
                 background: none;
                 border: none;
                 font-size: 24px;
-                color: #666;
+                color: var(--text-secondary);
                 cursor: pointer;
                 padding: 0;
                 width: 30px;
@@ -73,8 +73,8 @@ export function openAddTariffForm() {
             }
             
             .close-btn:hover {
-                background-color: #f0f0f0;
-                color: #333;
+                background-color: var(--bg-tertiary);
+                color: var(--text-primary);
             }
             
             .modal-body {
@@ -90,7 +90,7 @@ export function openAddTariffForm() {
                 font-size: 14px;
                 font-weight: 600;
                 margin-bottom: 8px;
-                color: #333;
+                color: var(--text-primary);
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
             }
             
@@ -102,17 +102,19 @@ export function openAddTariffForm() {
             .form-group select {
                 width: 100%;
                 padding: 12px 15px;
-                border: 1px solid #e0e0e0;
+                border: 1px solid var(--input-border);
+                background-color: var(--input-bg);
+                color: var(--text-primary);
                 border-radius: 4px;
                 font-size: 14px;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
-                transition: border-color 0.2s;
+                transition: border-color 0.2s, background-color 0.2s, color 0.2s;
             }
             
             .form-group select {
                 padding-right: 40px;
                 appearance: none;
-                background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23333' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+                background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
                 background-repeat: no-repeat;
                 background-position: right 15px center;
                 background-size: 12px;
@@ -138,7 +140,7 @@ export function openAddTariffForm() {
                 left: 15px;
                 top: 50%;
                 transform: translateY(-50%);
-                color: #666;
+                color: var(--text-secondary);
                 font-weight: 500;
             }
             
@@ -153,8 +155,8 @@ export function openAddTariffForm() {
             .cancel-btn {
                 padding: 12px 24px;
                 background-color: transparent;
-                color: #666;
-                border: 1px solid #e0e0e0;
+                color: var(--text-secondary);
+                border: 1px solid var(--input-border);
                 border-radius: 4px;
                 cursor: pointer;
                 font-weight: 600;
@@ -389,7 +391,7 @@ export async function openEditTariffForm(tariffId) {
             }
             
             .tariff-modal {
-                background-color: #ffffff;
+                background-color: var(--card-bg);
                 border-radius: 8px;
                 width: 100%;
                 max-width: 600px;
@@ -403,7 +405,7 @@ export async function openEditTariffForm(tariffId) {
                 justify-content: space-between;
                 align-items: center;
                 padding: 20px 25px;
-                border-bottom: 1px solid #e0e0e0;
+                border-bottom: 1px solid var(--border-color);
             }
             
             .modal-header h3 {
@@ -424,7 +426,7 @@ export async function openEditTariffForm(tariffId) {
                 background: none;
                 border: none;
                 font-size: 24px;
-                color: #666;
+                color: var(--text-secondary);
                 cursor: pointer;
                 padding: 0;
                 width: 30px;
@@ -437,8 +439,8 @@ export async function openEditTariffForm(tariffId) {
             }
             
             .close-btn:hover {
-                background-color: #f0f0f0;
-                color: #333;
+                background-color: var(--bg-tertiary);
+                color: var(--text-primary);
             }
             
             .modal-body {
@@ -454,7 +456,7 @@ export async function openEditTariffForm(tariffId) {
                 font-size: 14px;
                 font-weight: 600;
                 margin-bottom: 8px;
-                color: #333;
+                color: var(--text-primary);
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
             }
             
@@ -466,17 +468,19 @@ export async function openEditTariffForm(tariffId) {
             .form-group select {
                 width: 100%;
                 padding: 12px 15px;
-                border: 1px solid #e0e0e0;
+                border: 1px solid var(--input-border);
+                background-color: var(--input-bg);
+                color: var(--text-primary);
                 border-radius: 4px;
                 font-size: 14px;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
-                transition: border-color 0.2s;
+                transition: border-color 0.2s, background-color 0.2s, color 0.2s;
             }
             
             .form-group select {
                 padding-right: 40px;
                 appearance: none;
-                background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23333' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+                background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
                 background-repeat: no-repeat;
                 background-position: right 15px center;
                 background-size: 12px;
@@ -502,7 +506,7 @@ export async function openEditTariffForm(tariffId) {
                 left: 15px;
                 top: 50%;
                 transform: translateY(-50%);
-                color: #666;
+                color: var(--text-secondary);
                 font-weight: 500;
             }
             
@@ -517,8 +521,8 @@ export async function openEditTariffForm(tariffId) {
             .cancel-btn {
                 padding: 12px 24px;
                 background-color: transparent;
-                color: #666;
-                border: 1px solid #e0e0e0;
+                color: var(--text-secondary);
+                border: 1px solid var(--input-border);
                 border-radius: 4px;
                 cursor: pointer;
                 font-weight: 600;

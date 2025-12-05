@@ -1,5 +1,6 @@
 // Charging Point Detail View Module
 import { getChargingPoint } from '../services/api.js';
+
 import { getActiveSessions, getCompletedSessions } from '../services/api.js';
 import { formatDate } from '../utils/helpers.js';
 import { showError, showSuccess, showWarning, showInfo } from '../utils/notifications.js';
@@ -12,6 +13,7 @@ const chargingLocks = new Set();
 let logsRefreshInterval = null;
 let currentLogsDeviceId = null;
 let lastLogTimestamp = null; // Track last log timestamp for incremental updates
+
 
 // Global variable to store connectors refresh interval
 let connectorsRefreshInterval = null;
@@ -41,6 +43,7 @@ export async function loadChargingPointDetailView(chargingPointId, activeTab = '
         
         const point = pointResponse.point;
         const moduleContent = document.getElementById('moduleContent');
+
         window.currentChargingPointId = chargingPointId;
         window.currentChargingPointDeviceId = point.deviceId;
         initCmsSocket();
@@ -69,7 +72,7 @@ export async function loadChargingPointDetailView(chargingPointId, activeTab = '
                 gap: 8px;
                 margin-bottom: 20px;
                 font-size: 14px;
-                color: #666;
+                color: var(--text-secondary);
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
             }
             
@@ -84,7 +87,7 @@ export async function loadChargingPointDetailView(chargingPointId, activeTab = '
             }
             
             .breadcrumb-nav .separator {
-                color: #999;
+                color: var(--text-muted);
             }
             
             .point-header {
@@ -93,7 +96,7 @@ export async function loadChargingPointDetailView(chargingPointId, activeTab = '
                 align-items: flex-start;
                 margin-bottom: 30px;
                 padding-bottom: 20px;
-                border-bottom: 2px solid #e0e0e0;
+                border-bottom: 2px solid var(--border-color);
             }
             
             .point-header-left {
@@ -103,14 +106,14 @@ export async function loadChargingPointDetailView(chargingPointId, activeTab = '
             .point-name {
                 font-size: 28px;
                 font-weight: 700;
-                color: #333;
+                color: var(--text-primary);
                 margin: 0 0 8px 0;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
             }
             
             .point-location {
                 font-size: 16px;
-                color: #666;
+                color: var(--text-secondary);
                 margin-bottom: 12px;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
             }
@@ -140,6 +143,7 @@ export async function loadChargingPointDetailView(chargingPointId, activeTab = '
                 background-color: #fff3cd;
                 color: #856404;
             }
+
 
             .status-charging {
                 background-color: #fff4e5;
@@ -176,7 +180,7 @@ export async function loadChargingPointDetailView(chargingPointId, activeTab = '
             
             .tabs-container {
                 margin-bottom: 30px;
-                border-bottom: 2px solid #e0e0e0;
+                border-bottom: 2px solid var(--border-color);
             }
             
             .tabs-list {
@@ -192,7 +196,7 @@ export async function loadChargingPointDetailView(chargingPointId, activeTab = '
                 cursor: pointer;
                 font-size: 14px;
                 font-weight: 600;
-                color: #666;
+                color: var(--text-secondary);
                 border-bottom: 3px solid transparent;
                 transition: all 0.2s;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
@@ -202,7 +206,7 @@ export async function loadChargingPointDetailView(chargingPointId, activeTab = '
             
             .tab-item:hover {
                 color: #dc3545;
-                background-color: #f8f9fa;
+                background-color: var(--bg-tertiary);
             }
             
             .tab-item.active {
@@ -219,21 +223,21 @@ export async function loadChargingPointDetailView(chargingPointId, activeTab = '
             }
             
             .detail-card {
-                background-color: #ffffff;
-                border: 1px solid #e0e0e0;
+                background-color: var(--card-bg);
+                border: 1px solid var(--border-color);
                 border-radius: 8px;
                 padding: 25px;
                 margin-bottom: 25px;
-                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                box-shadow: 0 1px 3px var(--shadow);
             }
             
             .detail-card-title {
                 font-size: 18px;
                 font-weight: 600;
-                color: #333;
+                color: var(--text-primary);
                 margin: 0 0 20px 0;
                 padding-bottom: 15px;
-                border-bottom: 2px solid #f0f0f0;
+                border-bottom: 2px solid var(--border-color);
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
@@ -255,7 +259,7 @@ export async function loadChargingPointDetailView(chargingPointId, activeTab = '
             .detail-label {
                 font-size: 12px;
                 font-weight: 600;
-                color: #999;
+                color: var(--text-muted);
                 text-transform: uppercase;
                 letter-spacing: 0.5px;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
@@ -263,7 +267,7 @@ export async function loadChargingPointDetailView(chargingPointId, activeTab = '
             
             .detail-value {
                 font-size: 15px;
-                color: #333;
+                color: var(--text-primary);
                 font-weight: 500;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
             }
@@ -287,12 +291,12 @@ export async function loadChargingPointDetailView(chargingPointId, activeTab = '
             }
             
             .connector-card {
-                background-color: #ffffff;
-                border: 1px solid #e0e0e0;
+                background-color: var(--card-bg);
+                border: 1px solid var(--border-color);
                 border-radius: 8px;
                 padding: 20px;
                 margin-bottom: 20px;
-                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                box-shadow: 0 1px 3px var(--shadow);
             }
             
             .connector-card-header {
@@ -305,7 +309,7 @@ export async function loadChargingPointDetailView(chargingPointId, activeTab = '
             .connector-card-title {
                 font-size: 16px;
                 font-weight: 600;
-                color: #333;
+                color: var(--text-primary);
                 margin: 0;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
             }
@@ -321,7 +325,7 @@ export async function loadChargingPointDetailView(chargingPointId, activeTab = '
                 align-items: center;
                 gap: 8px;
                 font-size: 14px;
-                color: #666;
+                color: var(--text-secondary);
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
             }
             
@@ -379,22 +383,22 @@ export async function loadChargingPointDetailView(chargingPointId, activeTab = '
             .connector-table td {
                 padding: 12px;
                 text-align: left;
-                border-bottom: 1px solid #e0e0e0;
+                border-bottom: 1px solid var(--border-color);
                 font-size: 14px;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
             }
             
             .connector-table th {
-                background-color: #f8f9fa;
+                background-color: var(--bg-tertiary);
                 font-weight: 600;
-                color: #333;
+                color: var(--text-primary);
                 text-transform: uppercase;
                 font-size: 12px;
                 letter-spacing: 0.5px;
             }
             
             .connector-table td {
-                color: #666;
+                color: var(--text-secondary);
             }
             
             .status-badge-small {
@@ -473,8 +477,8 @@ export async function loadChargingPointDetailView(chargingPointId, activeTab = '
             }
             
             .logs-container {
-                background-color: #ffffff;
-                border: 1px solid #e0e0e0;
+                background-color: var(--card-bg);
+                border: 1px solid var(--border-color);
                 border-radius: 8px;
                 padding: 20px;
                 max-height: 600px;
@@ -483,11 +487,11 @@ export async function loadChargingPointDetailView(chargingPointId, activeTab = '
             }
             
             .log-item {
-                background: white;
+                background: var(--card-bg);
                 border-radius: 10px;
                 padding: 20px;
                 margin-bottom: 15px;
-                box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                box-shadow: 0 2px 10px var(--shadow);
                 border-left: 4px solid #17a2b8;
                 transition: all 0.3s ease;
                 font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -495,7 +499,7 @@ export async function loadChargingPointDetailView(chargingPointId, activeTab = '
             
             .log-item:hover {
                 transform: translateY(-2px);
-                box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+                box-shadow: 0 4px 20px var(--shadow);
             }
             
             .log-item.incoming {
@@ -533,7 +537,7 @@ export async function loadChargingPointDetailView(chargingPointId, activeTab = '
             
             .log-message {
                 font-weight: 600;
-                color: #343a40;
+                color: var(--text-primary);
                 margin-bottom: 5px;
                 word-wrap: break-word;
                 overflow-wrap: break-word;
@@ -570,7 +574,7 @@ export async function loadChargingPointDetailView(chargingPointId, activeTab = '
             }
             
             .log-timestamp {
-                color: #6c757d;
+                color: var(--text-muted);
                 font-size: 0.9rem;
                 margin-bottom: 5px;
             }
@@ -601,20 +605,20 @@ export async function loadChargingPointDetailView(chargingPointId, activeTab = '
             }
             
             .log-data {
-                background-color: #f8f9fa;
+                background-color: var(--bg-tertiary);
                 border-radius: 5px;
                 padding: 10px;
                 margin-top: 10px;
                 font-family: 'Courier New', monospace;
                 font-size: 0.85rem;
-                color: #343a40;
+                color: var(--text-primary);
             }
             
             .log-data pre {
                 margin: 0;
                 font-family: 'Courier New', monospace;
                 font-size: 0.85rem;
-                color: #343a40;
+                color: var(--text-primary);
                 white-space: pre-wrap;
                 word-break: break-word;
             }
@@ -651,6 +655,7 @@ export async function loadChargingPointDetailView(chargingPointId, activeTab = '
                 <ul class="tabs-list">
                     <li class="tab-item ${activeTab === 'details' ? 'active' : ''}" data-tab="details" onclick="window.switchPointTab('details', '${chargingPointId}')">DETAILS</li>
                     <li class="tab-item ${activeTab === 'connectors' ? 'active' : ''}" data-tab="connectors" onclick="window.switchPointTab('connectors', '${chargingPointId}')">CONNECTORS</li>
+
                     <li class="tab-item ${activeTab === 'sessions' ? 'active' : ''}" data-tab="sessions" onclick="window.switchPointTab('sessions', '${chargingPointId}')">SESSIONS</li>
                     <li class="tab-item ${activeTab === 'logs' ? 'active' : ''}" data-tab="logs" onclick="window.switchPointTab('logs', '${chargingPointId}')">LOGS</li>
                 </ul>
@@ -671,6 +676,7 @@ export async function loadChargingPointDetailView(chargingPointId, activeTab = '
                         </div>
                     </div>
                 </div>
+
                 
                 <!-- Sessions Tab -->
                 <div id="sessionsTab" class="tab-content ${activeTab === 'sessions' ? 'active' : ''}">
@@ -699,6 +705,7 @@ export async function loadChargingPointDetailView(chargingPointId, activeTab = '
         // Load initial tab data based on active tab
         if (activeTab === 'connectors') {
             loadConnectorsTab(chargingPointId, point);
+
         } else if (activeTab === 'sessions') {
             loadSessionsTab(chargingPointId, point.deviceId);
         } else if (activeTab === 'logs') {
@@ -823,7 +830,7 @@ function generateDetailsTab(point) {
         <div class="detail-card">
             <h3 class="detail-card-title">OCPP (Version: 1.6j)</h3>
             <div style="margin-bottom: 30px;">
-                <h4 style="font-size: 14px; font-weight: 600; color: #333; margin-bottom: 15px; font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;">Secure</h4>
+                <h4 style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 15px; font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;">Secure</h4>
                 <div class="detail-grid">
                     <div class="detail-item">
                         <span class="detail-label">Protocol</span>
@@ -855,7 +862,7 @@ function generateDetailsTab(point) {
                 </div>
             </div>
             <div>
-                <h4 style="font-size: 14px; font-weight: 600; color: #333; margin-bottom: 15px; font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;">Non-Secure</h4>
+                <h4 style="font-size: 14px; font-weight: 600; color: var(--text-primary); margin-bottom: 15px; font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;">Non-Secure</h4>
                 <div class="detail-grid">
                     <div class="detail-item">
                         <span class="detail-label">Protocol</span>
@@ -891,9 +898,11 @@ function generateDetailsTab(point) {
 }
 
 // Load Connectors Tab
+
 async function loadConnectorsTab(chargingPointId, point, isInitialLoad = false) {
     try {
         const connectorsTab = document.getElementById('connectorsTab');
+
         if (!connectorsTab) return;
         
         // Store point ID for auto-refresh
@@ -929,8 +938,10 @@ async function loadConnectorsTab(chargingPointId, point, isInitialLoad = false) 
         // Get active transactions for each connector
         const connectorsWithStatus = await Promise.all(
             point.connectors.map(async (connector) => {
+
                 console.log(`[Load Connectors] Checking active transaction for connector ${connector.connectorId} (deviceId: ${point.deviceId})`);
                 const activeTransaction = await getActiveTransaction(point.deviceId, connector.connectorId);
+
                 console.log(`[Load Connectors] Connector ${connector.connectorId} active transaction:`, activeTransaction);
                 return {
                     ...connector,
@@ -938,6 +949,7 @@ async function loadConnectorsTab(chargingPointId, point, isInitialLoad = false) 
                 };
             })
         );
+        
 
         const anyConnectorCharging = connectorsWithStatus.some(connector => connector.activeTransaction);
         const headerStatusElement = document.querySelector('.point-header .status-badge-large');
@@ -947,7 +959,10 @@ async function loadConnectorsTab(chargingPointId, point, isInitialLoad = false) 
             headerStatusElement.className = `status-badge-large ${getStatusClass(newHeaderStatus)}`;
         }
         
-        connectorsTab.innerHTML = connectorsWithStatus.map(connector => {
+        // Sort connectors by connectorId (1, 2, 3, etc.)
+        const sortedConnectors = connectorsWithStatus.sort((a, b) => (a.connectorId || 0) - (b.connectorId || 0));
+        
+        connectorsTab.innerHTML = sortedConnectors.map(connector => {
             // Check if charging is active
             // Show stop button if we have an active transaction object
             // The stop function has a fail-safe to re-fetch transactionId if it's missing
@@ -978,6 +993,7 @@ async function loadConnectorsTab(chargingPointId, point, isInitialLoad = false) 
                         <h3 class="connector-card-title">Connector ${connector.connectorId}</h3>
                         <div class="connector-actions">
                             ${isCharging ? `
+
                                 <button class="btn-stop-charging" onclick="window.stopChargingFromDetail('${point.deviceId}', ${connector.connectorId}, '${connector.activeTransaction.transactionId || ''}', '${connector.activeTransaction.sessionId || ''}', this)">
                                     <i class="fas fa-stop me-2"></i>Stop Charging
                                 </button>
@@ -1014,6 +1030,7 @@ async function loadConnectorsTab(chargingPointId, point, isInitialLoad = false) 
             `;
         }).join('');
         
+
         // Start auto-refresh every 5 seconds when connectors tab is active
         if (isInitialLoad || !connectorsRefreshInterval) {
             connectorsRefreshInterval = setInterval(async () => {
@@ -1034,15 +1051,17 @@ async function loadConnectorsTab(chargingPointId, point, isInitialLoad = false) 
         
     } catch (error) {
         console.error('Error loading connectors tab:', error);
+
         const connectorsTab = document.getElementById('connectorsTab');
         if (connectorsTab) {
             connectorsTab.innerHTML = `
-                <div class="text-center py-5 text-danger">
-                    <i class="fas fa-exclamation-triangle fa-3x mb-3"></i>
-                    <h5>Error loading connectors</h5>
-                    <p>${error.message || 'Please try again'}</p>
-                </div>
-            `;
+            <div class="text-center py-5 text-danger">
+                <i class="fas fa-exclamation-triangle fa-3x mb-3"></i>
+                <h5>Error loading connectors</h5>
+                <p>${error.message || 'Please try again'}</p>
+            </div>
+        `;
+
         }
     }
 }
@@ -1092,7 +1111,7 @@ function renderSessionsUI(deviceId) {
                 display: flex;
                 gap: 0;
                 margin-bottom: 20px;
-                border-bottom: 2px solid #e0e0e0;
+                border-bottom: 2px solid var(--border-color);
             }
             
             .sessions-sub-tab {
@@ -1100,25 +1119,27 @@ function renderSessionsUI(deviceId) {
                 cursor: pointer;
                 font-size: 14px;
                 font-weight: 600;
-                color: #666;
+                color: var(--text-secondary);
                 border-bottom: 3px solid transparent;
                 transition: all 0.2s;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
                 text-transform: uppercase;
                 letter-spacing: 0.5px;
                 background: none;
-                border: none;
+                border-top: none;
+                border-left: none;
+                border-right: none;
                 position: relative;
             }
             
             .sessions-sub-tab:hover {
                 color: #dc3545;
-                background-color: #f8f9fa;
+                background-color: var(--bg-tertiary);
             }
             
             .sessions-sub-tab.active {
                 color: #dc3545;
-                border-bottom-color: #dc3545;
+                border-bottom: 3px solid #dc3545;
             }
             
             .sessions-sub-tab.active::after {
@@ -1129,6 +1150,51 @@ function renderSessionsUI(deviceId) {
                 right: 0;
                 height: 3px;
                 background-color: #dc3545;
+            }
+            
+            .sessions-empty-state {
+                text-align: center;
+                padding: 60px 20px;
+            }
+            
+            .sessions-empty-state i {
+                font-size: 64px;
+                color: var(--text-secondary);
+                margin-bottom: 20px;
+                display: block;
+                opacity: 0.7;
+            }
+            
+            .sessions-empty-state h5 {
+                font-size: 16px;
+                font-weight: 500;
+                color: var(--text-secondary);
+                margin: 0;
+                font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            }
+            
+            .sessions-empty-state p {
+                color: var(--text-secondary);
+            }
+            
+            .sessions-loading-state {
+                text-align: center;
+                padding: 60px 20px;
+            }
+            
+            .sessions-loading-state i {
+                font-size: 32px;
+                color: var(--text-secondary);
+                margin-bottom: 15px;
+                display: block;
+            }
+            
+            .sessions-loading-state p {
+                font-size: 14px;
+                font-weight: 500;
+                color: var(--text-secondary);
+                margin: 0;
+                font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
             }
             
             .sessions-content {
@@ -1146,19 +1212,22 @@ function renderSessionsUI(deviceId) {
                 margin-bottom: 20px;
                 flex-wrap: wrap;
                 padding: 15px;
-                background-color: #f8f9fa;
+                background-color: var(--bg-tertiary);
                 border-radius: 8px;
-                border: 1px solid #e0e0e0;
+                border: 1px solid var(--border-color);
             }
             
             .sessions-search-input {
                 flex: 1;
                 min-width: 250px;
                 padding: 10px 15px;
-                border: 1px solid #e0e0e0;
+                border: 1px solid var(--input-border);
+                background-color: var(--input-bg);
+                color: var(--text-primary);
                 border-radius: 4px;
                 font-size: 14px;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+                transition: border-color 0.2s, background-color 0.2s, color 0.2s;
             }
             
             .sessions-date-group {
@@ -1169,10 +1238,22 @@ function renderSessionsUI(deviceId) {
             
             .sessions-date-input {
                 padding: 10px 15px;
-                border: 1px solid #e0e0e0;
+                border: 1px solid var(--input-border);
+                background-color: var(--input-bg);
+                color: var(--text-primary);
                 border-radius: 4px;
                 font-size: 14px;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+                transition: border-color 0.2s, background-color 0.2s, color 0.2s;
+            }
+            
+            .sessions-date-input::-webkit-calendar-picker-indicator {
+                filter: invert(0);
+                cursor: pointer;
+            }
+            
+            [data-theme="dark"] .sessions-date-input::-webkit-calendar-picker-indicator {
+                filter: invert(1);
             }
             
             .sessions-apply-btn {
@@ -1192,11 +1273,11 @@ function renderSessionsUI(deviceId) {
             }
             
             .sessions-table-wrapper {
-                background-color: #ffffff;
-                border: 1px solid #e0e0e0;
+                background-color: var(--card-bg);
+                border: 1px solid var(--border-color);
                 border-radius: 8px;
                 overflow: hidden;
-                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                box-shadow: 0 1px 3px var(--shadow);
             }
             
             .sessions-table-scroll {
@@ -1210,16 +1291,16 @@ function renderSessionsUI(deviceId) {
             }
             
             .sessions-table-scroll::-webkit-scrollbar-track {
-                background: #f1f1f1;
+                background: var(--bg-tertiary);
             }
             
             .sessions-table-scroll::-webkit-scrollbar-thumb {
-                background: #888;
+                background: var(--text-muted);
                 border-radius: 4px;
             }
             
             .sessions-table-scroll::-webkit-scrollbar-thumb:hover {
-                background: #555;
+                background: var(--text-secondary);
             }
             
             .sessions-table {
@@ -1228,7 +1309,7 @@ function renderSessionsUI(deviceId) {
                 border-collapse: separate;
                 border-spacing: 0;
                 font-size: 14px;
-                background-color: #ffffff;
+                background-color: var(--card-bg);
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
             }
             
@@ -1238,6 +1319,10 @@ function renderSessionsUI(deviceId) {
                 position: sticky;
                 top: 0;
                 z-index: 10;
+            }
+            
+            [data-theme="dark"] .sessions-table thead {
+                background-color: #1a1a1a;
             }
             
             .sessions-table thead th {
@@ -1259,20 +1344,20 @@ function renderSessionsUI(deviceId) {
             }
             
             .sessions-table tbody tr {
-                border-bottom: 1px solid #e0e0e0;
+                border-bottom: 1px solid var(--border-color);
                 transition: background-color 0.2s;
-                background-color: #ffffff;
+                background-color: var(--card-bg);
             }
             
             .sessions-table tbody tr:nth-child(even) {
-                background-color: #f8f9fa;
+                background-color: var(--bg-tertiary);
             }
             
             .sessions-table tbody td {
                 padding: 14px 12px;
                 vertical-align: middle;
-                border-right: 1px solid #f0f0f0;
-                color: #333;
+                border-right: 1px solid var(--border-color);
+                color: var(--text-primary);
                 font-size: 14px;
                 white-space: nowrap;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
@@ -1283,7 +1368,7 @@ function renderSessionsUI(deviceId) {
             }
             
             .sessions-table tbody td a {
-                color: #000000;
+                color: var(--text-primary);
                 text-decoration: underline;
                 cursor: pointer;
                 font-weight: 500;
@@ -1293,7 +1378,7 @@ function renderSessionsUI(deviceId) {
             }
             
             .sessions-table tbody td a:hover {
-                color: #333333;
+                color: #007bff;
                 text-decoration: underline;
             }
             
@@ -1303,13 +1388,13 @@ function renderSessionsUI(deviceId) {
                 align-items: center;
                 margin-top: 20px;
                 padding: 15px;
-                background-color: #f8f9fa;
+                background-color: var(--bg-tertiary);
                 border-radius: 8px;
             }
             
             .sessions-pagination-info {
                 font-size: 14px;
-                color: #666;
+                color: var(--text-secondary);
             }
             
             .sessions-pagination-controls {
@@ -1320,8 +1405,9 @@ function renderSessionsUI(deviceId) {
             
             .sessions-pagination-btn {
                 padding: 8px 16px;
-                border: 1px solid #e0e0e0;
-                background: white;
+                border: 1px solid var(--border-color);
+                background: var(--card-bg);
+                color: var(--text-primary);
                 border-radius: 4px;
                 cursor: pointer;
                 font-size: 14px;
@@ -1329,7 +1415,8 @@ function renderSessionsUI(deviceId) {
             }
             
             .sessions-pagination-btn:hover:not(:disabled) {
-                background-color: #f8f9fa;
+                background-color: var(--hover-bg);
+                border-color: var(--border-color);
             }
             
             .sessions-pagination-btn:disabled {
@@ -1357,9 +1444,9 @@ function renderSessionsUI(deviceId) {
                 <button class="sessions-apply-btn" onclick="window.applyActiveSessionsFilters('${deviceId}')">SEARCH</button>
             </div>
             <div id="activeSessionsTableContainer">
-                <div class="text-center py-5">
-                    <i class="fas fa-spinner fa-spin fa-2x text-muted"></i>
-                    <p class="text-muted mt-3">Loading sessions...</p>
+                <div class="sessions-loading-state">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <p>Loading sessions...</p>
                 </div>
             </div>
             <div id="activeSessionsPagination" class="sessions-pagination" style="display: none;"></div>
@@ -1377,9 +1464,9 @@ function renderSessionsUI(deviceId) {
                 <button class="sessions-apply-btn" onclick="window.applyCompletedSessionsFilters('${deviceId}')">APPLY</button>
             </div>
             <div id="completedSessionsTableContainer">
-                <div class="text-center py-5">
-                    <i class="fas fa-spinner fa-spin fa-2x text-muted"></i>
-                    <p class="text-muted mt-3">Loading sessions...</p>
+                <div class="sessions-loading-state">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <p>Loading sessions...</p>
                 </div>
             </div>
             <div id="completedSessionsPagination" class="sessions-pagination" style="display: none;"></div>
@@ -1435,9 +1522,9 @@ async function loadActiveSessions(deviceId) {
         if (!container) return;
         
         container.innerHTML = `
-            <div class="text-center py-5">
-                <i class="fas fa-spinner fa-spin fa-2x text-muted"></i>
-                <p class="text-muted mt-3">Loading sessions...</p>
+            <div class="sessions-loading-state">
+                <i class="fas fa-spinner fa-spin"></i>
+                <p>Loading sessions...</p>
             </div>
         `;
         
@@ -1487,9 +1574,9 @@ async function loadActiveSessions(deviceId) {
         
         if (filteredSessions.length === 0) {
             container.innerHTML = `
-                <div class="text-center py-5">
-                    <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
-                    <h5 class="text-muted">No active sessions found for this charging point</h5>
+                <div class="sessions-empty-state">
+                    <i class="fas fa-inbox"></i>
+                    <h5>No active sessions found for this charging point</h5>
                 </div>
             `;
             document.getElementById('activeSessionsPagination').style.display = 'none';
@@ -1524,9 +1611,9 @@ async function loadCompletedSessionsForDevice(deviceId) {
         if (!container) return;
         
         container.innerHTML = `
-            <div class="text-center py-5">
-                <i class="fas fa-spinner fa-spin fa-2x text-muted"></i>
-                <p class="text-muted mt-3">Loading sessions...</p>
+            <div class="sessions-loading-state">
+                <i class="fas fa-spinner fa-spin"></i>
+                <p>Loading sessions...</p>
             </div>
         `;
         
@@ -1578,9 +1665,9 @@ async function loadCompletedSessionsForDevice(deviceId) {
         
         if (filteredSessions.length === 0) {
             container.innerHTML = `
-                <div class="text-center py-5">
-                    <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
-                    <h5 class="text-muted">No completed sessions found for this charging point</h5>
+                <div class="sessions-empty-state">
+                    <i class="fas fa-inbox"></i>
+                    <h5>No completed sessions found for this charging point</h5>
                 </div>
             `;
             document.getElementById('completedSessionsPagination').style.display = 'none';
@@ -1840,6 +1927,7 @@ function updateCompletedSessionsPagination(currentPage, totalPages, total) {
 }
 
 // Load Logs Tab
+
 // Logs state management
 let logsCurrentPage = 1;
 let logsTotalPages = 1;
@@ -1858,6 +1946,7 @@ async function loadLogsTab(chargingPointId, deviceId) {
         // Store deviceId for auto-refresh
         currentLogsDeviceId = deviceId;
         lastLogTimestamp = null; // Reset timestamp on initial load
+
         logsCurrentPage = 1; // Reset pagination
         
         // Clear any existing refresh interval
@@ -1865,6 +1954,7 @@ async function loadLogsTab(chargingPointId, deviceId) {
             clearInterval(logsRefreshInterval);
             logsRefreshInterval = null;
         }
+
         
         // Render logs UI with filters
         renderLogsUI(deviceId);
@@ -1872,6 +1962,7 @@ async function loadLogsTab(chargingPointId, deviceId) {
         // Load logs initially
         await refreshLogs(deviceId, true);
         
+
         // Start auto-refresh every 10 seconds when logs tab is active (reduced frequency)
         logsRefreshInterval = setInterval(async () => {
             // Only refresh if logs tab is currently active
@@ -1879,12 +1970,13 @@ async function loadLogsTab(chargingPointId, deviceId) {
             if (logsTabElement && logsTabElement.classList.contains('active')) {
                 await refreshLogs(deviceId, false);
             }
+
         }, 10000); // Refresh every 10 seconds
         
     } catch (error) {
         console.error('Error loading logs tab:', error);
         document.getElementById('logsTab').innerHTML = `
-            <div class="text-center py-5 text-danger">
+            <div class="text-center py-5 logs-empty-state">
                 <i class="fas fa-exclamation-triangle fa-3x mb-3"></i>
                 <h5>Error loading logs</h5>
                 <p>${error.message || 'Please try again'}</p>
@@ -1893,21 +1985,22 @@ async function loadLogsTab(chargingPointId, deviceId) {
     }
 }
 
+
 // Render logs UI with filters and pagination
 function renderLogsUI(deviceId) {
     const logsTab = document.getElementById('logsTab');
     logsTab.innerHTML = `
         <style>
             .logs-filters {
-                background: linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%);
+                background: var(--card-bg);
                 padding: 24px;
                 border-radius: 12px;
                 margin-bottom: 24px;
                 display: grid;
                 grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
                 gap: 18px;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.06);
-                border: 1px solid #e9ecef;
+                box-shadow: 0 2px 8px var(--shadow);
+                border: 1px solid var(--border-color);
             }
             .logs-filters .filter-group {
                 display: flex;
@@ -1916,7 +2009,7 @@ function renderLogsUI(deviceId) {
             .logs-filters label {
                 font-size: 12px;
                 font-weight: 600;
-                color: #495057;
+                color: var(--text-secondary);
                 margin-bottom: 8px;
                 text-transform: uppercase;
                 letter-spacing: 0.5px;
@@ -1924,10 +2017,11 @@ function renderLogsUI(deviceId) {
             .logs-filters input,
             .logs-filters select {
                 padding: 10px 14px;
-                border: 1px solid #dee2e6;
+                border: 1px solid var(--input-border);
                 border-radius: 6px;
                 font-size: 14px;
-                background: white;
+                background: var(--input-bg);
+                color: var(--text-primary);
                 transition: all 0.2s;
             }
             .logs-filters input:focus,
@@ -1935,6 +2029,15 @@ function renderLogsUI(deviceId) {
                 outline: none;
                 border-color: #007bff;
                 box-shadow: 0 0 0 3px rgba(0,123,255,0.1);
+            }
+            
+            .logs-filters input[type="date"]::-webkit-calendar-picker-indicator {
+                filter: invert(0);
+                cursor: pointer;
+            }
+            
+            [data-theme="dark"] .logs-filters input[type="date"]::-webkit-calendar-picker-indicator {
+                filter: invert(1);
             }
             .logs-filters button {
                 padding: 12px 24px;
@@ -1956,48 +2059,48 @@ function renderLogsUI(deviceId) {
             .logs-container {
                 max-height: 600px;
                 overflow-y: auto;
-                border: 1px solid #e9ecef;
+                border: 1px solid var(--border-color);
                 border-radius: 12px;
                 padding: 16px;
-                background: #fafbfc;
+                background: var(--card-bg);
             }
             .logs-container::-webkit-scrollbar {
                 width: 8px;
             }
             .logs-container::-webkit-scrollbar-track {
-                background: #f1f3f5;
+                background: var(--bg-tertiary);
                 border-radius: 4px;
             }
             .logs-container::-webkit-scrollbar-thumb {
-                background: #ced4da;
+                background: var(--text-muted);
                 border-radius: 4px;
             }
             .logs-container::-webkit-scrollbar-thumb:hover {
-                background: #adb5bd;
+                background: var(--text-secondary);
             }
             .log-item-compact {
-                background: white;
+                background: var(--card-bg);
                 border-left: 4px solid #007bff;
                 padding: 16px 20px;
                 margin-bottom: 12px;
                 border-radius: 8px;
                 cursor: pointer;
                 transition: all 0.2s;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.08);
-                border: 1px solid #e9ecef;
+                box-shadow: 0 2px 4px var(--shadow);
+                border: 1px solid var(--border-color);
             }
             .log-item-compact:hover {
-                box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+                box-shadow: 0 4px 12px var(--shadow);
                 transform: translateY(-2px);
-                border-color: #dee2e6;
+                border-color: var(--border-color);
             }
             .log-item-compact.incoming {
                 border-left-color: #28a745;
-                background: linear-gradient(to right, #f8fff9 0%, #ffffff 5%);
+                background: var(--card-bg);
             }
             .log-item-compact.outgoing {
                 border-left-color: #007bff;
-                background: linear-gradient(to right, #f0f7ff 0%, #ffffff 5%);
+                background: var(--card-bg);
             }
             .log-item-compact-header {
                 display: flex;
@@ -2007,7 +2110,7 @@ function renderLogsUI(deviceId) {
             }
             .log-item-compact-message {
                 font-weight: 600;
-                color: #212529;
+                color: var(--text-primary);
                 display: flex;
                 align-items: center;
                 gap: 10px;
@@ -2020,17 +2123,26 @@ function renderLogsUI(deviceId) {
                 display: flex;
                 gap: 15px;
                 font-size: 13px;
-                color: #495057;
+                color: var(--text-secondary);
                 font-weight: 500;
             }
             .log-item-compact-info {
                 font-size: 12px;
-                color: #6c757d;
+                color: var(--text-muted);
                 display: flex;
                 gap: 20px;
                 margin-top: 8px;
                 padding-top: 8px;
-                border-top: 1px solid #f0f0f0;
+                border-top: 1px solid var(--border-color);
+            }
+            .logs-loading-state i, .logs-loading-state p {
+                color: var(--text-secondary);
+            }
+            .logs-empty-state i, .logs-empty-state h5, .logs-empty-state p {
+                color: var(--text-secondary);
+            }
+            .logs-empty-state i {
+                opacity: 0.7;
             }
             .log-item-compact-info-item {
                 display: flex;
@@ -2038,7 +2150,7 @@ function renderLogsUI(deviceId) {
                 gap: 6px;
             }
             .log-item-compact-info-item i {
-                color: #adb5bd;
+                color: var(--text-muted);
                 font-size: 11px;
             }
             .badge-incoming {
@@ -2067,12 +2179,12 @@ function renderLogsUI(deviceId) {
                 align-items: center;
                 margin-top: 20px;
                 padding: 15px 20px;
-                background: #f8f9fa;
+                background: var(--bg-tertiary);
                 border-radius: 8px;
                 flex-wrap: nowrap;
             }
             .logs-pagination-info {
-                color: #666;
+                color: var(--text-secondary);
                 font-size: 14px;
                 white-space: nowrap;
                 margin-right: 20px;
@@ -2084,7 +2196,7 @@ function renderLogsUI(deviceId) {
                 flex-wrap: nowrap;
             }
             .logs-pagination-controls span {
-                color: #495057;
+                color: var(--text-secondary);
                 font-size: 14px;
                 font-weight: 500;
                 white-space: nowrap;
@@ -2092,11 +2204,13 @@ function renderLogsUI(deviceId) {
             }
             .logs-pagination-controls button {
                 padding: 8px 15px;
-                border: 1px solid #ddd;
-                background: white;
+                border: 1px solid var(--border-color);
+                background: var(--card-bg);
+                color: var(--text-primary);
                 border-radius: 4px;
                 cursor: pointer;
                 font-size: 14px;
+                transition: all 0.2s;
             }
             .logs-pagination-controls button:hover:not(:disabled) {
                 background: #007bff;
@@ -2113,8 +2227,8 @@ function renderLogsUI(deviceId) {
                 right: -500px;
                 width: 500px;
                 height: 100vh;
-                background: white;
-                box-shadow: -4px 0 20px rgba(0,0,0,0.15);
+                background: var(--card-bg);
+                box-shadow: -4px 0 20px var(--shadow);
                 z-index: 10000;
                 transition: right 0.3s ease-in-out;
                 display: flex;
@@ -2128,19 +2242,19 @@ function renderLogsUI(deviceId) {
                 justify-content: space-between;
                 align-items: center;
                 padding: 20px 24px;
-                border-bottom: 1px solid #e9ecef;
-                background: #f8f9fa;
+                border-bottom: 1px solid var(--border-color);
+                background: var(--bg-tertiary);
             }
             .log-drawer-header h3 {
                 margin: 0;
                 font-size: 18px;
                 font-weight: 600;
-                color: #212529;
+                color: var(--text-primary);
             }
             .log-drawer-close {
                 font-size: 24px;
                 font-weight: bold;
-                color: #6c757d;
+                color: var(--text-muted);
                 cursor: pointer;
                 border: none;
                 background: none;
@@ -2154,8 +2268,8 @@ function renderLogsUI(deviceId) {
                 transition: all 0.2s;
             }
             .log-drawer-close:hover {
-                background: #e9ecef;
-                color: #212529;
+                background: var(--hover-bg);
+                color: var(--text-primary);
             }
             .log-drawer-body {
                 flex: 1;
@@ -2163,28 +2277,29 @@ function renderLogsUI(deviceId) {
                 padding: 24px;
             }
             .log-drawer-body pre {
-                background: #f8f9fa;
+                background: var(--bg-tertiary);
                 padding: 16px;
                 border-radius: 6px;
                 overflow-x: auto;
                 font-size: 13px;
                 line-height: 1.6;
                 margin: 0;
-                border: 1px solid #e9ecef;
+                border: 1px solid var(--border-color);
+                color: var(--text-primary);
                 font-family: 'Courier New', monospace;
             }
             .log-drawer-body::-webkit-scrollbar {
                 width: 8px;
             }
             .log-drawer-body::-webkit-scrollbar-track {
-                background: #f1f3f5;
+                background: var(--bg-tertiary);
             }
             .log-drawer-body::-webkit-scrollbar-thumb {
-                background: #ced4da;
+                background: var(--text-muted);
                 border-radius: 4px;
             }
             .log-drawer-body::-webkit-scrollbar-thumb:hover {
-                background: #adb5bd;
+                background: var(--text-secondary);
             }
         </style>
         
@@ -2228,9 +2343,9 @@ function renderLogsUI(deviceId) {
         </div>
         
         <div class="logs-container" id="logsContainer">
-            <div class="text-center py-5">
-                <i class="fas fa-spinner fa-spin fa-2x text-muted"></i>
-                <p class="text-muted mt-3">Loading logs...</p>
+            <div class="text-center py-5 logs-loading-state">
+                <i class="fas fa-spinner fa-spin fa-2x"></i>
+                <p class="mt-3">Loading logs...</p>
             </div>
         </div>
         
@@ -2329,6 +2444,7 @@ async function refreshLogs(deviceId, isInitialLoad = false) {
         const logsTab = document.getElementById('logsTab');
         if (!logsTab) return;
         
+
         const container = document.getElementById('logsContainer');
         if (!container) return;
         
@@ -2348,9 +2464,9 @@ async function refreshLogs(deviceId, isInitialLoad = false) {
         
         // Show loading state
         container.innerHTML = `
-            <div class="text-center py-5">
-                <i class="fas fa-spinner fa-spin fa-2x text-muted"></i>
-                <p class="text-muted mt-3">Loading logs...</p>
+            <div class="text-center py-5 logs-loading-state">
+                <i class="fas fa-spinner fa-spin fa-2x"></i>
+                <p class="mt-3">Loading logs...</p>
             </div>
         `;
         
@@ -2359,18 +2475,21 @@ async function refreshLogs(deviceId, isInitialLoad = false) {
         const data = await response.json();
         
         if (!data.success || !data.data || data.data.length === 0) {
+
             container.innerHTML = `
-                <div class="text-center py-5">
-                    <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
-                    <h5 class="text-muted">No logs found</h5>
-                    <p class="text-muted">Try adjusting your filters or date range.</p>
-                </div>
-            `;
+                    <div class="text-center py-5 logs-empty-state">
+                        <i class="fas fa-inbox fa-3x mb-3"></i>
+                        <h5>No logs found</h5>
+                        <p>Try adjusting your filters or date range.</p>
+                    </div>
+                `;
+
             // Hide pagination
             const pagination = document.getElementById('logsPagination');
             if (pagination) pagination.style.display = 'none';
             return;
         }
+
         
         // Update pagination info
         logsTotalPages = data.pagination.pages || 1;
@@ -2394,6 +2513,7 @@ async function refreshLogs(deviceId, isInitialLoad = false) {
         updateLogsPagination(totalLogs);
         
         // Update last log timestamp
+
         if (data.data.length > 0 && isInitialLoad) {
             const latestLog = data.data[0];
             const logTime = new Date(latestLog.timestamp || latestLog.createdAt).getTime();
@@ -2402,12 +2522,13 @@ async function refreshLogs(deviceId, isInitialLoad = false) {
             }
         }
         
+
     } catch (error) {
         console.error('Error refreshing logs:', error);
         const container = document.getElementById('logsContainer');
         if (container) {
             container.innerHTML = `
-                <div class="text-center py-5 text-danger">
+                <div class="text-center py-5 logs-empty-state">
                     <i class="fas fa-exclamation-triangle fa-2x mb-3"></i>
                     <p>Error loading logs: ${error.message}</p>
                 </div>
@@ -2464,11 +2585,13 @@ function createCompactLogItem(log) {
             case 'RemoteStopTransaction': return 'fas fa-stop-circle';
             case 'ChangeConfiguration': return 'fas fa-cog';
             case 'Response': return 'fas fa-reply';
+
             case 'Heartbeat': return 'fas fa-heartbeat';
             default: return 'fas fa-comment';
         }
     };
     
+
     const connectorText = (log.connectorId !== null && log.connectorId !== undefined && log.connectorId !== 0) 
         ? `Connector ${log.connectorId}` 
         : 'N/A';
@@ -2527,30 +2650,33 @@ async function showLogDetails(logId) {
         const log = data.log;
         
         // Format raw data
-        let rawData = null;
-        try {
-            if (log.raw) {
-                if (typeof log.raw === 'string') {
-                    rawData = JSON.parse(log.raw);
-                } else {
-                    rawData = log.raw;
-                }
+    let rawData = null;
+    try {
+        if (log.raw) {
+            if (typeof log.raw === 'string') {
+                rawData = JSON.parse(log.raw);
+            } else {
+                rawData = log.raw;
             }
-        } catch (e) {
+        }
+    } catch (e) {
+
             rawData = log.raw;
         }
         
         // Build complete log object
-        const fullLogData = {
+    const fullLogData = {
+
             id: log.id,
-            deviceId: log.deviceId || null,
-            type: log.type || 'OCPP',
-            connectorId: log.connectorId !== null && log.connectorId !== undefined ? log.connectorId : 0,
-            messageId: log.messageId || null,
-            message: log.message || 'Unknown',
-            messageData: log.messageData !== null && log.messageData !== undefined ? log.messageData : {},
-            raw: rawData !== null ? rawData : [],
-            direction: log.direction || 'Unknown',
+        deviceId: log.deviceId || null,
+        type: log.type || 'OCPP',
+        connectorId: log.connectorId !== null && log.connectorId !== undefined ? log.connectorId : 0,
+        messageId: log.messageId || null,
+        message: log.message || 'Unknown',
+        messageData: log.messageData !== null && log.messageData !== undefined ? log.messageData : {},
+        raw: rawData !== null ? rawData : [],
+        direction: log.direction || 'Unknown',
+
             timestamp: log.timestamp || log.createdAt,
             createdAt: log.createdAt,
             updatedAt: log.updatedAt
@@ -2575,6 +2701,7 @@ window.showLogDetails = showLogDetails;
 // First checks ChargingSession table (most reliable), then falls back to OCPP logs
 async function getActiveTransaction(deviceId, connectorId) {
     try {
+
         const normalizeDirection = (direction) => {
             if (!direction) return '';
             return direction.toString().trim().toLowerCase();
@@ -2638,6 +2765,7 @@ async function getActiveTransaction(deviceId, connectorId) {
         const data = await response.json();
         
         if (!data.success || !data.data || !Array.isArray(data.data)) {
+
             console.log(`❌ Failed to fetch OCPP logs: success=${data.success}, data=${data.data ? 'exists' : 'null'}`);
             const pendingResult = getPendingTransaction(deviceId, connectorId);
             if (pendingResult) {
@@ -2645,6 +2773,7 @@ async function getActiveTransaction(deviceId, connectorId) {
             }
             return null;
         }
+
         
         console.log(`📊 Fetched ${data.data.length} OCPP log entries`);
         
@@ -2657,12 +2786,15 @@ async function getActiveTransaction(deviceId, connectorId) {
         });
         
         // Find all StartTransaction messages for this specific connector
+
         const connectorIdNum = parseInt(connectorId);
         const startTransactions = data.data.filter(log => {
+
             if ((log.message || '').toString() !== 'StartTransaction' || !isIncoming(log)) {
                 return false;
             }
             // Check connectorId from various possible locations
+
             let logConnectorId = log.connectorId;
             if (logConnectorId === null || logConnectorId === undefined) {
                 if (log.messageData && log.messageData.connectorId !== undefined) {
@@ -2689,9 +2821,10 @@ async function getActiveTransaction(deviceId, connectorId) {
             const allStartTransactions = data.data.filter(log => log.message === 'StartTransaction' && log.direction === 'Incoming');
             console.log(`  Total StartTransaction messages: ${allStartTransactions.length}`);
             allStartTransactions.slice(0, 3).forEach(log => {
-                const logConnectorId = log.connectorId || 
-                                      (log.messageData && log.messageData.connectorId) || 
-                                      (log.raw && Array.isArray(log.raw) && log.raw[2] && log.raw[2].connectorId) || 
+            const logConnectorId = log.connectorId || 
+                                  (log.messageData && log.messageData.connectorId) || 
+                                  (log.raw && Array.isArray(log.raw) && log.raw[2] && log.raw[2].connectorId) || 
+
                                       'unknown';
                 console.log(`    - connectorId: ${logConnectorId}, timestamp: ${log.timestamp || log.createdAt}`);
             });
@@ -2713,18 +2846,22 @@ async function getActiveTransaction(deviceId, connectorId) {
             const currentId = current.id || 0;
             return currentId > latestId ? current : latest;
         });
+
         
         console.log(`📅 Latest StartTransaction: timestamp=${latestStart.timestamp || latestStart.createdAt}, messageId=${latestStart.messageId}`);
         
         // Check if StartTransaction is recent (within last 2 hours)
         const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000);
         const startTime = new Date(latestStart.timestamp || latestStart.createdAt).getTime();
+
         console.log(`⏰ StartTransaction time: ${new Date(startTime).toISOString()}, 2 hours ago: ${twoHoursAgo.toISOString()}`);
         
         if (startTime < twoHoursAgo.getTime()) {
+
             console.log(`❌ StartTransaction is too old (${Math.round((Date.now() - startTime) / 60000)} minutes ago)`);
             return null; // Transaction is too old, consider it inactive
         }
+
         
         // CRITICAL: If StartTransaction is older than 15 minutes and there's no active ChargingSession,
         // be very strict - only show stop button if MeterValues are VERY recent (within 5 minutes)
@@ -2737,19 +2874,24 @@ async function getActiveTransaction(deviceId, connectorId) {
         
         // Find the response to this StartTransaction (outgoing from server, same messageId)
         const startResponse = data.data.find(log => 
+
             (log.message || '') === 'Response' && 
             log.messageId === latestStart.messageId &&
+
             isOutgoing(log)
         );
+
         
         console.log(`🔍 Looking for Response to StartTransaction (messageId: ${latestStart.messageId}): ${startResponse ? 'Found' : 'Not found'}`);
         
         // Get transactionId - first try from response, then from StartTransaction itself
         let transactionId = null;
         if (startResponse) {
+
             console.log(`  Response found, checking for transactionId...`);
             if (startResponse.messageData && startResponse.messageData.transactionId) {
                 transactionId = startResponse.messageData.transactionId;
+
                 console.log(`  ✅ Found transactionId in messageData: ${transactionId}`);
             } else if (startResponse.raw && Array.isArray(startResponse.raw) && startResponse.raw[2] && startResponse.raw[2].transactionId) {
                 transactionId = startResponse.raw[2].transactionId;
@@ -2766,16 +2908,19 @@ async function getActiveTransaction(deviceId, connectorId) {
         }
         
         // If not found in response, try to get from StartTransaction message itself
+
         if (!transactionId) {
             console.log(`  Trying to get transactionId from StartTransaction itself...`);
             if (latestStart.messageData && latestStart.messageData.transactionId) {
-                transactionId = latestStart.messageData.transactionId;
+            transactionId = latestStart.messageData.transactionId;
+
                 console.log(`  ✅ Found transactionId in StartTransaction.messageData: ${transactionId}`);
             } else if (latestStart.raw && Array.isArray(latestStart.raw)) {
-                // Try to extract from raw OCPP message
-                const payload = latestStart.raw[2];
-                if (payload && payload.transactionId) {
-                    transactionId = payload.transactionId;
+            // Try to extract from raw OCPP message
+            const payload = latestStart.raw[2];
+            if (payload && payload.transactionId) {
+                transactionId = payload.transactionId;
+
                     console.log(`  ✅ Found transactionId in StartTransaction.raw[2]: ${transactionId}`);
                 } else {
                     console.log(`  ⚠️ StartTransaction.raw[2] exists but no transactionId:`, payload);
@@ -2855,6 +3000,7 @@ async function getActiveTransaction(deviceId, connectorId) {
         }
         
         if (!transactionId) {
+
             console.log(`⚠️ Could not extract transactionId from StartTransaction or Response - checking MeterValues and pending starts`);
             
             // CRITICAL: Since there's no active ChargingSession in database (we checked earlier),
@@ -3002,6 +3148,7 @@ async function getActiveTransaction(deviceId, connectorId) {
             return null;
         }
         
+
         console.log(`🔍 Checking for StopTransaction with transactionId: ${transactionId}`);
         
         // Check for StopTransaction with same transactionId (if not already checked above)
@@ -3052,6 +3199,7 @@ async function getActiveTransaction(deviceId, connectorId) {
         }
 
         if (!stopTransaction) {
+
             console.log(`✅ Found active transaction from OCPP logs: transactionId=${transactionId}, connectorId=${connectorId}`);
             // Check if there's a pending start for this connector (CMS-initiated)
             const pendingKey = `${deviceId}_${connectorId}`;
@@ -3062,8 +3210,10 @@ async function getActiveTransaction(deviceId, connectorId) {
             // Even if transactionId is null/undefined, return the object so stop button shows
             // The stop function will re-fetch transactionId if needed
             return {
+
                 transactionId: transactionId || null, // Allow null - stop function will handle it
                 connectorId: connectorId,
+
                 startTime: latestStart.timestamp || latestStart.createdAt,
                 sessionId: sessionId // Include sessionId if available from pending starts
             };
@@ -3152,6 +3302,7 @@ async function getActiveTransaction(deviceId, connectorId) {
         return null;
     } catch (error) {
         console.error('Error getting active transaction:', error);
+
         const pendingResult = getPendingTransaction(deviceId, connectorId);
         if (pendingResult) {
             return pendingResult;
@@ -3159,6 +3310,7 @@ async function getActiveTransaction(deviceId, connectorId) {
         return null;
     }
 }
+
 
 function initCmsSocket() {
     if (cmsSocketInitialized) return;
@@ -3287,6 +3439,7 @@ async function startChargingFromDetail(deviceId, connectorId, button) {
         button.disabled = true;
         button.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Starting...';
         
+
         const response = await fetch('/api/cms/charging/start', {
             method: 'POST',
             headers: {
@@ -3295,6 +3448,7 @@ async function startChargingFromDetail(deviceId, connectorId, button) {
             body: JSON.stringify({
                 deviceId: deviceId,
                 connectorId: connectorId,
+
                 amount: 0,
                 idTag: 'CMS_ADMIN'
             })
@@ -3302,15 +3456,18 @@ async function startChargingFromDetail(deviceId, connectorId, button) {
         
         const data = await response.json();
         
+
         // Check both HTTP status and response success flag
         if (response.ok && data.success) {
             showSuccess('Charging started successfully!');
+
             markPendingStart(deviceId, connectorId, data.sessionId || null);
             // Reload connectors tab to update status after a short delay
             setTimeout(async () => {
                 if (window.currentChargingPointId) {
                     const pointResponse = await getChargingPoint(window.currentChargingPointId);
                     if (pointResponse.success && pointResponse.point) {
+
                         await loadConnectorsTab(window.currentChargingPointId, pointResponse.point, false);
                     }
                 }
@@ -3325,6 +3482,7 @@ async function startChargingFromDetail(deviceId, connectorId, button) {
                 }
             }, 5000);
         } else {
+
             // Show error message from API or default message
             const errorMessage = data.error || `Failed to start charging (${response.status} ${response.statusText})`;
             console.error('Failed to start charging:', errorMessage, data);
@@ -3345,6 +3503,7 @@ async function startChargingFromDetail(deviceId, connectorId, button) {
 }
 
 // Stop charging from detail view
+
 async function stopChargingFromDetail(deviceId, connectorId, transactionId, sessionId, button) {
     const lockKey = `${deviceId}_stop_${connectorId}`;
     if (chargingLocks.has(lockKey)) {
@@ -3358,6 +3517,7 @@ async function stopChargingFromDetail(deviceId, connectorId, transactionId, sess
         button.disabled = true;
         button.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Stopping...';
         
+
         // FAIL-SAFE: If transactionId looks invalid (not a number or empty), re-fetch active transaction
         let actualTransactionId = transactionId;
         let actualSessionId = sessionId;
@@ -3394,6 +3554,7 @@ async function stopChargingFromDetail(deviceId, connectorId, transactionId, sess
             },
             body: JSON.stringify({
                 deviceId: deviceId,
+
                 connectorId: connectorId, // Add connectorId for better lookup
                 transactionId: normalizedTransactionId,
                 sessionId: normalizedSessionId
@@ -3402,15 +3563,18 @@ async function stopChargingFromDetail(deviceId, connectorId, transactionId, sess
         
         const data = await response.json();
         
+
         // Check both HTTP status and response success flag
         if (response.ok && data.success) {
             showSuccess('Charging stopped successfully!');
+
             clearPendingStart(deviceId, connectorId);
             // Reload connectors tab to update status after a short delay
             setTimeout(async () => {
                 if (window.currentChargingPointId) {
                     const pointResponse = await getChargingPoint(window.currentChargingPointId);
                     if (pointResponse.success && pointResponse.point) {
+
                         await loadConnectorsTab(window.currentChargingPointId, pointResponse.point, false);
                     }
                 }
@@ -3425,6 +3589,7 @@ async function stopChargingFromDetail(deviceId, connectorId, transactionId, sess
                 }
             }, 8000);
         } else {
+
             // Show error message from API or default message
             const errorMessage = data.error || `Failed to stop charging (${response.status} ${response.statusText})`;
             console.error('Failed to stop charging:', errorMessage, data);
@@ -3488,6 +3653,7 @@ export function switchPointTab(tabName, chargingPointId) {
         });
     }
     
+
     // If switching to sessions tab, load it
     if (tabName === 'sessions' && window.currentChargingPointId) {
         getChargingPoint(window.currentChargingPointId).then(response => {
@@ -3504,6 +3670,7 @@ export function switchPointTab(tabName, chargingPointId) {
         getChargingPoint(window.currentChargingPointId).then(response => {
             if (response.success && response.point) {
                 const connectorsTab = document.getElementById('connectorsTab');
+
                 if (connectorsTab) {
                     // Always reload to get latest status
                     loadConnectorsTab(window.currentChargingPointId, response.point, true);
@@ -3566,6 +3733,7 @@ function getStatusClass(status) {
     if (!status) return 'status-offline';
     const statusLower = status.toLowerCase();
     if (statusLower === 'online') return 'status-online';
+
     if (statusLower === 'charging') return 'status-charging';
     if (statusLower === 'faulted') return 'status-faulted';
     return 'status-offline';
@@ -3575,6 +3743,7 @@ function formatOrganization(org) {
     if (!org) return 'N/A';
     if (org === 'massive_mobility') return 'Massive Mobility';
     if (org === '1c_ev_charging') return '1C EV Charging';
+
     if (org === 'genx') return 'GenX';
     return org;
 }
@@ -3604,6 +3773,7 @@ window.loadChargingPointDetailView = loadChargingPointDetailView;
 window.switchPointTab = switchPointTab;
 window.editPointDetails = editPointDetails;
 window.goBackToPointsList = goBackToPointsList;
+
 
 // Sessions tab functions
 window.switchSessionsSubTab = async function(subTab, deviceId) {
@@ -3697,5 +3867,6 @@ window.stopChargingFromDetail = stopChargingFromDetail;
 window.loadChargingPointsModule = loadChargingPointsModule;
 // Store getActiveTransaction for this module (to avoid conflicts)
 window.getActiveTransactionForPoint = getActiveTransaction;
+
 
 

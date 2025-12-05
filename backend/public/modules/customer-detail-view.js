@@ -89,7 +89,7 @@ export async function loadCustomerDetailView(customerId, activeTab = 'details') 
                 gap: 8px;
                 margin-bottom: 20px;
                 font-size: 14px;
-                color: #666;
+                color: var(--text-secondary);
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
             }
             
@@ -104,7 +104,7 @@ export async function loadCustomerDetailView(customerId, activeTab = 'details') 
             }
             
             .breadcrumb-nav .separator {
-                color: #999;
+                color: var(--text-muted);
             }
             
             .customer-header {
@@ -113,7 +113,7 @@ export async function loadCustomerDetailView(customerId, activeTab = 'details') 
                 align-items: flex-start;
                 margin-bottom: 30px;
                 padding-bottom: 20px;
-                border-bottom: 2px solid #e0e0e0;
+                border-bottom: 2px solid var(--border-color);
             }
             
             .customer-header-left {
@@ -123,14 +123,14 @@ export async function loadCustomerDetailView(customerId, activeTab = 'details') 
             .customer-name {
                 font-size: 28px;
                 font-weight: 700;
-                color: #333;
+                color: var(--text-primary);
                 margin: 0 0 8px 0;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
             }
             
             .customer-contact {
                 font-size: 16px;
-                color: #666;
+                color: var(--text-secondary);
                 margin-bottom: 12px;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
             }
@@ -140,7 +140,7 @@ export async function loadCustomerDetailView(customerId, activeTab = 'details') 
                 align-items: center;
                 gap: 8px;
                 font-size: 16px;
-                color: #666;
+                color: var(--text-secondary);
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
             }
             
@@ -155,7 +155,7 @@ export async function loadCustomerDetailView(customerId, activeTab = 'details') 
             }
             
             .tabs-container {
-                border-bottom: 2px solid #e0e0e0;
+                border-bottom: 2px solid var(--border-color);
                 margin-bottom: 30px;
             }
             
@@ -173,7 +173,7 @@ export async function loadCustomerDetailView(customerId, activeTab = 'details') 
                 cursor: pointer;
                 font-weight: 600;
                 font-size: 14px;
-                color: #666;
+                color: var(--text-secondary);
                 border-bottom: 3px solid transparent;
                 transition: all 0.2s;
                 text-transform: uppercase;
@@ -181,8 +181,8 @@ export async function loadCustomerDetailView(customerId, activeTab = 'details') 
             }
             
             .tab-item:hover {
-                color: #333;
-                background-color: #f8f9fa;
+                color: var(--text-primary);
+                background-color: var(--bg-tertiary);
             }
             
             .tab-item.active {
@@ -199,18 +199,18 @@ export async function loadCustomerDetailView(customerId, activeTab = 'details') 
             }
             
             .detail-card {
-                background: white;
-                border: 1px solid #e0e0e0;
+                background: var(--card-bg);
+                border: 1px solid var(--border-color);
                 border-radius: 12px;
                 padding: 24px;
                 margin-bottom: 24px;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+                box-shadow: 0 2px 4px var(--shadow);
             }
             
             .detail-card-title {
                 font-size: 18px;
                 font-weight: 600;
-                color: #333;
+                color: var(--text-primary);
                 margin: 0 0 20px 0;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
             }
@@ -230,7 +230,7 @@ export async function loadCustomerDetailView(customerId, activeTab = 'details') 
             .detail-label {
                 font-size: 12px;
                 font-weight: 600;
-                color: #999;
+                color: var(--text-muted);
                 text-transform: uppercase;
                 letter-spacing: 0.5px;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
@@ -238,17 +238,17 @@ export async function loadCustomerDetailView(customerId, activeTab = 'details') 
             
             .detail-value {
                 font-size: 15px;
-                color: #333;
+                color: var(--text-primary);
                 font-weight: 500;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
             }
             
             .table-wrapper {
-                background-color: #ffffff;
-                border: 1px solid #e0e0e0;
+                background-color: var(--card-bg);
+                border: 1px solid var(--border-color);
                 border-radius: 8px;
                 overflow: hidden;
-                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                box-shadow: 0 1px 3px var(--shadow);
             }
             
             .table-scroll {
@@ -262,16 +262,16 @@ export async function loadCustomerDetailView(customerId, activeTab = 'details') 
             }
             
             .table-scroll::-webkit-scrollbar-track {
-                background: #f1f1f1;
+                background: var(--bg-tertiary);
             }
             
             .table-scroll::-webkit-scrollbar-thumb {
-                background: #888;
+                background: var(--text-muted);
                 border-radius: 4px;
             }
             
             .table-scroll::-webkit-scrollbar-thumb:hover {
-                background: #555;
+                background: var(--text-secondary);
             }
             
             .detail-table {
@@ -280,7 +280,7 @@ export async function loadCustomerDetailView(customerId, activeTab = 'details') 
                 border-collapse: separate;
                 border-spacing: 0;
                 font-size: 14px;
-                background-color: #ffffff;
+                background-color: var(--card-bg);
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
             }
             
@@ -290,6 +290,10 @@ export async function loadCustomerDetailView(customerId, activeTab = 'details') 
                 position: sticky;
                 top: 0;
                 z-index: 10;
+            }
+            
+            [data-theme="dark"] .detail-table thead {
+                background-color: #1a1a1a;
             }
             
             .detail-table thead th {
@@ -305,22 +309,23 @@ export async function loadCustomerDetailView(customerId, activeTab = 'details') 
             }
             
             .detail-table tbody tr {
-                border-bottom: 1px solid #e0e0e0;
+                border-bottom: 1px solid var(--border-color);
                 transition: background-color 0.2s;
+                background-color: var(--card-bg);
             }
             
             .detail-table tbody tr:nth-child(even) {
-                background-color: #f8f9fa;
+                background-color: var(--bg-tertiary);
             }
             
             .detail-table tbody tr:hover {
-                background-color: #e9ecef;
+                background-color: var(--hover-bg);
             }
             
             .detail-table tbody td {
                 padding: 14px 12px;
                 vertical-align: middle;
-                color: #333;
+                color: var(--text-primary);
                 font-size: 14px;
                 white-space: nowrap;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
@@ -371,20 +376,29 @@ export async function loadCustomerDetailView(customerId, activeTab = 'details') 
             .loading-spinner {
                 text-align: center;
                 padding: 40px;
-                color: #666;
+                color: var(--text-secondary);
+            }
+            
+            .loading-spinner i, .loading-spinner p {
+                color: var(--text-secondary);
             }
             
             .empty-state {
                 text-align: center;
                 padding: 60px 20px;
-                color: #999;
+                color: var(--text-secondary);
             }
             
             .empty-state i {
                 font-size: 48px;
                 display: block;
                 margin-bottom: 15px;
-                opacity: 0.3;
+                color: var(--text-secondary);
+                opacity: 0.7;
+            }
+            
+            .empty-state p {
+                color: var(--text-secondary);
             }
             
             .brand-logo {
@@ -407,13 +421,14 @@ export async function loadCustomerDetailView(customerId, activeTab = 'details') 
                 display: inline-flex;
                 align-items: center;
                 justify-content: center;
-                background: linear-gradient(135deg, #667eea15 0%, #667eea25 100%);
+                background: var(--bg-tertiary);
                 border-radius: 6px;
-                color: #667eea;
+                color: var(--text-primary);
                 font-weight: 700;
                 font-size: 14px;
                 margin-right: 8px;
                 vertical-align: middle;
+                border: 1px solid var(--border-color);
             }
             
             .detail-value-with-logo {
@@ -439,20 +454,22 @@ export async function loadCustomerDetailView(customerId, activeTab = 'details') 
                 margin-bottom: 20px;
                 flex-wrap: wrap;
                 padding: 15px;
-                background-color: #f8f9fa;
+                background-color: var(--bg-tertiary);
                 border-radius: 8px;
-                border: 1px solid #e0e0e0;
+                border: 1px solid var(--border-color);
             }
             
             .tab-search-input {
                 flex: 1;
                 min-width: 250px;
                 padding: 10px 15px;
-                border: 1px solid #e0e0e0;
+                border: 1px solid var(--border-color);
                 border-radius: 4px;
                 font-size: 14px;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
                 transition: border-color 0.2s;
+                background-color: var(--card-bg);
+                color: var(--text-primary);
             }
             
             .tab-search-input:focus {
@@ -468,7 +485,7 @@ export async function loadCustomerDetailView(customerId, activeTab = 'details') 
             }
             
             .tab-date-input-group span {
-                color: #666;
+                color: var(--text-secondary);
                 font-size: 14px;
                 font-weight: 500;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
@@ -476,18 +493,29 @@ export async function loadCustomerDetailView(customerId, activeTab = 'details') 
             
             .tab-date-input {
                 padding: 10px 15px;
-                border: 1px solid #e0e0e0;
+                border: 1px solid var(--border-color);
                 border-radius: 4px;
                 font-size: 14px;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
                 transition: border-color 0.2s;
                 width: 150px;
+                background-color: var(--card-bg);
+                color: var(--text-primary);
             }
             
             .tab-date-input:focus {
                 outline: none;
                 border-color: #007bff;
                 box-shadow: 0 0 0 3px rgba(0,123,255,0.1);
+            }
+            
+            .tab-date-input::-webkit-calendar-picker-indicator {
+                filter: invert(0);
+                cursor: pointer;
+            }
+            
+            [data-theme="dark"] .tab-date-input::-webkit-calendar-picker-indicator {
+                filter: invert(1);
             }
             
             .tab-apply-btn {
@@ -513,7 +541,7 @@ export async function loadCustomerDetailView(customerId, activeTab = 'details') 
             }
             
             .date-icon {
-                color: #666;
+                color: var(--text-secondary);
                 margin-right: 5px;
             }
             
@@ -524,12 +552,12 @@ export async function loadCustomerDetailView(customerId, activeTab = 'details') 
                 align-items: center;
                 margin-top: 20px;
                 padding: 15px 0;
-                border-top: 1px solid #e0e0e0;
+                border-top: 1px solid var(--border-color);
             }
             
             .pagination-info {
                 font-size: 14px;
-                color: #666;
+                color: var(--text-secondary);
                 font-weight: 500;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
             }
@@ -542,9 +570,9 @@ export async function loadCustomerDetailView(customerId, activeTab = 'details') 
             
             .pagination-btn {
                 padding: 8px 16px;
-                border: 1px solid #dee2e6;
+                border: 1px solid var(--border-color);
                 border-radius: 4px;
-                background: white;
+                background: var(--card-bg);
                 color: #007bff;
                 font-size: 14px;
                 font-weight: 600;
@@ -554,8 +582,8 @@ export async function loadCustomerDetailView(customerId, activeTab = 'details') 
             }
             
             .pagination-btn:hover:not(:disabled) {
-                background: #e9ecef;
-                border-color: #dee2e6;
+                background: var(--hover-bg);
+                border-color: var(--border-color);
             }
             
             .pagination-btn:disabled {
@@ -573,9 +601,9 @@ export async function loadCustomerDetailView(customerId, activeTab = 'details') 
                 min-width: 36px;
                 height: 36px;
                 padding: 0 12px;
-                border: 1px solid #dee2e6;
+                border: 1px solid var(--border-color);
                 border-radius: 4px;
-                background: white;
+                background: var(--card-bg);
                 color: #007bff;
                 font-size: 14px;
                 font-weight: 600;
@@ -588,8 +616,8 @@ export async function loadCustomerDetailView(customerId, activeTab = 'details') 
             }
             
             .pagination-page-btn:hover {
-                background: #e9ecef;
-                border-color: #dee2e6;
+                background: var(--hover-bg);
+                border-color: var(--border-color);
             }
             
             .pagination-page-btn.active {
@@ -644,27 +672,24 @@ export async function loadCustomerDetailView(customerId, activeTab = 'details') 
                 <!-- Vehicles Tab -->
                 <div id="vehiclesTab" class="tab-content ${activeTab === 'vehicles' ? 'active' : ''}">
                     <div class="loading-spinner">
-                        <div class="spinner-border text-primary" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
+                        <i class="fas fa-spinner fa-spin fa-2x"></i>
+                        <p class="mt-3">Loading vehicles...</p>
                     </div>
                 </div>
                 
                 <!-- Sessions Tab -->
                 <div id="sessionsTab" class="tab-content ${activeTab === 'sessions' ? 'active' : ''}">
                     <div class="loading-spinner">
-                        <div class="spinner-border text-primary" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
+                        <i class="fas fa-spinner fa-spin fa-2x"></i>
+                        <p class="mt-3">Loading sessions...</p>
                     </div>
                 </div>
                 
                 <!-- Wallet Ledger Tab -->
                 <div id="walletTab" class="tab-content ${activeTab === 'wallet' ? 'active' : ''}">
                     <div class="loading-spinner">
-                        <div class="spinner-border text-primary" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
+                        <i class="fas fa-spinner fa-spin fa-2x"></i>
+                        <p class="mt-3">Loading wallet transactions...</p>
                     </div>
                 </div>
             </div>
@@ -780,8 +805,8 @@ function generateDetailsTab(customer) {
         ` : `
         <div class="detail-card" style="margin-top: 24px;">
             <h3 class="detail-card-title">Assigned Vehicle</h3>
-            <div style="padding: 20px; text-align: center; color: #999;">
-                <i class="fas fa-car" style="font-size: 32px; display: block; margin-bottom: 10px; opacity: 0.3;"></i>
+            <div class="empty-state" style="padding: 20px;">
+                <i class="fas fa-car"></i>
                 <p style="margin: 0;">No vehicle assigned</p>
             </div>
         </div>
@@ -1014,12 +1039,12 @@ function generateSessionsPagination(customerId) {
         startPage = Math.max(1, endPage - maxVisible + 1);
     }
     
-    if (startPage > 1) {
-        pagesHtml += `<button class="pagination-page-btn" onclick="window.goToSessionsPage('${customerId}', 1)">1</button>`;
-        if (startPage > 2) {
-            pagesHtml += `<span style="padding: 0 8px; color: #94a3b8;">...</span>`;
+        if (startPage > 1) {
+            pagesHtml += `<button class="pagination-page-btn" onclick="window.goToSessionsPage('${customerId}', 1)">1</button>`;
+            if (startPage > 2) {
+                pagesHtml += `<span style="padding: 0 8px; color: var(--text-muted);">...</span>`;
+            }
         }
-    }
     
     for (let i = startPage; i <= endPage; i++) {
         pagesHtml += `<button class="pagination-page-btn ${i === sessionsState.currentPage ? 'active' : ''}" onclick="window.goToSessionsPage('${customerId}', ${i})">${i}</button>`;
@@ -1027,7 +1052,7 @@ function generateSessionsPagination(customerId) {
     
     if (endPage < sessionsState.totalPages) {
         if (endPage < sessionsState.totalPages - 1) {
-            pagesHtml += `<span style="padding: 0 8px; color: #94a3b8;">...</span>`;
+            pagesHtml += `<span style="padding: 0 8px; color: var(--text-muted);">...</span>`;
         }
         pagesHtml += `<button class="pagination-page-btn" onclick="window.goToSessionsPage('${customerId}', ${sessionsState.totalPages})">${sessionsState.totalPages}</button>`;
     }
@@ -1275,7 +1300,7 @@ function generateWalletPagination(customerId) {
     if (startPage > 1) {
         pagesHtml += `<button class="pagination-page-btn" onclick="window.goToWalletPage('${customerId}', 1)">1</button>`;
         if (startPage > 2) {
-            pagesHtml += `<span style="padding: 0 8px; color: #94a3b8;">...</span>`;
+            pagesHtml += `<span style="padding: 0 8px; color: var(--text-muted);">...</span>`;
         }
     }
     
@@ -1285,7 +1310,7 @@ function generateWalletPagination(customerId) {
     
     if (endPage < walletState.totalPages) {
         if (endPage < walletState.totalPages - 1) {
-            pagesHtml += `<span style="padding: 0 8px; color: #94a3b8;">...</span>`;
+            pagesHtml += `<span style="padding: 0 8px; color: var(--text-muted);">...</span>`;
         }
         pagesHtml += `<button class="pagination-page-btn" onclick="window.goToWalletPage('${customerId}', ${walletState.totalPages})">${walletState.totalPages}</button>`;
     }

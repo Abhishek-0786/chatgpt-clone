@@ -52,20 +52,22 @@ export function loadChargingStationsModule() {
                 margin-bottom: 20px;
                 flex-wrap: wrap;
                 padding: 15px;
-                background-color: #f8f9fa;
+                background-color: var(--bg-tertiary);
                 border-radius: 8px;
-                border: 1px solid #e0e0e0;
+                border: 1px solid var(--border-color);
             }
             
             .search-input {
                 flex: 1;
                 min-width: 250px;
                 padding: 10px 15px;
-                border: 1px solid #e0e0e0;
+                border: 1px solid var(--input-border);
                 border-radius: 4px;
                 font-size: 14px;
+                background-color: var(--input-bg);
+                color: var(--text-primary);
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
-                transition: border-color 0.2s;
+                transition: border-color 0.2s, background-color 0.2s, color 0.2s;
             }
             
             .search-input:focus {
@@ -81,7 +83,7 @@ export function loadChargingStationsModule() {
             }
             
             .date-input-group span {
-                color: #666;
+                color: var(--text-secondary);
                 font-size: 14px;
                 font-weight: 500;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
@@ -89,17 +91,28 @@ export function loadChargingStationsModule() {
             
             .date-input {
                 padding: 10px 15px;
-                border: 1px solid #e0e0e0;
+                border: 1px solid var(--input-border);
                 border-radius: 4px;
                 font-size: 14px;
+                background-color: var(--input-bg);
+                color: var(--text-primary);
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
-                transition: border-color 0.2s;
+                transition: border-color 0.2s, background-color 0.2s, color 0.2s;
             }
             
             .date-input:focus {
                 outline: none;
                 border-color: #007bff;
                 box-shadow: 0 0 0 3px rgba(0,123,255,0.1);
+            }
+            
+            .date-input::-webkit-calendar-picker-indicator {
+                filter: invert(0);
+                cursor: pointer;
+            }
+            
+            [data-theme="dark"] .date-input::-webkit-calendar-picker-indicator {
+                filter: invert(1);
             }
             
             .apply-btn {
@@ -125,13 +138,14 @@ export function loadChargingStationsModule() {
             
             .status-select {
                 padding: 10px 40px 10px 15px;
-                border: 1px solid #e0e0e0;
+                border: 1px solid var(--input-border);
                 border-radius: 4px;
                 font-size: 14px;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
-                background-color: white;
+                background-color: var(--input-bg);
+                color: var(--text-primary);
                 cursor: pointer;
-                transition: border-color 0.2s;
+                transition: border-color 0.2s, background-color 0.2s, color 0.2s;
                 appearance: none;
                 -webkit-appearance: none;
                 -moz-appearance: none;
@@ -141,14 +155,18 @@ export function loadChargingStationsModule() {
                 background-size: 16px;
             }
             
+            [data-theme="dark"] .status-select {
+                background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23e0e0e0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+            }
+            
             .status-select:focus {
                 outline: none;
-                border-color: #e0e0e0;
+                border-color: var(--input-border);
                 box-shadow: none;
             }
             
             .status-select:hover {
-                border-color: #e0e0e0;
+                border-color: var(--input-border);
             }
             
             .status-legend {
@@ -156,6 +174,7 @@ export function loadChargingStationsModule() {
                 gap: 15px;
                 align-items: center;
                 font-size: 12px;
+                color: var(--text-secondary);
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
             }
             
@@ -180,11 +199,11 @@ export function loadChargingStationsModule() {
             }
             
             .table-wrapper {
-                background-color: #ffffff;
-                border: 1px solid #e0e0e0;
+                background-color: var(--card-bg);
+                border: 1px solid var(--border-color);
                 border-radius: 8px;
                 overflow: hidden;
-                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                box-shadow: 0 1px 3px var(--shadow);
             }
             
             .table-scroll {
@@ -198,16 +217,16 @@ export function loadChargingStationsModule() {
             }
             
             .table-scroll::-webkit-scrollbar-track {
-                background: #f1f1f1;
+                background: var(--bg-tertiary);
             }
             
             .table-scroll::-webkit-scrollbar-thumb {
-                background: #888;
+                background: var(--text-muted);
                 border-radius: 4px;
             }
             
             .table-scroll::-webkit-scrollbar-thumb:hover {
-                background: #555;
+                background: var(--text-secondary);
             }
             
             #stationsTable {
@@ -216,7 +235,7 @@ export function loadChargingStationsModule() {
                 border-collapse: separate;
                 border-spacing: 0;
                 font-size: 14px;
-                background-color: #ffffff;
+                background-color: var(--card-bg);
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
             }
             
@@ -226,6 +245,10 @@ export function loadChargingStationsModule() {
                 position: sticky;
                 top: 0;
                 z-index: 10;
+            }
+            
+            [data-theme="dark"] #stationsTable thead {
+                background-color: #1a1a1a;
             }
             
             #stationsTable thead th {
@@ -247,9 +270,9 @@ export function loadChargingStationsModule() {
             }
             
             #stationsTable tbody tr {
-                border-bottom: 1px solid #e0e0e0;
+                border-bottom: 1px solid var(--border-color);
                 transition: background-color 0.2s;
-                background-color: #ffffff;
+                background-color: var(--card-bg);
             }
             
             #stationsTable tbody tr.clickable-row {
@@ -257,15 +280,15 @@ export function loadChargingStationsModule() {
             }
             
             #stationsTable tbody tr:nth-child(even) {
-                background-color: #f8f9fa;
+                background-color: var(--bg-tertiary);
             }
             
             #stationsTable tbody tr.clickable-row:hover {
-                background-color: #e3f2fd;
+                background-color: var(--hover-bg);
             }
             
             #stationsTable tbody tr.clickable-row:nth-child(even):hover {
-                background-color: #e3f2fd;
+                background-color: var(--hover-bg);
             }
             
             #stationsTable tbody tr .action-column {
@@ -279,8 +302,8 @@ export function loadChargingStationsModule() {
             #stationsTable tbody td {
                 padding: 14px 12px;
                 vertical-align: middle;
-                border-right: 1px solid #f0f0f0;
-                color: #333;
+                border-right: 1px solid var(--border-color);
+                color: var(--text-primary);
                 font-size: 14px;
                 white-space: nowrap;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
@@ -291,7 +314,7 @@ export function loadChargingStationsModule() {
             }
             
             #stationsTable tbody td a {
-                color: #000000;
+                color: var(--text-primary);
                 text-decoration: underline;
                 cursor: pointer;
                 font-weight: 500;
@@ -301,7 +324,7 @@ export function loadChargingStationsModule() {
             }
             
             #stationsTable tbody td a:hover {
-                color: #333333;
+                color: #007bff;
                 text-decoration: underline;
             }
             
@@ -333,7 +356,7 @@ export function loadChargingStationsModule() {
                 align-items: center;
                 margin-top: 20px;
                 padding: 15px 0;
-                border-top: 1px solid #e0e0e0;
+                border-top: 1px solid var(--border-color);
             }
             
             .pagination {
@@ -342,7 +365,8 @@ export function loadChargingStationsModule() {
             
             .pagination .page-link {
                 color: #007bff;
-                border: 1px solid #dee2e6;
+                border: 1px solid var(--border-color);
+                background-color: var(--card-bg);
                 padding: 8px 14px;
                 margin: 0 2px;
                 border-radius: 4px;
@@ -350,8 +374,8 @@ export function loadChargingStationsModule() {
             }
             
             .pagination .page-link:hover {
-                background-color: #e9ecef;
-                border-color: #dee2e6;
+                background-color: var(--hover-bg);
+                border-color: var(--border-color);
             }
             
             .pagination .page-item.active .page-link {
@@ -361,10 +385,10 @@ export function loadChargingStationsModule() {
             }
             
             .pagination .page-item.disabled .page-link {
-                color: #6c757d;
+                color: var(--text-muted);
                 pointer-events: none;
-                background-color: #fff;
-                border-color: #dee2e6;
+                background-color: var(--card-bg);
+                border-color: var(--border-color);
                 opacity: 0.5;
             }
             
@@ -376,7 +400,15 @@ export function loadChargingStationsModule() {
             
             .action-btn:hover {
                 transform: translateY(-1px);
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                box-shadow: 0 2px 4px var(--shadow);
+            }
+            
+            .stations-header h2 {
+                color: var(--text-primary);
+            }
+            
+            #showingText {
+                color: var(--text-secondary) !important;
             }
         </style>
         
@@ -454,7 +486,7 @@ export function loadChargingStationsModule() {
             
             <div class="table-footer">
                 <div>
-                    <span id="showingText" style="color: #666; font-size: 14px;">Showing 0-0 of 0 Charging Stations</span>
+                    <span id="showingText" style="color: var(--text-secondary); font-size: 14px;">Showing 0-0 of 0 Charging Stations</span>
                 </div>
                 <nav>
                     <ul class="pagination mb-0" id="pagination">

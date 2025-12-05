@@ -33,7 +33,7 @@ export async function loadStationDetailView(stationId, activeTab = 'details') {
                 gap: 8px;
                 margin-bottom: 20px;
                 font-size: 14px;
-                color: #666;
+                color: var(--text-secondary);
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
             }
             
@@ -48,7 +48,7 @@ export async function loadStationDetailView(stationId, activeTab = 'details') {
             }
             
             .breadcrumb-nav .separator {
-                color: #999;
+                color: var(--text-muted);
             }
             
             .station-header {
@@ -57,7 +57,7 @@ export async function loadStationDetailView(stationId, activeTab = 'details') {
                 align-items: flex-start;
                 margin-bottom: 30px;
                 padding-bottom: 20px;
-                border-bottom: 2px solid #e0e0e0;
+                border-bottom: 2px solid var(--border-color);
             }
             
             .station-header-left {
@@ -67,14 +67,14 @@ export async function loadStationDetailView(stationId, activeTab = 'details') {
             .station-name {
                 font-size: 28px;
                 font-weight: 700;
-                color: #333;
+                color: var(--text-primary);
                 margin: 0 0 8px 0;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
             }
             
             .station-location {
                 font-size: 16px;
-                color: #666;
+                color: var(--text-secondary);
                 margin-bottom: 12px;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
             }
@@ -143,7 +143,7 @@ export async function loadStationDetailView(stationId, activeTab = 'details') {
             }
             
             .tabs-container {
-                border-bottom: 2px solid #e0e0e0;
+                border-bottom: 2px solid var(--border-color);
                 margin-bottom: 30px;
             }
             
@@ -161,7 +161,7 @@ export async function loadStationDetailView(stationId, activeTab = 'details') {
                 cursor: pointer;
                 font-weight: 600;
                 font-size: 14px;
-                color: #666;
+                color: var(--text-secondary);
                 border-bottom: 3px solid transparent;
                 transition: all 0.2s;
                 text-transform: uppercase;
@@ -169,8 +169,8 @@ export async function loadStationDetailView(stationId, activeTab = 'details') {
             }
             
             .tab-item:hover {
-                color: #333;
-                background-color: #f8f9fa;
+                color: var(--text-primary);
+                background-color: var(--bg-tertiary);
             }
             
             .tab-item.active {
@@ -187,18 +187,18 @@ export async function loadStationDetailView(stationId, activeTab = 'details') {
             }
             
             .detail-card {
-                background: white;
-                border: 1px solid #e0e0e0;
+                background: var(--card-bg);
+                border: 1px solid var(--border-color);
                 border-radius: 12px;
                 padding: 24px;
                 margin-bottom: 24px;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+                box-shadow: 0 2px 4px var(--shadow);
             }
             
             .detail-card-title {
                 font-size: 18px;
                 font-weight: 600;
-                color: #333;
+                color: var(--text-primary);
                 margin: 0 0 20px 0;
                 display: flex;
                 align-items: center;
@@ -207,19 +207,19 @@ export async function loadStationDetailView(stationId, activeTab = 'details') {
             }
             
             .detail-card-title .map-btn {
-                background: #f8f9fa;
-                border: 1px solid #e0e0e0;
+                background: var(--bg-tertiary);
+                border: 1px solid var(--border-color);
                 padding: 6px 12px;
                 border-radius: 6px;
                 font-size: 12px;
                 cursor: pointer;
-                color: #666;
+                color: var(--text-secondary);
                 transition: all 0.2s;
             }
             
             .detail-card-title .map-btn:hover {
-                background: #e9ecef;
-                color: #333;
+                background: var(--hover-bg);
+                color: var(--text-primary);
             }
             
             .detail-grid {
@@ -237,7 +237,7 @@ export async function loadStationDetailView(stationId, activeTab = 'details') {
             .detail-label {
                 font-size: 12px;
                 font-weight: 600;
-                color: #999;
+                color: var(--text-muted);
                 text-transform: uppercase;
                 letter-spacing: 0.5px;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
@@ -245,7 +245,7 @@ export async function loadStationDetailView(stationId, activeTab = 'details') {
             
             .detail-value {
                 font-size: 15px;
-                color: #333;
+                color: var(--text-primary);
                 font-weight: 500;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
             }
@@ -279,19 +279,19 @@ export async function loadStationDetailView(stationId, activeTab = 'details') {
                 align-items: center;
                 gap: 8px;
                 padding: 10px 16px;
-                background: #f8f9fa;
-                border: 1px solid #e0e0e0;
+                background: var(--bg-tertiary);
+                border: 1px solid var(--border-color);
                 border-radius: 8px;
                 font-size: 14px;
-                color: #333;
+                color: var(--text-primary);
                 cursor: pointer;
                 transition: all 0.2s;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
             }
             
             .amenity-badge:hover {
-                background: #e9ecef;
-                border-color: #d0d0d0;
+                background: var(--hover-bg);
+                border-color: var(--border-color);
                 transform: translateY(-1px);
             }
             
@@ -300,11 +300,11 @@ export async function loadStationDetailView(stationId, activeTab = 'details') {
             }
             
             .table-wrapper {
-                background-color: #ffffff;
-                border: 1px solid #e0e0e0;
+                background-color: var(--card-bg);
+                border: 1px solid var(--border-color);
                 border-radius: 8px;
                 overflow: hidden;
-                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                box-shadow: 0 1px 3px var(--shadow);
             }
             
             .table-scroll {
@@ -318,16 +318,16 @@ export async function loadStationDetailView(stationId, activeTab = 'details') {
             }
             
             .table-scroll::-webkit-scrollbar-track {
-                background: #f1f1f1;
+                background: var(--bg-tertiary);
             }
             
             .table-scroll::-webkit-scrollbar-thumb {
-                background: #888;
+                background: var(--text-muted);
                 border-radius: 4px;
             }
             
             .table-scroll::-webkit-scrollbar-thumb:hover {
-                background: #555;
+                background: var(--text-secondary);
             }
             
             #pointsTable {
@@ -336,7 +336,7 @@ export async function loadStationDetailView(stationId, activeTab = 'details') {
                 border-collapse: separate;
                 border-spacing: 0;
                 font-size: 14px;
-                background-color: #ffffff;
+                background-color: var(--card-bg);
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
             }
             
@@ -346,6 +346,10 @@ export async function loadStationDetailView(stationId, activeTab = 'details') {
                 position: sticky;
                 top: 0;
                 z-index: 10;
+            }
+            
+            [data-theme="dark"] #pointsTable thead {
+                background-color: #1a1a1a;
             }
             
             #pointsTable thead th {
@@ -361,22 +365,23 @@ export async function loadStationDetailView(stationId, activeTab = 'details') {
             }
             
             #pointsTable tbody tr {
-                border-bottom: 1px solid #e0e0e0;
+                border-bottom: 1px solid var(--border-color);
                 transition: background-color 0.2s;
+                background-color: var(--card-bg);
             }
             
             #pointsTable tbody tr:nth-child(even) {
-                background-color: #f8f9fa;
+                background-color: var(--bg-tertiary);
             }
             
             #pointsTable tbody tr:hover {
-                background-color: #e9ecef;
+                background-color: var(--hover-bg);
             }
             
             #pointsTable tbody td {
                 padding: 14px 12px;
                 vertical-align: middle;
-                color: #333;
+                color: var(--text-primary);
                 font-size: 14px;
                 white-space: nowrap;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
@@ -439,7 +444,7 @@ export async function loadStationDetailView(stationId, activeTab = 'details') {
             .loading-spinner {
                 text-align: center;
                 padding: 40px;
-                color: #666;
+                color: var(--text-secondary);
             }
         </style>
         
@@ -1057,7 +1062,7 @@ function renderStationSessionsUI(stationId, deviceIds) {
                 display: flex;
                 gap: 0;
                 margin-bottom: 20px;
-                border-bottom: 2px solid #e0e0e0;
+                border-bottom: 2px solid var(--border-color);
             }
             
             .station-sessions-sub-tab {
@@ -1065,25 +1070,27 @@ function renderStationSessionsUI(stationId, deviceIds) {
                 cursor: pointer;
                 font-size: 14px;
                 font-weight: 600;
-                color: #666;
+                color: var(--text-secondary);
                 border-bottom: 3px solid transparent;
                 transition: all 0.2s;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
                 text-transform: uppercase;
                 letter-spacing: 0.5px;
                 background: none;
-                border: none;
+                border-top: none;
+                border-left: none;
+                border-right: none;
                 position: relative;
             }
             
             .station-sessions-sub-tab:hover {
                 color: #dc3545;
-                background-color: #f8f9fa;
+                background-color: var(--bg-tertiary);
             }
             
             .station-sessions-sub-tab.active {
                 color: #dc3545;
-                border-bottom-color: #dc3545;
+                border-bottom: 3px solid #dc3545;
             }
             
             .station-sessions-sub-tab.active::after {
@@ -1094,6 +1101,51 @@ function renderStationSessionsUI(stationId, deviceIds) {
                 right: 0;
                 height: 3px;
                 background-color: #dc3545;
+            }
+            
+            .station-sessions-empty-state {
+                text-align: center;
+                padding: 60px 20px;
+            }
+            
+            .station-sessions-empty-state i {
+                font-size: 64px;
+                color: var(--text-secondary);
+                margin-bottom: 20px;
+                display: block;
+                opacity: 0.7;
+            }
+            
+            .station-sessions-empty-state h5 {
+                font-size: 16px;
+                font-weight: 500;
+                color: var(--text-secondary);
+                margin: 0;
+                font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            }
+            
+            .station-sessions-empty-state p {
+                color: var(--text-secondary);
+            }
+            
+            .station-sessions-loading-state {
+                text-align: center;
+                padding: 60px 20px;
+            }
+            
+            .station-sessions-loading-state i {
+                font-size: 32px;
+                color: var(--text-secondary);
+                margin-bottom: 15px;
+                display: block;
+            }
+            
+            .station-sessions-loading-state p {
+                font-size: 14px;
+                font-weight: 500;
+                color: var(--text-secondary);
+                margin: 0;
+                font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
             }
             
             .station-sessions-content {
@@ -1111,19 +1163,22 @@ function renderStationSessionsUI(stationId, deviceIds) {
                 margin-bottom: 20px;
                 flex-wrap: wrap;
                 padding: 15px;
-                background-color: #f8f9fa;
+                background-color: var(--bg-tertiary);
                 border-radius: 8px;
-                border: 1px solid #e0e0e0;
+                border: 1px solid var(--border-color);
             }
             
             .station-sessions-search-input {
                 flex: 1;
                 min-width: 250px;
                 padding: 10px 15px;
-                border: 1px solid #e0e0e0;
+                border: 1px solid var(--input-border);
+                background-color: var(--input-bg);
+                color: var(--text-primary);
                 border-radius: 4px;
                 font-size: 14px;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+                transition: border-color 0.2s, background-color 0.2s, color 0.2s;
             }
             
             .station-sessions-date-group {
@@ -1134,10 +1189,22 @@ function renderStationSessionsUI(stationId, deviceIds) {
             
             .station-sessions-date-input {
                 padding: 10px 15px;
-                border: 1px solid #e0e0e0;
+                border: 1px solid var(--input-border);
+                background-color: var(--input-bg);
+                color: var(--text-primary);
                 border-radius: 4px;
                 font-size: 14px;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+                transition: border-color 0.2s, background-color 0.2s, color 0.2s;
+            }
+            
+            .station-sessions-date-input::-webkit-calendar-picker-indicator {
+                filter: invert(0);
+                cursor: pointer;
+            }
+            
+            [data-theme="dark"] .station-sessions-date-input::-webkit-calendar-picker-indicator {
+                filter: invert(1);
             }
             
             .station-sessions-apply-btn {
@@ -1157,11 +1224,11 @@ function renderStationSessionsUI(stationId, deviceIds) {
             }
             
             .station-sessions-table-wrapper {
-                background-color: #ffffff;
-                border: 1px solid #e0e0e0;
+                background-color: var(--card-bg);
+                border: 1px solid var(--border-color);
                 border-radius: 8px;
                 overflow: hidden;
-                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                box-shadow: 0 1px 3px var(--shadow);
             }
             
             .station-sessions-table-scroll {
@@ -1175,16 +1242,16 @@ function renderStationSessionsUI(stationId, deviceIds) {
             }
             
             .station-sessions-table-scroll::-webkit-scrollbar-track {
-                background: #f1f1f1;
+                background: var(--bg-tertiary);
             }
             
             .station-sessions-table-scroll::-webkit-scrollbar-thumb {
-                background: #888;
+                background: var(--text-muted);
                 border-radius: 4px;
             }
             
             .station-sessions-table-scroll::-webkit-scrollbar-thumb:hover {
-                background: #555;
+                background: var(--text-secondary);
             }
             
             .station-sessions-table {
@@ -1193,7 +1260,7 @@ function renderStationSessionsUI(stationId, deviceIds) {
                 border-collapse: separate;
                 border-spacing: 0;
                 font-size: 14px;
-                background-color: #ffffff;
+                background-color: var(--card-bg);
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
             }
             
@@ -1203,6 +1270,10 @@ function renderStationSessionsUI(stationId, deviceIds) {
                 position: sticky;
                 top: 0;
                 z-index: 10;
+            }
+            
+            [data-theme="dark"] .station-sessions-table thead {
+                background-color: #1a1a1a;
             }
             
             .station-sessions-table thead th {
@@ -1224,20 +1295,20 @@ function renderStationSessionsUI(stationId, deviceIds) {
             }
             
             .station-sessions-table tbody tr {
-                border-bottom: 1px solid #e0e0e0;
+                border-bottom: 1px solid var(--border-color);
                 transition: background-color 0.2s;
-                background-color: #ffffff;
+                background-color: var(--card-bg);
             }
             
             .station-sessions-table tbody tr:nth-child(even) {
-                background-color: #f8f9fa;
+                background-color: var(--bg-tertiary);
             }
             
             .station-sessions-table tbody td {
                 padding: 14px 12px;
                 vertical-align: middle;
-                border-right: 1px solid #f0f0f0;
-                color: #333;
+                border-right: 1px solid var(--border-color);
+                color: var(--text-primary);
                 font-size: 14px;
                 white-space: nowrap;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
@@ -1248,7 +1319,7 @@ function renderStationSessionsUI(stationId, deviceIds) {
             }
             
             .station-sessions-table tbody td a {
-                color: #000000;
+                color: var(--text-primary);
                 text-decoration: underline;
                 cursor: pointer;
                 font-weight: 500;
@@ -1258,7 +1329,7 @@ function renderStationSessionsUI(stationId, deviceIds) {
             }
             
             .station-sessions-table tbody td a:hover {
-                color: #333333;
+                color: #007bff;
                 text-decoration: underline;
             }
             
@@ -1268,13 +1339,13 @@ function renderStationSessionsUI(stationId, deviceIds) {
                 align-items: center;
                 margin-top: 20px;
                 padding: 15px;
-                background-color: #f8f9fa;
+                background-color: var(--bg-tertiary);
                 border-radius: 8px;
             }
             
             .station-sessions-pagination-info {
                 font-size: 14px;
-                color: #666;
+                color: var(--text-secondary);
             }
             
             .station-sessions-pagination-controls {
@@ -1285,8 +1356,9 @@ function renderStationSessionsUI(stationId, deviceIds) {
             
             .station-sessions-pagination-btn {
                 padding: 8px 16px;
-                border: 1px solid #e0e0e0;
-                background: white;
+                border: 1px solid var(--border-color);
+                background: var(--card-bg);
+                color: var(--text-primary);
                 border-radius: 4px;
                 cursor: pointer;
                 font-size: 14px;
@@ -1322,9 +1394,9 @@ function renderStationSessionsUI(stationId, deviceIds) {
                 <button class="station-sessions-apply-btn" onclick="window.applyStationActiveSessionsFilters('${stationId}')">SEARCH</button>
             </div>
             <div id="stationActiveSessionsTableContainer">
-                <div class="text-center py-5">
-                    <i class="fas fa-spinner fa-spin fa-2x text-muted"></i>
-                    <p class="text-muted mt-3">Loading sessions...</p>
+                <div class="station-sessions-loading-state">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <p>Loading sessions...</p>
                 </div>
             </div>
             <div id="stationActiveSessionsPagination" class="station-sessions-pagination" style="display: none;"></div>
@@ -1342,9 +1414,9 @@ function renderStationSessionsUI(stationId, deviceIds) {
                 <button class="station-sessions-apply-btn" onclick="window.applyStationCompletedSessionsFilters('${stationId}')">APPLY</button>
             </div>
             <div id="stationCompletedSessionsTableContainer">
-                <div class="text-center py-5">
-                    <i class="fas fa-spinner fa-spin fa-2x text-muted"></i>
-                    <p class="text-muted mt-3">Loading sessions...</p>
+                <div class="station-sessions-loading-state">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <p>Loading sessions...</p>
                 </div>
             </div>
             <div id="stationCompletedSessionsPagination" class="station-sessions-pagination" style="display: none;"></div>
@@ -1402,12 +1474,12 @@ async function loadStationActiveSessions(stationId, deviceIds) {
         const container = document.getElementById('stationActiveSessionsTableContainer');
         if (!container) return;
         
-        container.innerHTML = `
-            <div class="text-center py-5">
-                <i class="fas fa-spinner fa-spin fa-2x text-muted"></i>
-                <p class="text-muted mt-3">Loading sessions...</p>
-            </div>
-        `;
+            container.innerHTML = `
+                <div class="station-sessions-loading-state">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <p>Loading sessions...</p>
+                </div>
+            `;
         
         const state = stationSessionsState.active;
         
@@ -1471,9 +1543,9 @@ async function loadStationActiveSessions(stationId, deviceIds) {
         
         if (filteredSessions.length === 0) {
             container.innerHTML = `
-                <div class="text-center py-5">
-                    <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
-                    <h5 class="text-muted">No active sessions found for this station</h5>
+                <div class="station-sessions-empty-state">
+                    <i class="fas fa-inbox"></i>
+                    <h5>No active sessions found for this station</h5>
                 </div>
             `;
             document.getElementById('stationActiveSessionsPagination').style.display = 'none';
@@ -1507,12 +1579,12 @@ async function loadStationCompletedSessions(stationId, deviceIds) {
         const container = document.getElementById('stationCompletedSessionsTableContainer');
         if (!container) return;
         
-        container.innerHTML = `
-            <div class="text-center py-5">
-                <i class="fas fa-spinner fa-spin fa-2x text-muted"></i>
-                <p class="text-muted mt-3">Loading sessions...</p>
-            </div>
-        `;
+            container.innerHTML = `
+                <div class="station-sessions-loading-state">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <p>Loading sessions...</p>
+                </div>
+            `;
         
         const state = stationSessionsState.completed;
         
@@ -1578,9 +1650,9 @@ async function loadStationCompletedSessions(stationId, deviceIds) {
         
         if (filteredSessions.length === 0) {
             container.innerHTML = `
-                <div class="text-center py-5">
-                    <i class="fas fa-inbox fa-3x text-muted mb-3"></i>
-                    <h5 class="text-muted">No completed sessions found for this station</h5>
+                <div class="station-sessions-empty-state">
+                    <i class="fas fa-inbox"></i>
+                    <h5>No completed sessions found for this station</h5>
                 </div>
             `;
             document.getElementById('stationCompletedSessionsPagination').style.display = 'none';

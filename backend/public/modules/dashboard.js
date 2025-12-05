@@ -7,7 +7,7 @@ export function loadDashboardModule() {
             /* Dashboard Container */
             .dashboard-container {
                 padding: 30px 40px;
-                background: #f8fafc;
+                background: var(--bg-secondary);
                 min-height: 100vh;
             }
             
@@ -18,14 +18,14 @@ export function loadDashboardModule() {
             .dashboard-title {
                 font-size: 32px;
                 font-weight: 700;
-                color: #1e293b;
+                color: var(--text-primary);
                 margin: 0 0 8px 0;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
             }
             
             .dashboard-subtitle {
                 font-size: 14px;
-                color: #64748b;
+                color: var(--text-secondary);
                 margin: 0;
             }
             
@@ -38,17 +38,17 @@ export function loadDashboardModule() {
             }
             
             .stat-box {
-                background: white;
+                background: var(--card-bg);
                 border-radius: 12px;
                 padding: 24px;
-                border: 1px solid #e2e8f0;
-                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+                border: 1px solid var(--border-color);
+                box-shadow: 0 1px 3px var(--shadow);
                 transition: all 0.3s ease;
             }
             
             .stat-box:hover {
                 transform: translateY(-2px);
-                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+                box-shadow: 0 4px 12px var(--shadow);
             }
             
             .stat-box-header {
@@ -60,7 +60,7 @@ export function loadDashboardModule() {
             
             .stat-box-title {
                 font-size: 12px;
-                color: #64748b;
+                color: var(--text-secondary);
                 font-weight: 600;
                 text-transform: uppercase;
                 letter-spacing: 0.8px;
@@ -112,7 +112,7 @@ export function loadDashboardModule() {
             .stat-box-value {
                 font-size: 32px;
                 font-weight: 700;
-                color: #1e293b;
+                color: var(--text-primary);
                 margin-bottom: 8px;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
             }
@@ -122,7 +122,7 @@ export function loadDashboardModule() {
                 align-items: center;
                 gap: 6px;
                 font-size: 13px;
-                color: #64748b;
+                color: var(--text-secondary);
             }
             
             .stat-change {
@@ -149,11 +149,11 @@ export function loadDashboardModule() {
             }
             
             .chart-card {
-                background: white;
+                background: var(--card-bg);
                 border-radius: 12px;
                 padding: 20px;
-                border: 1px solid #e2e8f0;
-                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+                border: 1px solid var(--border-color);
+                box-shadow: 0 1px 3px var(--shadow);
                 overflow: hidden;
             }
             
@@ -177,18 +177,18 @@ export function loadDashboardModule() {
             .chart-card-title {
                 font-size: 18px;
                 font-weight: 700;
-                color: #1e293b;
+                color: var(--text-primary);
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
             }
             
             .chart-placeholder {
                 height: 300px;
-                background: #f8fafc;
+                background: var(--bg-tertiary);
                 border-radius: 8px;
                 display: flex;
                 align-items: center;
                 justify-content: center;
-                color: #94a3b8;
+                color: var(--text-muted);
                 font-size: 14px;
             }
             
@@ -200,11 +200,11 @@ export function loadDashboardModule() {
             }
             
             .activity-card {
-                background: white;
+                background: var(--card-bg);
                 border-radius: 12px;
                 padding: 24px;
-                border: 1px solid #e2e8f0;
-                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+                border: 1px solid var(--border-color);
+                box-shadow: 0 1px 3px var(--shadow);
             }
             
             .activity-card-header {
@@ -213,13 +213,13 @@ export function loadDashboardModule() {
                 justify-content: space-between;
                 margin-bottom: 20px;
                 padding-bottom: 16px;
-                border-bottom: 1px solid #e2e8f0;
+                border-bottom: 1px solid var(--border-color);
             }
             
             .activity-card-title {
                 font-size: 16px;
                 font-weight: 700;
-                color: #1e293b;
+                color: var(--text-primary);
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
             }
             
@@ -251,7 +251,7 @@ export function loadDashboardModule() {
             }
             
             .activity-item:hover {
-                background: #f8fafc;
+                background: var(--bg-tertiary);
             }
             
             .activity-icon {
@@ -289,18 +289,18 @@ export function loadDashboardModule() {
             .activity-title {
                 font-size: 14px;
                 font-weight: 600;
-                color: #1e293b;
+                color: var(--text-primary);
                 margin-bottom: 4px;
             }
             
             .activity-meta {
                 font-size: 12px;
-                color: #94a3b8;
+                color: var(--text-muted);
             }
             
             .activity-time {
                 font-size: 12px;
-                color: #94a3b8;
+                color: var(--text-muted);
                 white-space: nowrap;
             }
             
@@ -316,7 +316,7 @@ export function loadDashboardModule() {
             .empty-state {
                 text-align: center;
                 padding: 40px;
-                color: #94a3b8;
+                color: var(--text-muted);
             }
             
             .empty-state i {
@@ -492,7 +492,7 @@ export function loadDashboardModule() {
                 <div class="chart-card">
                     <div class="chart-card-header" style="flex-wrap: wrap; gap: 10px;">
                         <h3 class="chart-card-title" style="margin: 0;">Sessions Overview</h3>
-                        <select class="form-select form-select-sm" style="width: auto; min-width: 140px; padding: 6px 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; margin-left: auto;" id="sessionsPeriod" onchange="loadSessionsChart()">
+                        <select class="form-select form-select-sm" style="width: auto; min-width: 140px; padding: 6px 12px; border: 1px solid var(--input-border); background-color: var(--input-bg); color: var(--text-primary); border-radius: 6px; font-size: 13px; margin-left: auto;" id="sessionsPeriod" onchange="loadSessionsChart()">
                             <option value="7">Last 7 Days</option>
                             <option value="30" selected>Last 30 Days</option>
                             <option value="90">Last 90 Days</option>
@@ -506,7 +506,7 @@ export function loadDashboardModule() {
                 <div class="chart-card">
                     <div class="chart-card-header" style="flex-wrap: wrap; gap: 10px;">
                         <h3 class="chart-card-title" style="margin: 0;">Billed Amount Overview</h3>
-                        <select class="form-select form-select-sm" style="width: auto; min-width: 140px; padding: 6px 12px; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 13px; margin-left: auto;" id="revenuePeriod" onchange="loadRevenueChart()">
+                        <select class="form-select form-select-sm" style="width: auto; min-width: 140px; padding: 6px 12px; border: 1px solid var(--input-border); background-color: var(--input-bg); color: var(--text-primary); border-radius: 6px; font-size: 13px; margin-left: auto;" id="revenuePeriod" onchange="loadRevenueChart()">
                             <option value="7">Last 7 Days</option>
                             <option value="30" selected>Last 30 Days</option>
                             <option value="90">Last 90 Days</option>
@@ -527,20 +527,20 @@ export function loadDashboardModule() {
                     </div>
                     <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; flex: 1;">
                         <div class="today-stat-item" style="text-align: center; padding: 8px;">
-                            <div style="font-size: 11px; color: #64748b; margin-bottom: 6px;">Sessions</div>
-                            <div style="font-size: 20px; font-weight: 700; color: #1e293b;" id="todaySessions">0</div>
+                            <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 6px;">Sessions</div>
+                            <div style="font-size: 20px; font-weight: 700; color: var(--text-primary);" id="todaySessions">0</div>
                         </div>
                         <div class="today-stat-item" style="text-align: center; padding: 8px;">
-                            <div style="font-size: 11px; color: #64748b; margin-bottom: 6px;">Billed Amount</div>
-                            <div style="font-size: 20px; font-weight: 700; color: #1e293b;" id="todayRevenue">₹0</div>
+                            <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 6px;">Billed Amount</div>
+                            <div style="font-size: 20px; font-weight: 700; color: var(--text-primary);" id="todayRevenue">₹0</div>
                         </div>
                         <div class="today-stat-item" style="text-align: center; padding: 8px;">
-                            <div style="font-size: 11px; color: #64748b; margin-bottom: 6px;">Energy</div>
-                            <div style="font-size: 20px; font-weight: 700; color: #1e293b;" id="todayEnergy">0 kWh</div>
+                            <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 6px;">Energy</div>
+                            <div style="font-size: 20px; font-weight: 700; color: var(--text-primary);" id="todayEnergy">0 kWh</div>
                         </div>
                         <div class="today-stat-item" style="text-align: center; padding: 8px;">
-                            <div style="font-size: 11px; color: #64748b; margin-bottom: 6px;">New Customers</div>
-                            <div style="font-size: 20px; font-weight: 700; color: #1e293b;" id="todayCustomers">0</div>
+                            <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 6px;">New Customers</div>
+                            <div style="font-size: 20px; font-weight: 700; color: var(--text-primary);" id="todayCustomers">0</div>
                         </div>
                     </div>
                 </div>
@@ -557,14 +557,14 @@ export function loadDashboardModule() {
                         <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 10px 0; flex: 1;">
                             <div style="text-align: center; padding: 10px; background: #f0fdf4; border-radius: 8px; display: flex; flex-direction: column; justify-content: center;">
                                 <div style="font-size: 24px; font-weight: 700; color: #10b981;" id="stationsOnlineCount">0</div>
-                                <div style="font-size: 11px; color: #64748b; margin-top: 4px;">Online</div>
+                                <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">Online</div>
                             </div>
                             <div style="text-align: center; padding: 10px; background: #fee2e2; border-radius: 8px; display: flex; flex-direction: column; justify-content: center;">
                                 <div style="font-size: 24px; font-weight: 700; color: #ef4444;" id="stationsOfflineCount">0</div>
-                                <div style="font-size: 11px; color: #64748b; margin-top: 4px;">Offline</div>
+                                <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">Offline</div>
                             </div>
                         </div>
-                        <div id="offlineStationsList" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e2e8f0;"></div>
+                        <div id="offlineStationsList" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color);"></div>
                     </div>
                 </div>
 
@@ -580,22 +580,22 @@ export function loadDashboardModule() {
                         <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 10px 0; flex: 1;">
                             <div style="text-align: center; padding: 10px; background: #f0fdf4; border-radius: 8px; display: flex; flex-direction: column; justify-content: center;">
                                 <div style="font-size: 24px; font-weight: 700; color: #10b981;" id="chargersAvailableCount">0</div>
-                                <div style="font-size: 11px; color: #64748b; margin-top: 4px;">Available</div>
+                                <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">Available</div>
                             </div>
                             <div style="text-align: center; padding: 10px; background: #fef3c7; border-radius: 8px; display: flex; flex-direction: column; justify-content: center;">
                                 <div style="font-size: 24px; font-weight: 700; color: #f59e0b;" id="chargersBusyCount">0</div>
-                                <div style="font-size: 11px; color: #64748b; margin-top: 4px;">Busy</div>
+                                <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">Busy</div>
                             </div>
                             <div style="text-align: center; padding: 10px; background: #f1f5f9; border-radius: 8px; display: flex; flex-direction: column; justify-content: center;">
-                                <div style="font-size: 24px; font-weight: 700; color: #64748b;" id="chargersUnavailableCount">0</div>
-                                <div style="font-size: 11px; color: #64748b; margin-top: 4px;">Unavailable</div>
+                                <div style="font-size: 24px; font-weight: 700; color: var(--text-secondary);" id="chargersUnavailableCount">0</div>
+                                <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">Unavailable</div>
                             </div>
                             <div style="text-align: center; padding: 10px; background: #fee2e2; border-radius: 8px; display: flex; flex-direction: column; justify-content: center;">
                                 <div style="font-size: 24px; font-weight: 700; color: #ef4444;" id="chargersFaultedCount">0</div>
-                                <div style="font-size: 11px; color: #64748b; margin-top: 4px;">Faulted</div>
+                                <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">Faulted</div>
                             </div>
                         </div>
-                        <div id="faultedChargersList" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e2e8f0;"></div>
+                        <div id="faultedChargersList" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-color);"></div>
                     </div>
                 </div>
             </div>
@@ -894,6 +894,7 @@ function renderSessionsChart(sessionsData, period) {
                     }
                 }
             }
+
         }
     });
 }
@@ -1134,13 +1135,13 @@ function loadRecentCustomers(customers) {
     }
     
     container.innerHTML = customers.slice(0, 5).map(customer => `
-        <div class="activity-item" onclick="viewCustomerLedgerFromDashboard('${customer.id}', '${(customer.fullName || 'Unknown').replace(/'/g, "\\'")}');" style="cursor: pointer; transition: background-color 0.2s ease;" onmouseover="this.style.backgroundColor='#f8fafc';" onmouseout="this.style.backgroundColor='transparent';">
+        <div class="activity-item" onclick="viewCustomerDetailFromDashboard('${customer.id}');" style="cursor: pointer; transition: background-color 0.2s ease;" onmouseover="this.style.backgroundColor='#f8fafc';" onmouseout="this.style.backgroundColor='transparent';">
             <div class="activity-icon customer">
                 <i class="fas fa-user"></i>
             </div>
             <div class="activity-details">
-                <div class="activity-title" style="color: #3b82f6;">${customer.fullName}</div>
-                <div class="activity-meta">${customer.phone}</div>
+                <div class="activity-title" style="color: #3b82f6;">${customer.name || 'Unknown'}</div>
+                <div class="activity-meta">${customer.phone || 'N/A'}</div>
             </div>
             <div class="activity-time">${formatDate(customer.createdAt)}</div>
         </div>
@@ -1208,23 +1209,23 @@ function updateStationStatus(stationStatus) {
         const remainingCount = stationStatus.offlineStations.length - 3;
         
         offlineList.innerHTML = `
-            <div style="font-size: 12px; color: #64748b; margin-bottom: 8px; font-weight: 600;">Offline Stations:</div>
+            <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; font-weight: 600;">Offline Stations:</div>
             <div style="max-height: 200px; overflow-y: auto; padding-right: 4px;">
                 ${displayStations.map(s => `
                     <div style="padding: 6px 10px; background: #fee2e2; border-radius: 6px; margin-bottom: 6px; font-size: 12px; display: flex; align-items: center; min-width: 0;">
                         <i class="fas fa-exclamation-circle" style="color: #ef4444; margin-right: 6px; flex-shrink: 0;"></i>
-                        <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;">${s.name}</span>
+                        <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; color: #721c24; font-weight: 500;">${s.name}</span>
                     </div>
                 `).join('')}
                 ${remainingCount > 0 ? `
-                    <div style="padding: 6px 10px; text-align: center; font-size: 11px; color: #64748b; font-style: italic;">
+                    <div style="padding: 6px 10px; text-align: center; font-size: 11px; color: var(--text-secondary); font-style: italic;">
                         +${remainingCount} more offline station${remainingCount > 1 ? 's' : ''}
                     </div>
                 ` : ''}
             </div>
         `;
     } else {
-        offlineList.innerHTML = '<div style="text-align: center; color: #94a3b8; padding: 20px; font-size: 12px;">All stations are online</div>';
+        offlineList.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 20px; font-size: 12px;">All stations are online</div>';
     }
 }
 
@@ -1247,23 +1248,23 @@ function updateChargerStatus(chargerStatus) {
         const remainingCount = chargerStatus.faultedChargers.length - 3;
         
         faultedList.innerHTML = `
-            <div style="font-size: 12px; color: #64748b; margin-bottom: 8px; font-weight: 600;">Faulted Chargers:</div>
+            <div style="font-size: 12px; color: var(--text-secondary); margin-bottom: 8px; font-weight: 600;">Faulted Chargers:</div>
             <div style="max-height: 200px; overflow-y: auto; padding-right: 4px;">
                 ${displayChargers.map(c => `
                     <div style="padding: 6px 10px; background: #fee2e2; border-radius: 6px; margin-bottom: 6px; font-size: 12px; display: flex; align-items: center; min-width: 0;">
                         <i class="fas fa-exclamation-triangle" style="color: #ef4444; margin-right: 6px; flex-shrink: 0;"></i>
-                        <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;">${c.name}</span>
+                        <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; color: #721c24; font-weight: 500;">${c.name}</span>
                     </div>
                 `).join('')}
                 ${remainingCount > 0 ? `
-                    <div style="padding: 6px 10px; text-align: center; font-size: 11px; color: #64748b; font-style: italic;">
+                    <div style="padding: 6px 10px; text-align: center; font-size: 11px; color: var(--text-secondary); font-style: italic;">
                         +${remainingCount} more faulted charger${remainingCount > 1 ? 's' : ''}
                     </div>
                 ` : ''}
             </div>
         `;
     } else {
-        faultedList.innerHTML = '<div style="text-align: center; color: #94a3b8; padding: 20px; font-size: 12px;">No faulted chargers</div>';
+        faultedList.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 20px; font-size: 12px;">No faulted chargers</div>';
     }
 }
 
@@ -1281,15 +1282,15 @@ function updateTopStations(topStationsByEnergy, topSessionsByEnergy) {
     console.log('Top Sessions by Energy:', topSessionsByEnergy);
     
     if (!topStationsByEnergy || topStationsByEnergy.length === 0) {
-        stationsContainer.innerHTML = '<div class="empty-state" style="text-align: center; padding: 40px; color: #94a3b8;"><i class="fas fa-chart-line" style="font-size: 48px; opacity: 0.5; margin-bottom: 16px;"></i><p>No data available</p></div>';
+        stationsContainer.innerHTML = '<div class="empty-state" style="text-align: center; padding: 40px; color: var(--text-muted);"><i class="fas fa-chart-line" style="font-size: 48px; opacity: 0.5; margin-bottom: 16px;"></i><p>No data available</p></div>';
     } else {
         stationsContainer.innerHTML = topStationsByEnergy.map((station, index) => `
-            <div onclick="viewStationFromDashboard('${station.stationId}');" style="display: flex; justify-content: space-between; align-items: center; padding: 12px; border-bottom: 1px solid #e2e8f0; cursor: pointer; transition: background-color 0.2s ease;" onmouseover="this.style.backgroundColor='#f8fafc';" onmouseout="this.style.backgroundColor='transparent';">
+            <div onclick="viewStationFromDashboard('${station.stationId}');" style="display: flex; justify-content: space-between; align-items: center; padding: 12px; border-bottom: 1px solid var(--border-color); cursor: pointer; transition: background-color 0.2s ease;" onmouseover="this.style.backgroundColor='var(--bg-tertiary)';" onmouseout="this.style.backgroundColor='transparent';">
                 <div style="flex: 1;">
-                    <div style="font-weight: 600; color: #1e293b; margin-bottom: 4px;">
+                    <div style="font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">
                         ${index + 1}. <span style="color: #3b82f6;">${station.stationName || 'Unknown'}</span>
                     </div>
-                    <div style="font-size: 12px; color: #64748b;">${station.sessions || 0} sessions</div>
+                    <div style="font-size: 12px; color: var(--text-secondary);">${station.sessions || 0} sessions</div>
                 </div>
                 <div style="font-weight: 700; color: #10b981; font-size: 18px;">${(station.energy || 0).toFixed(2)} kWh</div>
             </div>
@@ -1297,15 +1298,15 @@ function updateTopStations(topStationsByEnergy, topSessionsByEnergy) {
     }
     
     if (!topSessionsByEnergy || topSessionsByEnergy.length === 0) {
-        sessionsContainer.innerHTML = '<div class="empty-state" style="text-align: center; padding: 40px; color: #94a3b8;"><i class="fas fa-chart-line" style="font-size: 48px; opacity: 0.5; margin-bottom: 16px;"></i><p>No data available</p></div>';
+        sessionsContainer.innerHTML = '<div class="empty-state" style="text-align: center; padding: 40px; color: var(--text-muted);"><i class="fas fa-chart-line" style="font-size: 48px; opacity: 0.5; margin-bottom: 16px;"></i><p>No data available</p></div>';
     } else {
         sessionsContainer.innerHTML = topSessionsByEnergy.map((session, index) => `
-            <div onclick="viewStationFromDashboard('${session.stationId || ''}');" style="display: flex; justify-content: space-between; align-items: center; padding: 12px; border-bottom: 1px solid #e2e8f0; cursor: pointer; transition: background-color 0.2s ease;" onmouseover="this.style.backgroundColor='#f8fafc';" onmouseout="this.style.backgroundColor='transparent';">
+            <div onclick="viewStationFromDashboard('${session.stationId || ''}');" style="display: flex; justify-content: space-between; align-items: center; padding: 12px; border-bottom: 1px solid var(--border-color); cursor: pointer; transition: background-color 0.2s ease;" onmouseover="this.style.backgroundColor='var(--bg-tertiary)';" onmouseout="this.style.backgroundColor='transparent';">
                 <div style="flex: 1;">
-                    <div style="font-weight: 600; color: #1e293b; margin-bottom: 4px;">
+                    <div style="font-weight: 600; color: var(--text-primary); margin-bottom: 4px;">
                         ${index + 1}. <span style="color: #3b82f6;">${session.stationName || 'Unknown'}</span>
                     </div>
-                    <div style="font-size: 12px; color: #64748b;">${session.customerName || 'Unknown'} • ${session.chargerName || 'Unknown'}</div>
+                    <div style="font-size: 12px; color: var(--text-secondary);">${session.customerName || 'Unknown'} • ${session.chargerName || 'Unknown'}</div>
                 </div>
                 <div style="font-weight: 700; color: #3b82f6; font-size: 18px;">${(session.energy || 0).toFixed(2)} kWh</div>
             </div>
@@ -1431,8 +1432,8 @@ async function navigateToCompletedSessions() {
     }
 }
 
-// Function to view customer ledger from dashboard
-async function viewCustomerLedgerFromDashboard(customerId, customerName) {
+// Function to view customer detail from dashboard
+async function viewCustomerDetailFromDashboard(customerId) {
     // Update sidebar to show Customers as active
     const menuItems = document.querySelectorAll('.menu-item');
     menuItems.forEach(item => {
@@ -1442,27 +1443,18 @@ async function viewCustomerLedgerFromDashboard(customerId, customerName) {
         }
     });
     
-    // Navigate to customers module first (show list)
+    // Navigate to customers module and load customer detail view
     try {
-        window.loadModule('customers');
-        // Wait for customers list to load, then open customer ledger
-        // Use multiple attempts with increasing delay
-        let attempts = 0;
-        const checkAndOpenLedger = () => {
-            attempts++;
-            if (window.viewCustomerLedger) {
-                // Small delay to ensure list is rendered
-                setTimeout(() => {
-                    window.viewCustomerLedger(customerId, customerName);
-                }, 100);
-            } else if (attempts < 10) {
-                setTimeout(checkAndOpenLedger, 200);
-            }
-        };
-        setTimeout(checkAndOpenLedger, 500);
+        // Push state to browser history for customer detail view
+        const url = `/cms.html?module=customers&customer=${customerId}&tab=details`;
+        window.history.pushState({ module: 'customers', customerId: customerId, view: 'detail', tab: 'details' }, '', url);
+        
+        // Dynamically import and load customer detail view
+        const detailModule = await import('./customer-detail-view.js');
+        await detailModule.loadCustomerDetailView(customerId, 'details');
     } catch (error) {
-        console.error('Error loading customers module:', error);
-        alert('Failed to load customer ledger');
+        console.error('Error loading customer detail view:', error);
+        alert('Failed to load customer details');
     }
 }
 
@@ -1470,7 +1462,7 @@ async function viewCustomerLedgerFromDashboard(customerId, customerName) {
 window.viewStationFromDashboard = viewStationFromDashboard;
 window.viewSessionFromDashboard = viewSessionFromDashboard;
 window.navigateToCompletedSessions = navigateToCompletedSessions;
-window.viewCustomerLedgerFromDashboard = viewCustomerLedgerFromDashboard;
+window.viewCustomerDetailFromDashboard = viewCustomerDetailFromDashboard;
 
 // Utility functions
 function formatTime(date) {
@@ -1543,4 +1535,5 @@ window.loadDashboardModule = loadDashboardModule;
 window.loadChartData = loadChartData;
 window.loadSessionsChart = loadSessionsChart;
 window.loadRevenueChart = loadRevenueChart;
+
 

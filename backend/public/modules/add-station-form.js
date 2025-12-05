@@ -26,6 +26,7 @@ export function openAddStationForm() {
                 font-size: 24px;
                 font-weight: 600;
                 margin: 0;
+                color: var(--text-primary);
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
             }
             
@@ -48,8 +49,8 @@ export function openAddStationForm() {
             }
             
             .form-section {
-                background-color: #ffffff;
-                border: 1px solid #e0e0e0;
+                background-color: var(--card-bg);
+                border: 1px solid var(--border-color);
                 border-radius: 8px;
                 padding: 25px;
                 margin-bottom: 25px;
@@ -61,7 +62,7 @@ export function openAddStationForm() {
                 gap: 12px;
                 margin-bottom: 20px;
                 padding-bottom: 15px;
-                border-bottom: 2px solid #f0f0f0;
+                border-bottom: 2px solid var(--border-color);
             }
             
             .section-icon {
@@ -73,6 +74,7 @@ export function openAddStationForm() {
                 font-size: 18px;
                 font-weight: 600;
                 margin: 0;
+                color: var(--text-primary);
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
             }
             
@@ -92,7 +94,7 @@ export function openAddStationForm() {
                 font-size: 14px;
                 font-weight: 600;
                 margin-bottom: 8px;
-                color: #333;
+                color: var(--text-primary);
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
             }
             
@@ -104,17 +106,19 @@ export function openAddStationForm() {
             .form-group select,
             .form-group textarea {
                 padding: 12px 15px;
-                border: 1px solid #e0e0e0;
+                border: 1px solid var(--input-border);
+                background-color: var(--input-bg);
+                color: var(--text-primary);
                 border-radius: 4px;
                 font-size: 14px;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
-                transition: border-color 0.2s;
+                transition: border-color 0.2s, background-color 0.2s, color 0.2s;
             }
             
             .form-group select {
                 padding-right: 40px;
                 appearance: none;
-                background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23333' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+                background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23666' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
                 background-repeat: no-repeat;
                 background-position: right 15px center;
                 background-size: 12px;
@@ -152,6 +156,7 @@ export function openAddStationForm() {
             .checkbox-group label {
                 margin: 0;
                 font-weight: 500;
+                color: var(--text-primary);
                 cursor: pointer;
             }
             
@@ -162,16 +167,17 @@ export function openAddStationForm() {
             
             .dropdown-input {
                 padding: 12px 40px 12px 15px;
-                border: 1px solid #e0e0e0;
+                border: 1px solid var(--input-border);
                 border-radius: 4px;
-                background-color: #fff;
+                background-color: var(--input-bg);
+                color: var(--text-primary);
                 cursor: pointer;
                 display: flex;
                 justify-content: space-between;
                 align-items: center;
                 font-size: 14px;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
-                transition: border-color 0.2s;
+                transition: border-color 0.2s, background-color 0.2s, color 0.2s;
             }
             
             .dropdown-input:hover {
@@ -184,16 +190,16 @@ export function openAddStationForm() {
             }
             
             .dropdown-placeholder {
-                color: #999;
+                color: var(--text-muted);
             }
             
             .dropdown-placeholder.has-selection {
-                color: #333;
+                color: var(--text-primary);
             }
             
             .dropdown-arrow {
                 font-size: 12px;
-                color: #666;
+                color: var(--text-secondary);
                 transition: transform 0.2s;
             }
             
@@ -206,10 +212,10 @@ export function openAddStationForm() {
                 top: 100%;
                 left: 0;
                 right: 0;
-                background-color: #fff;
-                border: 1px solid #e0e0e0;
+                background-color: var(--card-bg);
+                border: 1px solid var(--border-color);
                 border-radius: 4px;
-                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+                box-shadow: 0 4px 6px var(--shadow);
                 margin-top: 4px;
                 max-height: 300px;
                 overflow-y: auto;
@@ -232,7 +238,7 @@ export function openAddStationForm() {
             }
             
             .day-checkbox-item:hover {
-                background-color: #f8f9fa;
+                background-color: var(--bg-tertiary);
             }
             
             .day-checkbox-item input[type="checkbox"] {
@@ -247,13 +253,13 @@ export function openAddStationForm() {
                 cursor: pointer;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
                 font-size: 14px;
-                color: #333;
+                color: var(--text-primary);
                 flex: 1;
             }
             
             .dropdown-divider {
                 height: 1px;
-                background-color: #e0e0e0;
+                background-color: var(--border-color);
                 margin: 8px 0;
             }
             
@@ -269,7 +275,8 @@ export function openAddStationForm() {
                 align-items: center;
                 gap: 10px;
                 padding: 12px;
-                border: 2px solid #e0e0e0;
+                border: 2px solid var(--border-color);
+                background-color: var(--card-bg);
                 border-radius: 8px;
                 cursor: pointer;
                 transition: all 0.2s;
@@ -277,12 +284,12 @@ export function openAddStationForm() {
             
             .amenity-item:hover {
                 border-color: #007bff;
-                background-color: #f8f9ff;
+                background-color: var(--hover-bg);
             }
             
             .amenity-item.selected {
                 border-color: #007bff;
-                background-color: #e7f3ff;
+                background-color: var(--hover-bg);
             }
             
             .amenity-item input[type="checkbox"] {
@@ -304,7 +311,7 @@ export function openAddStationForm() {
                 gap: 15px;
                 margin-top: 30px;
                 padding-top: 20px;
-                border-top: 1px solid #e0e0e0;
+                border-top: 1px solid var(--border-color);
             }
             
             .save-btn {
@@ -597,7 +604,7 @@ export function openAddStationForm() {
                         <i class="fas fa-star section-icon"></i>
                         <h3 class="section-title">Amenities</h3>
                     </div>
-                    <p style="font-size: 14px; color: #666; margin-bottom: 15px; font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;">
+                    <p style="font-size: 14px; color: var(--text-secondary); margin-bottom: 15px; font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;">
                         Please choose all the available amenities at/near the charging station.
                     </p>
                     <div class="amenities-grid">

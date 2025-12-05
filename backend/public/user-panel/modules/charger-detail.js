@@ -126,7 +126,7 @@ export async function loadChargerDetail(chargingPointId, deviceId, stationId, st
                 <div class="card">
                     <h3 class="card-title">Available Connectors</h3>
                     <div style="display: flex; flex-direction: column; gap: 12px;">
-                        ${charger.connectors && charger.connectors.length > 0 ? charger.connectors.map(connector => {
+                        ${charger.connectors && charger.connectors.length > 0 ? charger.connectors.sort((a, b) => (a.connectorId || 0) - (b.connectorId || 0)).map(connector => {
                             const connectorTypeNames = {
                                 'type2': 'Type 2',
                                 'ccs2': 'CCS',

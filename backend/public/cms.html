@@ -19,6 +19,36 @@
             --sidebar-collapsed-width: 70px;
             --main-bg: #f5f5f5;
             --border-color: #e0e0e0;
+            
+            /* Light mode colors */
+            --bg-primary: #ffffff;
+            --bg-secondary: #f5f5f5;
+            --bg-tertiary: #f8f9fa;
+            --text-primary: #333333;
+            --text-secondary: #666666;
+            --text-muted: #999999;
+            --card-bg: #ffffff;
+            --input-bg: #ffffff;
+            --input-border: #e0e0e0;
+            --hover-bg: #f0f0f0;
+            --shadow: rgba(0, 0, 0, 0.1);
+        }
+
+        /* Dark mode colors */
+        [data-theme="dark"] {
+            --main-bg: #1a1a1a;
+            --bg-primary: #2d2d2d;
+            --bg-secondary: #1a1a1a;
+            --bg-tertiary: #252525;
+            --text-primary: #e0e0e0;
+            --text-secondary: #b0b0b0;
+            --text-muted: #808080;
+            --card-bg: #2d2d2d;
+            --input-bg: #252525;
+            --input-border: #404040;
+            --hover-bg: #353535;
+            --border-color: #404040;
+            --shadow: rgba(0, 0, 0, 0.3);
         }
 
         * {
@@ -30,7 +60,9 @@
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
             background-color: var(--main-bg);
+            color: var(--text-primary);
             overflow-x: hidden;
+            transition: background-color 0.3s ease, color 0.3s ease;
         }
 
         /* Sidebar Toggle Button */
@@ -64,11 +96,11 @@
         }
 
         .user-profile:hover {
-            background-color: #f0f0f0;
+            background-color: var(--hover-bg);
         }
 
         .user-profile.active {
-            background-color: #f0f0f0;
+            background-color: var(--hover-bg);
         }
 
         .user-avatar {
@@ -92,22 +124,22 @@
         .user-name {
             font-size: 14px;
             font-weight: 600;
-            color: #333;
+            color: var(--text-primary);
         }
 
         .user-role {
             font-size: 12px;
-            color: #666;
+            color: var(--text-secondary);
         }
 
         .user-dropdown {
             position: absolute;
             top: calc(100% + 10px);
             right: 0;
-            background: white;
+            background: var(--card-bg);
             border: 1px solid var(--border-color);
             border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 4px 12px var(--shadow);
             width: 100%;
             z-index: 1000;
             overflow: hidden;
@@ -118,19 +150,19 @@
             align-items: center;
             gap: 10px;
             padding: 12px 16px;
-            color: #333;
+            color: var(--text-primary);
             text-decoration: none;
             transition: background-color 0.2s;
             cursor: pointer;
         }
 
         .dropdown-item:hover {
-            background-color: #f5f5f5;
+            background-color: var(--hover-bg);
         }
 
         .dropdown-item i {
             width: 18px;
-            color: #666;
+            color: var(--text-secondary);
         }
 
         .dropdown-divider {
@@ -241,7 +273,7 @@
             padding: 0;
             transition: margin-left 0.3s ease;
             min-height: 100vh;
-            background-color: #ffffff;
+            background-color: var(--bg-primary);
         }
 
         .sidebar.collapsed ~ .main-content {
@@ -250,22 +282,146 @@
 
         /* Main Content Header */
         .main-content-header {
-            background-color: #ffffff;
+            background-color: var(--bg-primary);
             padding: 15px 20px;
             border-bottom: 1px solid var(--border-color);
             display: flex;
             justify-content: flex-end;
             align-items: center;
+            gap: 15px;
+            transition: background-color 0.3s ease, border-color 0.3s ease;
         }
         
         .main-content-header .user-profile {
             min-width: 150px;
         }
 
+        /* Theme Toggle Wrapper */
+        .theme-toggle-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        /* Theme Toggle Switch */
+        .theme-toggle-switch {
+            position: relative;
+            display: inline-block;
+            width: 56px;
+            height: 28px;
+            cursor: pointer;
+        }
+
+        .theme-toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .theme-toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #e0e0e0;
+            transition: background-color 0.4s ease;
+            border-radius: 28px;
+        }
+
+        .theme-toggle-switch input:checked + .theme-toggle-slider {
+            background-color: #1a1a2e;
+        }
+
+        .theme-toggle-thumb {
+            position: absolute;
+            height: 22px;
+            width: 22px;
+            left: 3px;
+            top: 50%;
+            transform: translateY(-50%);
+            background-color: white;
+            border-radius: 50%;
+            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .theme-toggle-switch input:checked + .theme-toggle-slider .theme-toggle-thumb {
+            transform: translateY(-50%) translateX(28px);
+        }
+
+        .theme-toggle-icon {
+            font-size: 12px;
+            color: #f59e0b;
+            transition: opacity 0.3s ease, transform 0.3s ease;
+        }
+
+        .theme-toggle-icon.fa-moon {
+            color: #667eea;
+        }
+
         .module-content {
-            background-color: #ffffff;
+            background-color: var(--bg-primary);
             padding: 20px;
             border-radius: 0;
+            transition: background-color 0.3s ease;
+        }
+
+        /* Bootstrap Dark Mode Overrides */
+        [data-theme="dark"] .modal-content {
+            background-color: var(--card-bg);
+            color: var(--text-primary);
+            border-color: var(--border-color);
+        }
+
+        [data-theme="dark"] .modal-header {
+            border-bottom-color: var(--border-color);
+        }
+
+        [data-theme="dark"] .modal-footer {
+            border-top-color: var(--border-color);
+        }
+
+        [data-theme="dark"] .form-control {
+            background-color: var(--input-bg);
+            border-color: var(--input-border);
+            color: var(--text-primary);
+        }
+
+        [data-theme="dark"] .form-control:focus {
+            background-color: var(--input-bg);
+            border-color: #007bff;
+            color: var(--text-primary);
+        }
+
+        [data-theme="dark"] .form-label {
+            color: var(--text-primary);
+        }
+
+        [data-theme="dark"] .btn-close {
+            filter: invert(1);
+        }
+
+        [data-theme="dark"] .alert {
+            background-color: var(--bg-tertiary);
+            border-color: var(--border-color);
+            color: var(--text-primary);
+        }
+
+        [data-theme="dark"] .alert-danger {
+            background-color: rgba(220, 53, 69, 0.2);
+            border-color: rgba(220, 53, 69, 0.5);
+            color: #ff6b7a;
+        }
+
+        [data-theme="dark"] .alert-success {
+            background-color: rgba(40, 167, 69, 0.2);
+            border-color: rgba(40, 167, 69, 0.5);
+            color: #6bff8f;
         }
 
         /* Responsive */
@@ -335,12 +491,23 @@
     <!-- Main Content -->
     <div class="main-content">
         <div class="main-content-header">
+            <!-- Dark Mode Toggle Switch -->
+            <div class="theme-toggle-wrapper">
+                <label class="theme-toggle-switch" title="Toggle Dark Mode">
+                    <input type="checkbox" id="themeToggle">
+                    <span class="theme-toggle-slider">
+                        <span class="theme-toggle-thumb">
+                            <i class="fas fa-sun theme-toggle-icon" id="themeToggleIcon"></i>
+                        </span>
+                    </span>
+                </label>
+            </div>
             <div class="user-profile" id="userProfileDropdown">
                 <div class="user-avatar" id="userAvatar">AG</div>
                 <div class="user-info">
                     <div class="user-name" id="userName">Loading...</div>
                 </div>
-                <i class="fas fa-chevron-down" style="font-size: 12px; color: #666;"></i>
+                <i class="fas fa-chevron-down" style="font-size: 12px; color: var(--text-secondary);"></i>
                 <div class="user-dropdown" id="userDropdown" style="display: none;">
                     <a href="#" class="dropdown-item" id="changePasswordLink">
                         <i class="fas fa-key"></i>
@@ -412,6 +579,76 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="/socket.io/socket.io.js"></script>
     <script type="module" src="/utils/notifications.js"></script>
+    <script>
+        // Dark Mode Toggle Functionality
+        (function() {
+            // Get theme from localStorage or system preference
+            function getInitialTheme() {
+                const savedTheme = localStorage.getItem('cms-theme');
+                if (savedTheme) {
+                    return savedTheme;
+                }
+                // Check system preference
+                if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                    return 'dark';
+                }
+                return 'light';
+            }
+
+            // Apply theme
+            function setTheme(theme) {
+                document.documentElement.setAttribute('data-theme', theme);
+                localStorage.setItem('cms-theme', theme);
+                
+                // Update toggle switch state
+                const themeToggle = document.getElementById('themeToggle');
+                if (themeToggle) {
+                    themeToggle.checked = (theme === 'dark');
+                }
+                
+                // Update icon inside the circle
+                const themeIcon = document.getElementById('themeToggleIcon');
+                if (themeIcon) {
+                    if (theme === 'dark') {
+                        themeIcon.className = 'fas fa-moon theme-toggle-icon';
+                    } else {
+                        themeIcon.className = 'fas fa-sun theme-toggle-icon';
+                    }
+                }
+            }
+
+            // Initialize theme on page load
+            const initialTheme = getInitialTheme();
+            setTheme(initialTheme);
+
+            // Theme toggle switch handler
+            document.addEventListener('DOMContentLoaded', function() {
+                const themeToggle = document.getElementById('themeToggle');
+                
+                if (themeToggle) {
+                    // Set initial state based on current theme
+                    const currentTheme = document.documentElement.getAttribute('data-theme');
+                    themeToggle.checked = (currentTheme === 'dark');
+                    
+                    // Handle toggle change
+                    themeToggle.addEventListener('change', function() {
+                        const newTheme = this.checked ? 'dark' : 'light';
+                        setTheme(newTheme);
+                    });
+                }
+
+                // Listen for system theme changes
+                if (window.matchMedia) {
+                    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', function(e) {
+                        // Only auto-switch if user hasn't manually set a preference
+                        if (!localStorage.getItem('cms-theme')) {
+                            setTheme(e.matches ? 'dark' : 'light');
+                        }
+                    });
+                }
+            });
+        })();
+    </script>
     <script type="module" src="/cms.js"></script>
 </body>
 </html>

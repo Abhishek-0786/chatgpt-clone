@@ -31,20 +31,22 @@ export function loadChargingSessionsModule() {
                 margin-bottom: 20px;
                 flex-wrap: wrap;
                 padding: 15px;
-                background-color: #f8f9fa;
+                background-color: var(--bg-tertiary);
                 border-radius: 8px;
-                border: 1px solid #e0e0e0;
+                border: 1px solid var(--border-color);
             }
             
             .search-input {
                 flex: 1;
                 min-width: 250px;
                 padding: 10px 15px;
-                border: 1px solid #e0e0e0;
+                border: 1px solid var(--input-border);
                 border-radius: 4px;
                 font-size: 14px;
+                background-color: var(--input-bg);
+                color: var(--text-primary);
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
-                transition: border-color 0.2s;
+                transition: border-color 0.2s, background-color 0.2s, color 0.2s;
             }
             
             .search-input:focus {
@@ -60,24 +62,35 @@ export function loadChargingSessionsModule() {
             }
             
             .date-input-group span {
-                color: #666;
+                color: var(--text-secondary);
                 font-size: 14px;
                 font-weight: 500;
             }
             
             .date-input {
                 padding: 10px 15px;
-                border: 1px solid #e0e0e0;
+                border: 1px solid var(--input-border);
                 border-radius: 4px;
                 font-size: 14px;
+                background-color: var(--input-bg);
+                color: var(--text-primary);
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
-                transition: border-color 0.2s;
+                transition: border-color 0.2s, background-color 0.2s, color 0.2s;
             }
             
             .date-input:focus {
                 outline: none;
                 border-color: #007bff;
                 box-shadow: 0 0 0 3px rgba(0,123,255,0.1);
+            }
+            
+            .date-input::-webkit-calendar-picker-indicator {
+                filter: invert(0);
+                cursor: pointer;
+            }
+            
+            [data-theme="dark"] .date-input::-webkit-calendar-picker-indicator {
+                filter: invert(1);
             }
             
             .apply-btn {
@@ -102,11 +115,11 @@ export function loadChargingSessionsModule() {
             }
             
             .table-wrapper {
-                background-color: #ffffff;
-                border: 1px solid #e0e0e0;
+                background-color: var(--card-bg);
+                border: 1px solid var(--border-color);
                 border-radius: 8px;
                 overflow: hidden;
-                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                box-shadow: 0 1px 3px var(--shadow);
             }
             
             .table-scroll {
@@ -120,16 +133,16 @@ export function loadChargingSessionsModule() {
             }
             
             .table-scroll::-webkit-scrollbar-track {
-                background: #f1f1f1;
+                background: var(--bg-tertiary);
             }
             
             .table-scroll::-webkit-scrollbar-thumb {
-                background: #888;
+                background: var(--text-muted);
                 border-radius: 4px;
             }
             
             .table-scroll::-webkit-scrollbar-thumb:hover {
-                background: #555;
+                background: var(--text-secondary);
             }
             
             #sessionsTable {
@@ -138,7 +151,7 @@ export function loadChargingSessionsModule() {
                 border-collapse: separate;
                 border-spacing: 0;
                 font-size: 14px;
-                background-color: #ffffff;
+                background-color: var(--card-bg);
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
             }
             
@@ -148,6 +161,10 @@ export function loadChargingSessionsModule() {
                 position: sticky;
                 top: 0;
                 z-index: 10;
+            }
+            
+            [data-theme="dark"] #sessionsTable thead {
+                background-color: #1a1a1a;
             }
             
             #sessionsTable thead th {
@@ -169,24 +186,24 @@ export function loadChargingSessionsModule() {
             }
             
             #sessionsTable tbody tr {
-                border-bottom: 1px solid #e0e0e0;
+                border-bottom: 1px solid var(--border-color);
                 transition: background-color 0.2s;
-                background-color: #ffffff;
+                background-color: var(--card-bg);
             }
             
             #sessionsTable tbody tr:nth-child(even) {
-                background-color: #f8f9fa;
+                background-color: var(--bg-tertiary);
             }
             
             #sessionsTable tbody tr:hover {
-                background-color: #e9ecef;
+                background-color: var(--hover-bg);
             }
             
             #sessionsTable tbody td {
                 padding: 14px 12px;
                 vertical-align: middle;
-                border-right: 1px solid #f0f0f0;
-                color: #333;
+                border-right: 1px solid var(--border-color);
+                color: var(--text-primary);
                 font-size: 14px;
                 white-space: nowrap;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
@@ -197,7 +214,7 @@ export function loadChargingSessionsModule() {
             }
             
             #sessionsTable tbody td a {
-                color: #000000;
+                color: var(--text-primary);
                 text-decoration: underline;
                 cursor: pointer;
                 font-weight: 500;
@@ -207,7 +224,7 @@ export function loadChargingSessionsModule() {
             }
             
             #sessionsTable tbody td a:hover {
-                color: #333333;
+                color: #007bff;
                 text-decoration: underline;
             }
             
@@ -217,7 +234,7 @@ export function loadChargingSessionsModule() {
                 align-items: center;
                 margin-top: 20px;
                 padding: 15px 0;
-                border-top: 1px solid #e0e0e0;
+                border-top: 1px solid var(--border-color);
             }
             
             .pagination {
@@ -226,7 +243,8 @@ export function loadChargingSessionsModule() {
             
             .pagination .page-link {
                 color: #007bff;
-                border: 1px solid #dee2e6;
+                border: 1px solid var(--border-color);
+                background-color: var(--card-bg);
                 padding: 8px 14px;
                 margin: 0 2px;
                 border-radius: 4px;
@@ -234,8 +252,8 @@ export function loadChargingSessionsModule() {
             }
             
             .pagination .page-link:hover {
-                background-color: #e9ecef;
-                border-color: #dee2e6;
+                background-color: var(--hover-bg);
+                border-color: var(--border-color);
             }
             
             .pagination .page-item.active .page-link {
@@ -245,11 +263,31 @@ export function loadChargingSessionsModule() {
             }
             
             .pagination .page-item.disabled .page-link {
-                color: #6c757d;
+                color: var(--text-muted);
                 pointer-events: none;
-                background-color: #fff;
-                border-color: #dee2e6;
+                background-color: var(--card-bg);
+                border-color: var(--border-color);
                 opacity: 0.5;
+            }
+            
+            .sessions-header h2 {
+                color: var(--text-primary);
+            }
+            
+            [data-theme="dark"] .tabs-list {
+                border-bottom-color: var(--border-color) !important;
+            }
+            
+            [data-theme="dark"] .tab-item {
+                color: var(--text-secondary) !important;
+            }
+            
+            [data-theme="dark"] .tab-item.active {
+                color: #007bff !important;
+            }
+            
+            #showingTextPagination {
+                color: var(--text-secondary) !important;
             }
         </style>
         
@@ -260,18 +298,18 @@ export function loadChargingSessionsModule() {
             
             <!-- Tabs -->
             <div class="tabs-container" style="margin-bottom: 20px;">
-                <ul class="tabs-list" style="display: flex; gap: 10px; border-bottom: 2px solid #e0e0e0; margin: 0; padding: 0; list-style: none;">
+                <ul class="tabs-list" style="display: flex; gap: 10px; border-bottom: 2px solid var(--border-color); margin: 0; padding: 0; list-style: none;">
                     <li class="tab-item active" data-tab="active" onclick="window.switchSessionsTab('active')" style="padding: 12px 24px; cursor: pointer; border-bottom: 3px solid #007bff; font-weight: 600; color: #007bff; transition: all 0.2s;">
                         ACTIVE SESSIONS
                     </li>
-                    <li class="tab-item" data-tab="completed" onclick="window.switchSessionsTab('completed')" style="padding: 12px 24px; cursor: pointer; border-bottom: 3px solid transparent; font-weight: 600; color: #666; transition: all 0.2s;">
+                    <li class="tab-item" data-tab="completed" onclick="window.switchSessionsTab('completed')" style="padding: 12px 24px; cursor: pointer; border-bottom: 3px solid transparent; font-weight: 600; color: var(--text-secondary); transition: all 0.2s;">
                         COMPLETED SESSIONS
                     </li>
                 </ul>
             </div>
             
             <div class="filters-section">
-                <input type="text" class="search-input" id="sessionSearch" placeholder="Search by Station Name" onkeyup="window.applyFilters()">
+                <input type="text" class="search-input" id="sessionSearch" placeholder="Search by Station Name, Device ID, Session ID, or Transaction ID" onkeyup="window.applyFilters()">
                 <div class="date-input-group" id="dateFilters" style="display: none;">
                     <input type="date" class="date-input" id="fromDate" onchange="window.handleSessionsFromDateChange()">
                     <span>From</span>
@@ -302,7 +340,7 @@ export function loadChargingSessionsModule() {
             
             <div class="table-footer">
                 <div>
-                    <span id="showingTextPagination" style="color: #666; font-size: 14px;">Showing 0-0 of 0</span>
+                    <span id="showingTextPagination" style="color: var(--text-secondary); font-size: 14px;">Showing 0-0 of 0</span>
                 </div>
                 <nav>
                     <ul class="pagination mb-0" id="paginationSessions">

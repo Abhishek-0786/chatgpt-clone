@@ -7,6 +7,9 @@ const ChargingSession = require('../models/ChargingSession');
 const Charger = require('../models/Charger');
 const sequelize = require('../config/database');
 const axios = require('axios');
+const cacheController = require('../redis/cacheController');
+const { statusKey } = require('../redis/keyNaming');
+const redisClient = require('../redis/redisClient');
 
 // RabbitMQ producer (optional - only if enabled)
 const ENABLE_RABBITMQ = process.env.ENABLE_RABBITMQ === 'true';
@@ -26,6 +29,142 @@ if (ENABLE_RABBITMQ) {
 }
 
 const router = express.Router();
+
+/**
+ * Helper function to map OCPP status to Online/Offline
+ */
+function mapOCPPStatusToOnlineOffline(ocppStatus) {
+  if (!ocppStatus) return 'Offline';
+  
+  const onlineStatuses = ['Available', 'Charging', 'Preparing', 'Finishing'];
+  const offlineStatuses = ['Faulted', 'Unavailable', 'Offline'];
+  
+  if (onlineStatuses.includes(ocppStatus)) {
+    return 'Online';
+  } else if (offlineStatuses.includes(ocppStatus)) {
+    return 'Offline';
+  }
+  
+  // Default to checking if it's a valid status that indicates online
+  return 'Offline';
+}
+
+/**
+ * Helper function to enhance cached responses with real-time status from Redis
+ * This implements the hybrid approach: cache static data, overlay real-time status
+ */
+async function enhanceWithRealTimeStatus(items, deviceIdField = 'deviceId') {
+  if (!Array.isArray(items)) {
+    return items;
+  }
+
+  // Batch read all status keys for better performance
+  const statusPromises = items
+    .filter(item => item[deviceIdField])
+    .map(item => {
+      const key = statusKey(item[deviceIdField]);
+      return redisClient.get(key).then(value => ({
+        deviceId: item[deviceIdField],
+        statusData: value ? JSON.parse(value) : null
+      })).catch(() => ({
+        deviceId: item[deviceIdField],
+        statusData: null
+      }));
+    });
+
+  const statusResults = await Promise.all(statusPromises);
+  const statusMap = new Map();
+  statusResults.forEach(result => {
+    if (result.statusData) {
+      statusMap.set(result.deviceId, result.statusData);
+    }
+  });
+
+  // Batch read lastSeen for fallback
+  const allDeviceIds = items.map(item => item[deviceIdField]).filter(Boolean);
+  const chargerDataMap = new Map();
+  if (allDeviceIds.length > 0) {
+    const chargers = await Charger.findAll({
+      where: { deviceId: { [Op.in]: allDeviceIds } },
+      attributes: ['deviceId', 'lastSeen']
+    });
+    chargers.forEach(c => {
+      chargerDataMap.set(c.deviceId, c.lastSeen);
+    });
+  }
+
+  // Enhance items with real-time status
+  const OFFLINE_THRESHOLD = 5 * 60 * 1000; // 5 minutes
+  
+  // Check for active transactions to determine C.STATUS correctly
+  const ChargingSession = require('../models/ChargingSession');
+  const activeSessionsMap = new Map();
+  if (allDeviceIds.length > 0) {
+    const activeSessions = await ChargingSession.findAll({
+      where: {
+        deviceId: { [Op.in]: allDeviceIds },
+        status: ['pending', 'active'],
+        endTime: null
+      },
+      attributes: ['deviceId']
+    });
+    activeSessions.forEach(session => {
+      activeSessionsMap.set(session.deviceId, true);
+    });
+  }
+
+  return items.map(item => {
+    if (!item[deviceIdField]) {
+      return item;
+    }
+
+    const realTimeStatusData = statusMap.get(item[deviceIdField]);
+    let finalStatus = item.status; // Default to cached status
+    let cStatus = item.cStatus || 'Unavailable'; // Default to cached C.STATUS
+
+    if (realTimeStatusData && realTimeStatusData.status) {
+      // Map OCPP status to Online/Offline
+      finalStatus = mapOCPPStatusToOnlineOffline(realTimeStatusData.status);
+      
+      // Determine C.STATUS: if there's an active session, it should be "Charging"
+      // Otherwise use the OCPP status
+      if (activeSessionsMap.has(item[deviceIdField])) {
+        cStatus = 'Charging';
+      } else {
+        cStatus = realTimeStatusData.status;
+      }
+    } else {
+      // Fallback to lastSeen check
+      const lastSeen = chargerDataMap.get(item[deviceIdField]);
+      if (lastSeen) {
+        const lastActiveTime = new Date(lastSeen);
+        const now = new Date();
+        const timeDiff = now - lastActiveTime;
+        if (timeDiff <= OFFLINE_THRESHOLD) {
+          finalStatus = 'Online';
+          // Check if there's an active session
+          if (activeSessionsMap.has(item[deviceIdField])) {
+            cStatus = 'Charging';
+          } else if (!cStatus || cStatus === 'Unavailable') {
+            cStatus = 'Available';
+          }
+        } else {
+          finalStatus = 'Offline';
+          cStatus = 'Unavailable';
+        }
+      } else {
+        finalStatus = 'Offline';
+        cStatus = 'Unavailable';
+      }
+    }
+
+    return {
+      ...item,
+      status: finalStatus,
+      cStatus: cStatus
+    };
+  });
+}
 
 // ============================================
 // TARIFF MANAGEMENT ROUTES
@@ -53,6 +192,15 @@ router.get('/tariffs', [
     const offset = (page - 1) * limit;
     const search = req.query.search || '';
     const status = req.query.status;
+
+    // Build cache key with query params
+    const cacheKey = `tariffs:list:page:${page}:limit:${limit}:search:${search || 'none'}:status:${status || 'all'}`;
+
+    // Try to get from cache
+    const cached = await cacheController.get(cacheKey);
+    if (cached) {
+      return res.json(cached);
+    }
 
     // Build where clause
     const where = {
@@ -82,7 +230,7 @@ router.get('/tariffs', [
 
     const totalPages = Math.ceil(count / limit);
 
-    res.json({
+    const response = {
       success: true,
       tariffs: tariffs.map(tariff => ({
         id: tariff.id,
@@ -99,7 +247,12 @@ router.get('/tariffs', [
       page,
       limit,
       totalPages
-    });
+    };
+
+    // Cache the response
+    await cacheController.set(cacheKey, response, 300);
+
+    res.json(response);
   } catch (error) {
     console.error('Error fetching tariffs:', error);
     res.status(500).json({
@@ -496,6 +649,124 @@ router.get('/stations', [
     const status = req.query.status;
     const organization = req.query.organization;
 
+    // Build cache key with query params
+    const cacheKey = `stations:list:page:${page}:limit:${limit}:search:${search || 'none'}:status:${status || 'all'}:org:${organization || 'all'}`;
+
+    // Try to get from cache
+    const cached = await cacheController.get(cacheKey);
+    if (cached) {
+      // Enhance cached response with real-time status from charging points
+      if (cached.stations && Array.isArray(cached.stations)) {
+        const ChargingPoint = require('../models/ChargingPoint');
+        
+        // Get all charging points for all stations in one query
+        const stationIds = cached.stations.map(s => s.id);
+        const allChargingPoints = await ChargingPoint.findAll({
+          where: {
+            stationId: { [Op.in]: stationIds },
+            deleted: false
+          },
+          attributes: ['id', 'deviceId', 'stationId']
+        });
+
+        // Group charging points by station
+        const cpByStation = new Map();
+        allChargingPoints.forEach(cp => {
+          if (!cpByStation.has(cp.stationId)) {
+            cpByStation.set(cp.stationId, []);
+          }
+          cpByStation.get(cp.stationId).push(cp);
+        });
+
+        // Get all deviceIds and batch read status from Redis
+        const allDeviceIds = allChargingPoints.map(cp => cp.deviceId).filter(Boolean);
+        const statusPromises = allDeviceIds.map(deviceId => {
+          const key = statusKey(deviceId);
+          return redisClient.get(key).then(value => ({
+            deviceId,
+            statusData: value ? JSON.parse(value) : null
+          })).catch(() => ({
+            deviceId,
+            statusData: null
+          }));
+        });
+
+        const statusResults = await Promise.all(statusPromises);
+        const deviceStatusMap = new Map();
+        statusResults.forEach(result => {
+          if (result.statusData) {
+            deviceStatusMap.set(result.deviceId, result.statusData.status);
+          }
+        });
+
+        // Batch read lastSeen for fallback
+        const chargerDataMap = new Map();
+        if (allDeviceIds.length > 0) {
+          const chargers = await Charger.findAll({
+            where: { deviceId: { [Op.in]: allDeviceIds } },
+            attributes: ['deviceId', 'lastSeen']
+          });
+          chargers.forEach(c => {
+            chargerDataMap.set(c.deviceId, c.lastSeen);
+          });
+        }
+
+        // Enhance stations with real-time status
+        const OFFLINE_THRESHOLD = 5 * 60 * 1000; // 5 minutes
+        const enhancedStations = cached.stations.map(station => {
+          const chargingPoints = cpByStation.get(station.id) || [];
+          let onlineCPs = 0;
+
+          for (const cp of chargingPoints) {
+            if (cp.deviceId) {
+              const realTimeStatus = deviceStatusMap.get(cp.deviceId);
+              if (realTimeStatus) {
+                // Check if OCPP status indicates online
+                const onlineStatuses = ['Available', 'Charging', 'Preparing', 'Finishing'];
+                if (onlineStatuses.includes(realTimeStatus)) {
+                  onlineCPs++;
+                }
+              } else {
+                // Fallback to lastSeen check
+                const lastSeen = chargerDataMap.get(cp.deviceId);
+                if (lastSeen) {
+                  const lastActiveTime = new Date(lastSeen);
+                  const now = new Date();
+                  const timeDiff = now - lastActiveTime;
+                  if (timeDiff <= OFFLINE_THRESHOLD) {
+                    onlineCPs++;
+                  }
+                }
+              }
+            }
+          }
+
+          const stationStatus = onlineCPs >= 1 ? 'Online' : 'Offline';
+          return {
+            ...station,
+            status: stationStatus,
+            onlineCPs: onlineCPs,
+            offlineCPs: chargingPoints.length - onlineCPs,
+            onlineCPsPercent: chargingPoints.length > 0 ? Math.round((onlineCPs / chargingPoints.length) * 100) : 0,
+            offlineCPsPercent: chargingPoints.length > 0 ? Math.round(((chargingPoints.length - onlineCPs) / chargingPoints.length) * 100) : 0
+          };
+        });
+
+        // Re-sort stations with updated status
+        enhancedStations.sort((a, b) => {
+          if (a.status === 'Online' && b.status !== 'Online') return -1;
+          if (a.status !== 'Online' && b.status === 'Online') return 1;
+          return new Date(b.createdAt) - new Date(a.createdAt);
+        });
+
+        return res.json({
+          ...cached,
+          stations: enhancedStations
+        });
+      }
+      return res.json(cached);
+    }
+
     // Build where clause
     const where = {
       deleted: false // Only show non-deleted stations
@@ -634,14 +905,19 @@ router.get('/stations', [
     // Apply pagination AFTER sorting
     const paginatedStations = stationsWithStats.slice(offset, offset + limit);
 
-    res.json({
+    const response = {
       success: true,
       stations: paginatedStations,
       total,
       page,
       limit,
       totalPages: Math.ceil(total / limit)
-    });
+    };
+
+    // Cache the response
+    await cacheController.set(cacheKey, response, 300);
+
+    res.json(response);
   } catch (error) {
     console.error('Error fetching stations:', error);
     res.status(500).json({
@@ -1261,6 +1537,31 @@ router.get('/stations/:stationId/points', async (req, res) => {
               return false;
             }
 
+            // CRITICAL: Check Redis status first - if it shows "Available", charging is definitely stopped
+            try {
+              const { statusKey } = require('../redis/keyNaming');
+              const redisClient = require('../redis/redisClient');
+              const statusValue = await redisClient.get(statusKey(deviceId));
+              if (statusValue) {
+                const statusData = JSON.parse(statusValue);
+                if (statusData && statusData.status) {
+                  // If Redis shows "Available", charging is definitely stopped
+                  if (statusData.status === 'Available' || statusData.status === 'available') {
+                    console.log(`✅ [hasActiveTransaction] Redis status shows "Available" for ${deviceId} - charging is stopped`);
+                    return false;
+                  }
+                  // If Redis shows "Charging", charging is definitely active
+                  if (statusData.status === 'Charging' || statusData.status === 'charging') {
+                    console.log(`✅ [hasActiveTransaction] Redis status shows "Charging" for ${deviceId} - charging is active`);
+                    return true;
+                  }
+                }
+              }
+            } catch (redisErr) {
+              // If Redis check fails, continue with database check
+              console.warn(`⚠️ [hasActiveTransaction] Redis check failed for ${deviceId}:`, redisErr.message);
+            }
+
             // First, check for active ChargingSession records (most reliable)
             const ChargingSession = require('../models/ChargingSession');
             const activeSession = await ChargingSession.findOne({
@@ -1637,7 +1938,7 @@ router.get('/charging-points', [
     const status = req.query.status;
     const stationId = req.query.stationId ? parseInt(req.query.stationId) : null;
 
-    // Build where clause
+    // Build where clause FIRST (before cache check, since we need it for validation)
     const where = {
       deleted: false // Only show non-deleted charging points
     };
@@ -1651,19 +1952,68 @@ router.get('/charging-points', [
       ];
     }
 
-    // Add status filter
-    if (status) {
-      where.status = status;
-    }
-
+    // NOTE: Status filter is NOT applied to database query because "Online"/"Offline" 
+    // are calculated dynamically from lastSeen and Redis. We'll filter after calculating real-time status.
+    
     // Add station filter
     if (stationId) {
       where.stationId = stationId;
     }
 
-    // Get charging points with pagination and includes
+    // Build cache key WITHOUT pagination (since we sort globally)
+    const cacheKey = `charging-points:list:all:search:${search || 'none'}:status:${status || 'all'}:stationId:${stationId || 'all'}`;
+
+    // Try to get from cache
+    let allCachedPoints = await cacheController.get(cacheKey);
+    if (allCachedPoints && allCachedPoints.points && Array.isArray(allCachedPoints.points)) {
+      // Verify cache has correct total - if cache total doesn't match DB count, fetch fresh
+      const { count: dbCount } = await ChargingPoint.findAndCountAll({
+        where,
+        distinct: true
+      });
+      
+      // If cached total doesn't match DB count, skip cache and fetch fresh
+      if (allCachedPoints.total !== dbCount) {
+        console.log(`⚠️ [Cache] Cached total (${allCachedPoints.total}) doesn't match DB count (${dbCount}), fetching fresh data`);
+        allCachedPoints = null; // Force fresh fetch
+      } else {
+        // Enhance cached response with real-time status from Redis
+        const enhancedPoints = await enhanceWithRealTimeStatus(allCachedPoints.points, 'deviceId');
+        
+        // Apply status filter AFTER calculating real-time status (if status filter is provided)
+        let filteredPoints = enhancedPoints;
+        if (status) {
+          filteredPoints = enhancedPoints.filter(point => point.status === status);
+        }
+        
+        // Sort ALL points: Online first, then Offline, then by createdAt DESC
+        filteredPoints.sort((a, b) => {
+          // First sort by status: Online comes before Offline
+          if (a.status === 'Online' && b.status !== 'Online') return -1;
+          if (a.status !== 'Online' && b.status === 'Online') return 1;
+          // If same status, sort by createdAt DESC (newest first)
+          return new Date(b.createdAt) - new Date(a.createdAt);
+        });
+        
+        // Apply pagination to sorted results
+        const total = filteredPoints.length;
+        const paginatedPoints = filteredPoints.slice(offset, offset + limit);
+        const totalPages = Math.ceil(total / limit);
+        
+        return res.json({
+          success: true,
+          points: paginatedPoints,
+          total: total,
+          page: page,
+          limit: limit,
+          totalPages: totalPages
+        });
+      }
+    }
+
+    // Get ALL charging points matching filters (NO pagination yet - we'll sort globally first)
     // Use distinct: true to ensure count is correct when there are multiple connectors per charging point
-    const { count, rows: chargingPoints } = await ChargingPoint.findAndCountAll({
+    const { count, rows: allChargingPoints } = await ChargingPoint.findAndCountAll({
       where,
       include: [
         {
@@ -1682,13 +2032,11 @@ router.get('/charging-points', [
           attributes: ['id', 'connectorId', 'connectorType', 'power']
         }
       ],
-      distinct: true, // Count distinct charging points, not joined rows
-      limit,
-      offset,
-      order: [['createdAt', 'DESC']]
+      distinct: true // Count distinct charging points, not joined rows
+      // NO limit/offset here - we'll fetch all, sort, then paginate
     });
-
-    const totalPages = Math.ceil(count / limit);
+    
+    console.log(`✅ [Charging Points] Fetched ${count} total charging points (${allChargingPoints.length} rows)`);
     const ChargerData = require('../models/ChargerData');
 
     // Helper function to check if charging point has active transaction
@@ -1696,6 +2044,31 @@ router.get('/charging-points', [
       try {
         if (!deviceId) {
           return false;
+        }
+
+        // CRITICAL: Check Redis status first - if it shows "Available", charging is definitely stopped
+        try {
+          const { statusKey } = require('../redis/keyNaming');
+          const redisClient = require('../redis/redisClient');
+          const statusValue = await redisClient.get(statusKey(deviceId));
+          if (statusValue) {
+            const statusData = JSON.parse(statusValue);
+            if (statusData && statusData.status) {
+              // If Redis shows "Available", charging is definitely stopped
+              if (statusData.status === 'Available' || statusData.status === 'available') {
+                console.log(`✅ [hasActiveTransaction] Redis status shows "Available" for ${deviceId} - charging is stopped`);
+                return false;
+              }
+              // If Redis shows "Charging", charging is definitely active
+              if (statusData.status === 'Charging' || statusData.status === 'charging') {
+                console.log(`✅ [hasActiveTransaction] Redis status shows "Charging" for ${deviceId} - charging is active`);
+                return true;
+              }
+            }
+          }
+        } catch (redisErr) {
+          // If Redis check fails, continue with database check
+          console.warn(`⚠️ [hasActiveTransaction] Redis check failed for ${deviceId}:`, redisErr.message);
         }
 
         // First, check for active ChargingSession records (most reliable)
@@ -1990,8 +2363,8 @@ router.get('/charging-points', [
       }
     }
 
-    // Calculate connectors count and max power, and real-time status
-    const formattedPoints = await Promise.all(chargingPoints.map(async (point) => {
+    // Calculate connectors count and max power, and real-time status for ALL points
+    const formattedPoints = await Promise.all(allChargingPoints.map(async (point) => {
       const connectors = point.connectors || [];
       const maxPower = Math.max(...connectors.map(c => parseFloat(c.power || 0)), parseFloat(point.powerCapacity || 0));
       
@@ -2004,15 +2377,40 @@ router.get('/charging-points', [
         });
       }
 
-      // Calculate real-time status based on lastSeen
-      const OFFLINE_THRESHOLD = 5 * 60 * 1000; // 5 minutes
+      // Check Redis for real-time status first
       let realTimeStatus = point.status || 'Offline';
-      if (chargerData && chargerData.lastSeen) {
-        const lastActiveTime = new Date(chargerData.lastSeen);
-        const now = new Date();
-        const timeDiff = now - lastActiveTime;
-        const isOnline = timeDiff <= OFFLINE_THRESHOLD;
-        realTimeStatus = isOnline ? 'Online' : 'Offline';
+      const OFFLINE_THRESHOLD = 5 * 60 * 1000; // 5 minutes
+      
+      if (point.deviceId) {
+        try {
+          const key = statusKey(point.deviceId);
+          const statusValue = await redisClient.get(key);
+          if (statusValue) {
+            const statusData = JSON.parse(statusValue);
+            if (statusData && statusData.status) {
+              // Map OCPP status to Online/Offline
+              realTimeStatus = mapOCPPStatusToOnlineOffline(statusData.status);
+            }
+          } else {
+            // Fallback to lastSeen check
+            if (chargerData && chargerData.lastSeen) {
+              const lastActiveTime = new Date(chargerData.lastSeen);
+              const now = new Date();
+              const timeDiff = now - lastActiveTime;
+              const isOnline = timeDiff <= OFFLINE_THRESHOLD;
+              realTimeStatus = isOnline ? 'Online' : 'Offline';
+            }
+          }
+        } catch (error) {
+          // If Redis read fails, fallback to lastSeen
+          if (chargerData && chargerData.lastSeen) {
+            const lastActiveTime = new Date(chargerData.lastSeen);
+            const now = new Date();
+            const timeDiff = now - lastActiveTime;
+            const isOnline = timeDiff <= OFFLINE_THRESHOLD;
+            realTimeStatus = isOnline ? 'Online' : 'Offline';
+          }
+        }
       }
 
       // Calculate C.STATUS (Connector Status)
@@ -2066,14 +2464,42 @@ router.get('/charging-points', [
       };
     }));
 
-    res.json({
+    // Apply status filter AFTER calculating real-time status (if status filter is provided)
+    let filteredPoints = formattedPoints;
+    if (status) {
+      filteredPoints = formattedPoints.filter(point => point.status === status);
+    }
+
+    // Sort ALL points: Online first, then Offline, then by createdAt DESC
+    filteredPoints.sort((a, b) => {
+      // First sort by status: Online comes before Offline
+      if (a.status === 'Online' && b.status !== 'Online') return -1;
+      if (a.status !== 'Online' && b.status === 'Online') return 1;
+      // If same status, sort by createdAt DESC (newest first)
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    });
+
+    // Cache ALL sorted points (without pagination)
+    await cacheController.set(cacheKey, {
       success: true,
-      points: formattedPoints,
-      total: count,
+      points: filteredPoints,
+      total: filteredPoints.length
+    }, 300);
+
+    // Apply pagination to sorted results
+    const paginatedPoints = filteredPoints.slice(offset, offset + limit);
+    const totalPages = Math.ceil(filteredPoints.length / limit);
+
+    const response = {
+      success: true,
+      points: paginatedPoints,
+      total: filteredPoints.length, // Use filtered count, not database count
       page,
       limit,
       totalPages
-    });
+    };
+
+    res.json(response);
   } catch (error) {
     console.error('Error fetching charging points:', error);
     console.error('Error stack:', error.stack);
@@ -2749,6 +3175,18 @@ router.delete('/charging-points/:chargingPointId', async (req, res) => {
 
     // Soft delete
     await chargingPoint.update({ deleted: true });
+
+    // Clean up Redis keys for this charger
+    if (chargingPoint.deviceId) {
+      try {
+        const { cleanupChargerKeys } = require('../redis/cleanup');
+        await cleanupChargerKeys(chargingPoint.deviceId);
+        console.log(`✅ [Delete Charging Point] Cleaned up Redis keys for device ${chargingPoint.deviceId}`);
+      } catch (cleanupError) {
+        console.error(`⚠️ [Delete Charging Point] Error cleaning up Redis keys:`, cleanupError.message);
+        // Don't fail the request if cleanup fails
+      }
+    }
 
     res.json({
       success: true,
@@ -3432,6 +3870,93 @@ router.get('/sessions/active', [
         continue; // Too old and not confirmed active, consider it stale
       }
 
+      // CRITICAL: Check if this session has been stopped in ChargingSession table
+      // This catches cases where user stopped charging from web app or CMS stopped it
+      // Check by transactionId first, then by deviceId + connectorId + startTime as fallback
+      let stoppedSession = null;
+      
+      // First try to find by transactionId if available (check both string and number formats)
+      if (transactionId) {
+        const txIdStr = transactionId.toString();
+        stoppedSession = await ChargingSession.findOne({
+          where: {
+            deviceId: deviceId,
+            connectorId: connectorId || 0,
+            [Op.or]: [
+              { transactionId: txIdStr },
+              { transactionId: parseInt(txIdStr) },
+              { transactionId: transactionId }
+            ],
+            [Op.or]: [
+              { status: 'stopped' },
+              { status: 'completed' },
+              { status: 'failed' },
+              { endTime: { [Op.ne]: null } }
+            ]
+          },
+          limit: 1
+        });
+      }
+      
+      // If not found by transactionId, try by deviceId + connectorId + startTime (within 10 minutes window)
+      if (!stoppedSession) {
+        stoppedSession = await ChargingSession.findOne({
+          where: {
+            deviceId: deviceId,
+            connectorId: connectorId || 0,
+            startTime: {
+              [Op.gte]: new Date(startTime.getTime() - 10 * 60 * 1000), // 10 minutes before
+              [Op.lte]: new Date(startTime.getTime() + 10 * 60 * 1000)  // 10 minutes after
+            },
+            [Op.or]: [
+              { status: 'stopped' },
+              { status: 'completed' },
+              { status: 'failed' },
+              { endTime: { [Op.ne]: null } }
+            ]
+          },
+          limit: 1
+        });
+      }
+      
+      // Final fallback: Check if there's ANY stopped session for this deviceId + connectorId
+      // within the last 30 minutes (to catch cases where startTime doesn't match exactly)
+      if (!stoppedSession) {
+        const recentStoppedSession = await ChargingSession.findOne({
+          where: {
+            deviceId: deviceId,
+            connectorId: connectorId || 0,
+            [Op.or]: [
+              { status: 'stopped' },
+              { status: 'completed' },
+              { status: 'failed' },
+              { endTime: { [Op.ne]: null } }
+            ],
+            // Check if session was stopped recently (within last 30 minutes)
+            [Op.or]: [
+              { endTime: { [Op.gte]: new Date(Date.now() - 30 * 60 * 1000) } },
+              { updatedAt: { [Op.gte]: new Date(Date.now() - 30 * 60 * 1000) } }
+            ]
+          },
+          order: [['endTime', 'DESC'], ['updatedAt', 'DESC']],
+          limit: 1
+        });
+        
+        // Only exclude if the stopped session's startTime is close to this session's startTime
+        if (recentStoppedSession && recentStoppedSession.startTime) {
+          const timeDiff = Math.abs(new Date(recentStoppedSession.startTime).getTime() - startTime.getTime());
+          if (timeDiff < 15 * 60 * 1000) { // Within 15 minutes
+            stoppedSession = recentStoppedSession;
+          }
+        }
+      }
+
+      // If session is stopped in ChargingSession table, skip it even if OCPP messages show it as active
+      if (stoppedSession) {
+        console.log(`[Active Sessions] Session for deviceId ${deviceId}, connectorId ${connectorId}, transactionId ${transactionId} is stopped in ChargingSession table (status: ${stoppedSession.status}, endTime: ${stoppedSession.endTime}) - excluding from active sessions`);
+        continue;
+      }
+
       processedTransactionIds.add(transactionId.toString());
       
       // Check if charger is actually online (lastSeen within 5 minutes)
@@ -3889,10 +4414,12 @@ router.get('/sessions/active', [
     // Apply search filter
     let filteredSessions = activeSessions;
     if (search) {
+      const searchLower = search.toLowerCase();
       filteredSessions = activeSessions.filter(session =>
-        session.stationName.toLowerCase().includes(search.toLowerCase()) ||
-        session.deviceId.toLowerCase().includes(search.toLowerCase()) ||
-        session.transactionId.toString().includes(search)
+        (session.stationName && session.stationName.toLowerCase().includes(searchLower)) ||
+        (session.deviceId && session.deviceId.toLowerCase().includes(searchLower)) ||
+        (session.transactionId && session.transactionId.toString().includes(search)) ||
+        (session.sessionId && session.sessionId.toLowerCase().includes(searchLower))
       );
     }
 
@@ -4182,6 +4709,8 @@ router.get('/sessions/completed', [
         formattedStopReason = 'Stopped from CMS';
       } else if (session.stopReason === 'Remote') {
         formattedStopReason = 'User stopped charging';
+      } else if (session.stopReason === 'ChargingCompleted') {
+        formattedStopReason = 'Charging completed';
       } else if (session.stopReason) {
         formattedStopReason = 'Charger initiated';
       }
@@ -4484,6 +5013,8 @@ router.get('/sessions/completed', [
             formattedStopReason = 'Stopped from CMS';
           } else if (sessionStopReason === 'Remote') {
             formattedStopReason = 'User stopped charging';
+          } else if (sessionStopReason === 'ChargingCompleted') {
+            formattedStopReason = 'Charging completed';
           } else if (sessionStopReason) {
             // For other reasons (Local, DeAuthorized, etc.), charger initiated
             formattedStopReason = 'Charger initiated';
@@ -4538,10 +5069,12 @@ router.get('/sessions/completed', [
     // Apply search filter
     let filteredSessions = completedSessions;
     if (search) {
+      const searchLower = search.toLowerCase();
       filteredSessions = completedSessions.filter(session =>
-        session.stationName.toLowerCase().includes(search.toLowerCase()) ||
-        session.deviceId.toLowerCase().includes(search.toLowerCase()) ||
-        session.transactionId.toString().includes(search)
+        (session.stationName && session.stationName.toLowerCase().includes(searchLower)) ||
+        (session.deviceId && session.deviceId.toLowerCase().includes(searchLower)) ||
+        (session.transactionId && session.transactionId.toString().includes(search)) ||
+        (session.sessionId && session.sessionId.toLowerCase().includes(searchLower))
       );
     }
 
@@ -4854,6 +5387,15 @@ router.get('/customers/:customerId', [
 
     const { customerId } = req.params;
 
+    // Build cache key
+    const cacheKey = `customer:${customerId}`;
+
+    // Try to get from cache
+    const cached = await cacheController.get(cacheKey);
+    if (cached) {
+      return res.json(cached);
+    }
+
     const customer = await Customer.findByPk(customerId, {
       include: [
         {
@@ -4894,7 +5436,7 @@ router.get('/customers/:customerId', [
     const wallet = customer.wallet || { balance: 0 };
     const defaultVehicle = customer.vehicles && customer.vehicles[0];
 
-    res.json({
+    const response = {
       success: true,
       customer: {
         id: customer.id,
@@ -4915,7 +5457,12 @@ router.get('/customers/:customerId', [
           batteryCapacity: parseFloat(defaultVehicle.batteryCapacity) || 0
         } : null
       }
-    });
+    };
+
+    // Cache the response
+    await cacheController.set(cacheKey, response, 300);
+
+    res.json(response);
   } catch (error) {
     console.error('Error fetching customer details:', error);
     res.status(500).json({
@@ -5090,6 +5637,8 @@ router.get('/customers/:customerId/sessions', [
         formattedStopReason = 'Stopped from CMS';
       } else if (session.stopReason === 'Remote') {
         formattedStopReason = 'User stopped charging';
+      } else if (session.stopReason === 'ChargingCompleted') {
+        formattedStopReason = 'Charging completed';
       } else if (session.stopReason && session.stopReason !== 'Unknown') {
         formattedStopReason = 'Charger initiated';
       }
@@ -5210,6 +5759,125 @@ async function hasFault(deviceId) {
  */
 router.get('/dashboard/stats', async (req, res) => {
   try {
+    // Build cache key
+    const cacheKey = 'dashboard:stats';
+
+    // Try to get from cache
+    const cached = await cacheController.get(cacheKey);
+    if (cached) {
+      // Enhance cached response with real-time status for chargers
+      // Get all charging points with deviceId and deviceName
+      const allChargers = await ChargingPoint.findAll({
+        where: { deleted: false },
+        attributes: ['id', 'deviceId', 'deviceName']
+      });
+
+      const allDeviceIds = allChargers.map(cp => cp.deviceId).filter(Boolean);
+      
+      // Batch read all status keys from Redis
+      const statusPromises = allDeviceIds.map(deviceId => {
+        const key = statusKey(deviceId);
+        return redisClient.get(key).then(value => ({
+          deviceId,
+          statusData: value ? JSON.parse(value) : null
+        })).catch(() => ({
+          deviceId,
+          statusData: null
+        }));
+      });
+
+      const statusResults = await Promise.all(statusPromises);
+      const deviceStatusMap = new Map();
+      statusResults.forEach(result => {
+        if (result.statusData) {
+          deviceStatusMap.set(result.deviceId, result.statusData.status);
+        }
+      });
+
+      // Batch read lastSeen for fallback (for devices without real-time status)
+      const chargerDataMap = new Map();
+      if (allDeviceIds.length > 0) {
+        const chargers = await Charger.findAll({
+          where: { deviceId: { [Op.in]: allDeviceIds } },
+          attributes: ['deviceId', 'lastSeen']
+        });
+        chargers.forEach(c => {
+          chargerDataMap.set(c.deviceId, c.lastSeen);
+        });
+      }
+
+      // Recalculate charger status counts based on real-time status
+      let chargersAvailable = 0;
+      let chargersBusy = 0;
+      let chargersUnavailable = 0;
+      const faultedChargersList = [];
+      const OFFLINE_THRESHOLD = 5 * 60 * 1000; // 5 minutes
+
+      for (const charger of allChargers) {
+        if (!charger.deviceId) {
+          chargersUnavailable++;
+          continue;
+        }
+
+        const realTimeStatus = deviceStatusMap.get(charger.deviceId);
+        if (realTimeStatus) {
+          if (realTimeStatus === 'Available') {
+            chargersAvailable++;
+          } else if (realTimeStatus === 'Charging' || realTimeStatus === 'Preparing' || realTimeStatus === 'Finishing') {
+            chargersBusy++;
+          } else if (realTimeStatus === 'Faulted' || realTimeStatus === 'Unavailable') {
+            if (realTimeStatus === 'Faulted') {
+              faultedChargersList.push({
+                id: charger.id,
+                deviceName: charger.deviceName || 'Unknown',
+                deviceId: charger.deviceId
+              });
+            }
+            chargersUnavailable++;
+          }
+        } else {
+          // Fallback to lastSeen check if no real-time status
+          const lastSeen = chargerDataMap.get(charger.deviceId);
+          if (lastSeen) {
+            const lastActiveTime = new Date(lastSeen);
+            const now = new Date();
+            const timeDiff = now - lastActiveTime;
+            if (timeDiff <= OFFLINE_THRESHOLD) {
+              chargersAvailable++;
+            } else {
+              chargersUnavailable++;
+            }
+          } else {
+            chargersUnavailable++;
+          }
+        }
+      }
+
+      // Update cached response with real-time charger status
+      return res.json({
+        ...cached,
+        chargerStatus: {
+          available: chargersAvailable,
+          busy: chargersBusy,
+          unavailable: chargersUnavailable,
+          faulted: faultedChargersList.length,
+          faultedChargers: faultedChargersList.map(c => ({
+            id: c.id,
+            name: c.deviceName,
+            deviceId: c.deviceId
+          }))
+        },
+        alerts: {
+          ...cached.alerts,
+          faultedChargers: faultedChargersList.map(c => ({
+            id: c.id,
+            name: c.deviceName,
+            deviceId: c.deviceId
+          }))
+        }
+      });
+    }
+
     // Date calculations
     const now = new Date();
     const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -6014,7 +6682,7 @@ router.get('/dashboard/stats', async (req, res) => {
     const revenueChange = 23.7;
     const energyChange = 15.8;
     
-    res.json({
+    const response = {
       success: true,
       stats: {
         totalCustomers,
@@ -6091,8 +6759,18 @@ router.get('/dashboard/stats', async (req, res) => {
         }))
       },
       recentSessions: formattedRecentSessions,
-      recentCustomers
-    });
+      recentCustomers: recentCustomers.map(c => ({
+        id: c.id,
+        name: c.fullName,
+        phone: c.phone,
+        createdAt: c.createdAt
+      }))
+    };
+
+    // Cache the response (shorter TTL for dashboard stats since it's more dynamic)
+    await cacheController.set(cacheKey, response, 60);
+
+    res.json(response);
   } catch (error) {
     console.error('Error fetching dashboard stats:', error);
     res.status(500).json({

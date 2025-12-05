@@ -14,6 +14,8 @@ const {
   createMessageId
 } = require('../utils/ocpp');
 const { publishNotification } = require('./rabbitmq/producer');
+const listManager = require('../redis/listManager');
+const updater = require('../redis/updater');
 
 class OCPPMessageProcessor extends BaseConsumer {
   constructor() {
@@ -333,6 +335,32 @@ class OCPPMessageProcessor extends BaseConsumer {
    */
   async handleStopTransaction(deviceId, chargerId, payload) {
     try {
+      // Update Redis status to "Available" when charging stops
+      // This ensures the UI updates immediately even if StatusNotification is delayed
+      try {
+        const updater = require('../../redis/updater');
+        await updater(deviceId, { status: 'Available' });
+        console.log(`✅ [StopTransaction] Updated Redis status to Available for ${deviceId}`);
+      } catch (redisErr) {
+        console.error(`❌ [Redis] Error updating status in StopTransaction for ${deviceId}:`, redisErr.message);
+      }
+
+      // Update charger status in database
+      if (chargerId) {
+        try {
+          const charger = await Charger.findByPk(chargerId, {
+            attributes: { exclude: ['chargerStatus'] }
+          });
+          
+          if (charger) {
+            await charger.update({ status: 'Available' });
+            console.log(`✅ [StopTransaction] Updated charger ${deviceId} status to Available in database`);
+          }
+        } catch (dbErr) {
+          console.error(`❌ [DB] Error updating charger status in StopTransaction for ${deviceId}:`, dbErr.message);
+        }
+      }
+
       // Session stopped notification is handled by customer route (charging.stopped)
       // This handler is kept for future extensions (e.g., CMS notifications, analytics)
       // No notification published here to avoid duplicates
@@ -370,6 +398,22 @@ class OCPPMessageProcessor extends BaseConsumer {
             console.log(`✅ [StatusNotification] Updated charger ${deviceId} status to ${chargerStatus} (connector ${connectorId})`);
           }
         }
+      }
+
+      // Update Redis with listManager and updater
+      try {
+        // Push to events list and trim
+        await listManager.push(`events:${deviceId}`, payload);
+        await listManager.trim(`events:${deviceId}`, 100);
+        
+        // Update status (include errorCode if status indicates error like Faulted, Unavailable)
+        const updateData = { status: payload.status };
+        if (payload.status === 'Faulted' || payload.status === 'Unavailable') {
+          updateData.errorCode = payload.errorCode || payload.status;
+        }
+        await updater(deviceId, updateData);
+      } catch (redisErr) {
+        console.error(`❌ [Redis] Error updating StatusNotification for ${deviceId}:`, redisErr.message);
       }
 
       // Publish notification
@@ -442,6 +486,14 @@ class OCPPMessageProcessor extends BaseConsumer {
           },
           recipients: []
         });
+        
+        // Update Redis with listManager (even without energy value)
+        try {
+          await listManager.push(`ocpp:list:${deviceId}`, payload);
+          await listManager.trim(`ocpp:list:${deviceId}`, 200);
+        } catch (redisErr) {
+          console.error(`❌ [Redis] Error updating MeterValues for ${deviceId}:`, redisErr.message);
+        }
         return;
       }
 
@@ -520,6 +572,18 @@ class OCPPMessageProcessor extends BaseConsumer {
           },
           recipients: []
         });
+        
+        // Update Redis with listManager and updater
+        try {
+          await listManager.push(`ocpp:list:${deviceId}`, payload);
+          await listManager.trim(`ocpp:list:${deviceId}`, 200);
+          
+          // Update meter value (convert Wh to kWh)
+          const latestMeterValue = energyWh / 1000;
+          await updater(deviceId, { meter: latestMeterValue });
+        } catch (redisErr) {
+          console.error(`❌ [Redis] Error updating MeterValues for ${deviceId}:`, redisErr.message);
+        }
         return;
       }
 
@@ -725,6 +789,19 @@ class OCPPMessageProcessor extends BaseConsumer {
         },
         recipients: session.customerId ? [session.customerId] : []
       });
+      
+      // Update Redis with listManager and updater
+      try {
+        // Push to OCPP list and trim
+        await listManager.push(`ocpp:list:${deviceId}`, payload);
+        await listManager.trim(`ocpp:list:${deviceId}`, 200);
+        
+        // Update meter value (convert Wh to kWh)
+        const latestMeterValue = energyWh / 1000;
+        await updater(deviceId, { meter: latestMeterValue });
+      } catch (redisErr) {
+        console.error(`❌ [Redis] Error updating MeterValues for ${deviceId}:`, redisErr.message);
+      }
     } catch (error) {
       console.error(`❌ Error handling MeterValues:`, error.message);
       console.error(error.stack);

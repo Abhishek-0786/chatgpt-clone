@@ -1341,10 +1341,48 @@ router.get('/stations/:stationId/points', async (req, res) => {
         chargerType: point.chargerType,
         powerCapacity: parseFloat(point.powerCapacity),
         maxPower: maxPower,
-        connectors: connectors.map(c => ({
-          connectorId: c.connectorId,
-          connectorType: c.connectorType,
-          power: parseFloat(c.power)
+        connectors: await Promise.all(connectors.map(async (c) => {
+          // Check if THIS specific connector has an active session
+          let connectorStatus = 'Unavailable';
+          let connectorCStatus = 'Unavailable';
+          
+          if (realTimeStatus === 'Online') {
+            // Check if this specific connector has an active session
+            const activeSessionForConnector = await ChargingSession.findOne({
+              where: {
+                deviceId: point.deviceId,
+                connectorId: c.connectorId,
+                status: {
+                  [Op.in]: ['pending', 'active']
+                },
+                endTime: null
+              }
+            });
+            
+            if (activeSessionForConnector) {
+              connectorStatus = 'Charging';
+              connectorCStatus = 'Charging';
+            } else {
+              // Check for faults on this connector (if connector-specific fault detection is needed)
+              // For now, use device-level fault check
+              const hasFaultStatus = await hasFault(point.deviceId);
+              if (hasFaultStatus) {
+                connectorStatus = 'Faulted';
+                connectorCStatus = 'Faulted';
+              } else {
+                connectorStatus = 'Available';
+                connectorCStatus = 'Available';
+              }
+            }
+          }
+          
+          return {
+            connectorId: c.connectorId,
+            connectorType: c.connectorType,
+            power: parseFloat(c.power),
+            status: connectorStatus,
+            cStatus: connectorCStatus
+          };
         })),
         connectorCount: connectors.length,
         pricePerKwh: pricePerKwh ? parseFloat(pricePerKwh.toFixed(2)) : null,
@@ -1503,14 +1541,48 @@ router.get('/charging-points/:chargingPointId', async (req, res) => {
         oemList: displayOEM,
         firmwareVersion: chargingPoint.firmwareVersion || 'N/A',
         connectorCount: connectors.length,
-        connectors: connectors.map(c => ({
-          connectorId: c.connectorId,
-          connectorType: c.connectorType,
-          power: parseFloat(c.power),
-          // For connector status, we'll use the charging point's overall status
-          // Individual connector status can be enhanced later if needed
-          status: realTimeStatus === 'Online' ? (cStatus === 'Available' ? 'Available' : cStatus) : 'Unavailable',
-          cStatus: realTimeStatus === 'Online' ? (cStatus === 'Available' ? 'Available' : cStatus) : 'Unavailable'
+        connectors: await Promise.all(connectors.map(async (c) => {
+          // Check if THIS specific connector has an active session
+          let connectorStatus = 'Unavailable';
+          let connectorCStatus = 'Unavailable';
+          
+          if (realTimeStatus === 'Online') {
+            // Check if this specific connector has an active session
+            const activeSessionForConnector = await ChargingSession.findOne({
+              where: {
+                deviceId: chargingPoint.deviceId,
+                connectorId: c.connectorId,
+                status: {
+                  [Op.in]: ['pending', 'active']
+                },
+                endTime: null
+              }
+            });
+            
+            if (activeSessionForConnector) {
+              connectorStatus = 'Charging';
+              connectorCStatus = 'Charging';
+            } else {
+              // Check for faults on this connector (if connector-specific fault detection is needed)
+              // For now, use device-level fault check
+              const hasFaultStatus = await hasFault(chargingPoint.deviceId);
+              if (hasFaultStatus) {
+                connectorStatus = 'Faulted';
+                connectorCStatus = 'Faulted';
+              } else {
+                connectorStatus = 'Available';
+                connectorCStatus = 'Available';
+              }
+            }
+          }
+          
+          return {
+            connectorId: c.connectorId,
+            connectorType: c.connectorType,
+            power: parseFloat(c.power),
+            status: connectorStatus,
+            cStatus: connectorCStatus
+          };
         })),
         pricePerKwh: pricePerKwh ? parseFloat(pricePerKwh.toFixed(2)) : null,
         tariff: chargingPoint.tariff ? {
@@ -2840,32 +2912,21 @@ router.post('/charging/start', authenticateCustomerToken, [
     const currentBalance = parseFloat(wallet.balance);
 
     // Check wallet balance
-    if (currentBalance < amountValue) {
+    if (amountValue > currentBalance) {
       return res.status(400).json({
         success: false,
-        error: 'Insufficient wallet balance. Please top up your wallet first.'
+        error: `Amount (₹${amountValue.toFixed(2)}) cannot exceed wallet balance (₹${currentBalance.toFixed(2)}). Please enter a lower amount or top up your wallet.`
       });
     }
 
-    // Check if customer already has an active session
-    const activeSession = await ChargingSession.findOne({
-      where: {
-        customerId: customer.id,
-        status: {
-          [Op.in]: ['pending', 'active']
-        }
-      }
-    });
-
-    if (activeSession) {
-      return res.status(400).json({
-        success: false,
-        error: 'You already have an active charging session. Please stop it before starting a new one.'
-      });
-    }
+    // REMOVED: Customer-level session check - now allowing customers to charge on multiple connectors simultaneously
+    // A customer can now charge on connector 1 and connector 2 at the same time if they want
+    // The connector-level check below will prevent conflicts with other customers while allowing
+    // the same customer to use different connectors
 
     // CRITICAL: Check if charger/connector is already in use by another customer
-    // This prevents race condition where 2 customers try to start charging simultaneously
+    // This prevents race condition where 2 customers try to start charging simultaneously on the same connector
+    // NOTE: This check excludes current customer's sessions, allowing same customer to use different connectors
     const activeSessionOnCharger = await ChargingSession.findOne({
       where: {
         deviceId: deviceId,
@@ -2875,7 +2936,7 @@ router.post('/charging/start', authenticateCustomerToken, [
         },
         endTime: null,
         customerId: {
-          [Op.ne]: customer.id // Exclude current customer's sessions
+          [Op.ne]: customer.id // Exclude current customer's sessions - allows same customer to use different connectors
         }
       }
     });
@@ -3596,6 +3657,17 @@ router.post('/charging/stop', authenticateCustomerToken, [
       }
     }
 
+    // Determine stop reason based on whether amount was fully consumed
+    // If refundAmount is 0 and finalAmount equals amountDeducted, charging completed naturally
+    let determinedStopReason = 'Remote'; // Default: User stopped before amount exhausted
+    if (refundAmount === 0 && finalAmount > 0 && Math.abs(finalAmount - amountDeducted) < 0.15) {
+      // Amount fully consumed (no refund, finalAmount equals amountDeducted) - Charging completed
+      determinedStopReason = 'ChargingCompleted';
+    } else if (refundAmount > 0) {
+      // Partial consumption - user stopped before amount was exhausted
+      determinedStopReason = 'Remote';
+    }
+
     // Update session status to 'stopped' IMMEDIATELY to prevent frontend loop
     // This must happen FIRST so the active session API returns null immediately
     await session.update({
@@ -3607,13 +3679,39 @@ router.post('/charging/stop', authenticateCustomerToken, [
       meterStart: meterStart,
       meterEnd: meterEnd,
       endTime: new Date(),
-      stopReason: 'Remote'
+      stopReason: determinedStopReason
     });
     
     // Reload session to ensure we have the latest data
     await session.reload();
     
     console.log(`[Stop Charging] Session ${session.sessionId} updated to 'stopped' status with endTime: ${session.endTime}`);
+
+    // Update Redis status to "Available" when charging stops
+    // This ensures the UI updates immediately in the CMS
+    try {
+      const updater = require('../redis/updater');
+      await updater(deviceId, { status: 'Available' });
+      console.log(`✅ [Stop Charging] Updated Redis status to Available for ${deviceId}`);
+      
+      // Invalidate cache for charging points list to ensure UI updates immediately
+      const cacheController = require('../redis/cacheController');
+      const redisClient = require('../redis/redisClient');
+      
+      // Delete all charging-points cache keys (pattern: charging-points:list:*)
+      // This includes both old page-based keys and new global keys
+      try {
+        const keys = await redisClient.keys('charging-points:list:*');
+        if (keys && keys.length > 0) {
+          await Promise.all(keys.map(key => cacheController.del(key)));
+          console.log(`✅ [Stop Charging] Invalidated ${keys.length} charging-points cache keys`);
+        }
+      } catch (cacheErr) {
+        console.error(`❌ [Cache] Error invalidating cache:`, cacheErr.message);
+      }
+    } catch (redisErr) {
+      console.error(`❌ [Redis] Error updating status when stopping charging for ${deviceId}:`, redisErr.message);
+    }
 
     // Update wallet if refund is needed (after session update to prevent race conditions)
     if (refundAmount > 0) {
@@ -3671,7 +3769,7 @@ router.post('/charging/stop', authenticateCustomerToken, [
             amountDeducted: parseFloat(session.amountDeducted),
             startTime: session.startTime,
             endTime: session.endTime,
-            stopReason: 'Remote'
+            stopReason: determinedStopReason
           }
         });
 

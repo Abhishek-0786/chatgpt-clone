@@ -730,6 +730,13 @@ router.delete('/purge', async (req, res) => {
 
     console.log(`⚠️ Purging all chargers except: ${exceptId}`);
 
+    // Get all deviceIds that will be deleted (for Redis cleanup)
+    const chargersToDelete = await Charger.findAll({
+      where: { deviceId: { [Op.ne]: exceptId } },
+      attributes: ['deviceId']
+    });
+    const deviceIdsToCleanup = chargersToDelete.map(c => c.deviceId);
+
     // Delete charger_data for all other deviceIds
     const deletedData = await ChargerData.destroy({ where: { deviceId: { [Op.ne]: exceptId } } });
 
@@ -737,6 +744,22 @@ router.delete('/purge', async (req, res) => {
     const deletedChargers = await Charger.destroy({ where: { deviceId: { [Op.ne]: exceptId } } });
 
     console.log(`🗑️ Deleted ${deletedData} charger_data rows and ${deletedChargers} chargers (kept ${exceptId})`);
+
+    // Clean up Redis keys for all deleted chargers
+    if (deviceIdsToCleanup.length > 0) {
+      try {
+        const { cleanupChargerKeys } = require('../redis/cleanup');
+        let cleanedCount = 0;
+        for (const deviceId of deviceIdsToCleanup) {
+          const deleted = await cleanupChargerKeys(deviceId);
+          if (deleted > 0) cleanedCount++;
+        }
+        console.log(`✅ [Purge] Cleaned up Redis keys for ${cleanedCount} chargers`);
+      } catch (cleanupError) {
+        console.error(`⚠️ [Purge] Error cleaning up Redis keys:`, cleanupError.message);
+        // Don't fail the request if cleanup fails
+      }
+    }
 
     res.json({ success: true, kept: exceptId, deletedData, deletedChargers });
   } catch (error) {

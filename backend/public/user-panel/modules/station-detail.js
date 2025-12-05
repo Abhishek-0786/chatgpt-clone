@@ -1,6 +1,6 @@
 // Station Detail Module - Shows station details and chargers with tabs
 import { updatePageTitle, refreshWalletBalance } from '../app.js';
-import { getStationChargingPoints, getActiveSession, getStationDetails, getVehicles } from '../services/api.js';
+import { getStationChargingPoints, getActiveSession, getStationDetails, getVehicles, getWalletBalance } from '../services/api.js';
 import { startCharging } from '../services/api.js';
 import { showError, showSuccess } from '../../utils/notifications.js';
 
@@ -13,7 +13,7 @@ let currentFilters = {
 };
 
 export async function loadStationDetail(stationId, stationName) {
-    updatePageTitle(stationName || 'Station Details');
+    // Page title removed - no longer updating page title for station detail page
     
     // Store station info in session storage for navigation after stopping charging
     if (stationId) {
@@ -42,10 +42,7 @@ export async function loadStationDetail(stationId, stationName) {
         const chargingPoints = pointsResponse.success && pointsResponse.points ? pointsResponse.points : [];
         const userActiveSession = sessionResponse.success ? sessionResponse.session : null;
         
-        // Update station name if we got it from API
-        if (station && station.stationName) {
-            updatePageTitle(station.stationName);
-        }
+        // Station name is displayed in the page content, no need to update page title
         
         // Format charging points for display
         allChargers = chargingPoints.map(point => {
@@ -466,8 +463,7 @@ function renderChargerList(chargers) {
     }
     
     return chargers.map(charger => {
-        const isAvailable = charger.status === 'Online' && charger.cStatus === 'Available';
-        const isBusy = charger.cStatus === 'Charging' || (charger.status === 'Online' && charger.cStatus !== 'Available' && charger.cStatus !== 'Unavailable');
+        const isOnline = charger.status === 'Online';
         const isOffline = charger.status === 'Offline' || charger.cStatus === 'Unavailable';
         
         // Get connector info
@@ -493,11 +489,25 @@ function renderChargerList(chargers) {
         const amountInputId = `amount-input-${charger.chargingPointId}`;
         const startBtnId = `start-btn-${charger.chargingPointId}`;
         
+        // Determine charger-level status badge (show if at least one connector is available, or if charging)
+        const hasAvailableConnector = connectors.some(conn => {
+            const connStatus = conn.cStatus || conn.status;
+            return isOnline && connStatus === 'Available';
+        });
+        const hasChargingConnector = connectors.some(conn => {
+            const connStatus = conn.cStatus || conn.status;
+            return connStatus === 'Charging';
+        });
+        const chargerLevelStatus = hasChargingConnector ? 'Charging' : (hasAvailableConnector ? 'Available' : (charger.cStatus || charger.status));
+        const statusBadgeColor = hasAvailableConnector ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 
+                                 hasChargingConnector ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' : 
+                                 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
+        
         return `
             <div class="charger-card" id="${chargerCardId}"
-                 style="padding: 14px; border: 1px solid ${isAvailable ? '#e9ecef' : '#f0f0f0'}; 
+                 style="padding: 14px; border: 1px solid ${isOnline ? '#e9ecef' : '#f0f0f0'}; 
                         border-radius: 12px; margin-bottom: 10px; 
-                        background: ${isAvailable ? 'white' : '#fafafa'}; 
+                        background: ${isOnline ? 'white' : '#fafafa'}; 
                         opacity: ${isOffline ? '0.7' : '1'}; 
                         transition: all 0.2s; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: ${connectors.length > 0 ? '12px' : '0'}; padding-bottom: ${connectors.length > 0 ? '12px' : '0'}; border-bottom: ${connectors.length > 0 ? '1px solid #f0f0f0' : 'none'};">
@@ -512,8 +522,8 @@ function renderChargerList(chargers) {
                         </div>
                                 </div>
                     <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; margin-left: 12px;">
-                        <span style="background: ${isAvailable ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : isBusy ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'}; color: white; font-size: 10px; padding: 4px 10px; border-radius: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">
-                            ${charger.cStatus || charger.status}
+                        <span style="background: ${statusBadgeColor}; color: white; font-size: 10px; padding: 4px 10px; border-radius: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;">
+                            ${chargerLevelStatus}
                         </span>
                         ${charger.pricePerKwh ? `
                             <div style="font-size: 13px; font-weight: 700; color: #667eea;">
@@ -523,63 +533,69 @@ function renderChargerList(chargers) {
                     </div>
                 </div>
                 
-                ${!isAvailable ? `
-                    <div style="font-size: 12px; color: #6c757d; display: flex; align-items: center; gap: 6px;">
-                        <i class="fas ${isBusy ? 'fa-lock' : 'fa-times-circle'}" style="font-size: 11px; color: #ef4444;"></i>
-                        <span>${isBusy ? 'Currently in use' : 'Charger unavailable'}</span>
-                    </div>
-                ` : `
-                    <!-- Connector Cards -->
-                    ${connectors.length > 0 ? `
-                        <div style="display: flex; flex-direction: column; gap: 8px;">
-                            ${connectors.map((conn, index) => {
-                                const connectorCardId = `connector-card-${charger.chargingPointId}-${conn.connectorId}`;
-                                const isConnectorAvailable = charger.status === 'Online' && charger.cStatus === 'Available';
-                                const connectorStatus = isConnectorAvailable ? 'Available' : 'Unavailable';
-                                
-                                return `
-                                    <div id="${connectorCardId}"
-                                         class="connector-card-item"
-                                         data-connector-id="${conn.connectorId}"
-                                         data-charger-id="${charger.chargingPointId}"
-                                         onclick="window.openChargingPopup('${charger.chargingPointId}', '${conn.connectorId}', '${charger.deviceId}', '${conn.connectorType || charger.connectorType}', '${conn.power || charger.power}', ${charger.pricePerKwh || 0}, '${connectorStatus}')"
-                                         style="padding: 12px; border: 1px solid ${isConnectorAvailable ? '#e9ecef' : '#f0f0f0'}; 
-                                                border-radius: 10px; background: ${isConnectorAvailable ? 'linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%)' : '#fafafa'}; 
-                                                cursor: ${isConnectorAvailable ? 'pointer' : 'not-allowed'}; 
-                                                transition: all 0.2s; opacity: ${isConnectorAvailable ? '1' : '0.6'};"
-                                         onmouseover="${isConnectorAvailable ? `this.style.borderColor='#667eea'; this.style.boxShadow='0 2px 8px rgba(102, 126, 234, 0.15)'; this.style.transform='translateY(-1px)'` : ''}"
-                                         onmouseout="${isConnectorAvailable ? `this.style.borderColor='#e9ecef'; this.style.boxShadow='none'; this.style.transform='translateY(0)'` : ''}">
-                                        <div style="display: flex; align-items: center; gap: 12px;">
-                                            <div style="width: 36px; height: 36px; border-radius: 8px; background: ${isConnectorAvailable ? 'linear-gradient(135deg, #667eea15 0%, #667eea25 100%)' : '#f5f5f5'}; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
-                                                <i class="fas fa-plug" style="font-size: 16px; color: ${isConnectorAvailable ? '#667eea' : '#9e9e9e'};"></i>
-                                            </div>
-                                            <div style="flex: 1; min-width: 0;">
-                                                <div style="font-size: 13px; font-weight: 700; color: #212529; margin-bottom: 3px;">
-                                                    Connector ${conn.connectorId}
-                                                </div>
-                                                <div style="font-size: 11px; color: #6c757d; margin-bottom: 6px;">
-                                                    ${conn.connectorType || charger.connectorType}
-                                                </div>
-                                                <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                                                    <span style="background: ${isConnectorAvailable ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)'}; color: white; font-size: 9px; padding: 3px 8px; border-radius: 10px; font-weight: 600; text-transform: uppercase;">
-                                                        ${connectorStatus}
-                                                    </span>
-                                                    <div style="display: flex; align-items: center; gap: 4px; font-size: 11px; color: #6c757d;">
-                                                        <i class="fas fa-bolt" style="font-size: 10px; color: #f59e0b;"></i>
-                                                        <span>Upto ${conn.power || charger.power}</span>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                            ${isConnectorAvailable ? `
-                                                <i class="fas fa-chevron-right" style="color: #6c757d; font-size: 14px; flex-shrink: 0;"></i>
-                                            ` : ''}
+                <!-- Always show connector cards if connectors exist, so users can see individual connector statuses -->
+                ${connectors.length > 0 ? `
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        ${connectors.sort((a, b) => (a.connectorId || 0) - (b.connectorId || 0)).map((conn, index) => {
+                            const connectorCardId = `connector-card-${charger.chargingPointId}-${conn.connectorId}`;
+                            // Use per-connector status if available, otherwise fallback to charger-level status
+                            // Priority: conn.cStatus > conn.status > charger-level status
+                            const connectorStatus = conn.cStatus || conn.status || (isOnline ? 'Available' : 'Unavailable');
+                            // Connector is available if charger is online AND connector status is 'Available' (not 'Charging' or 'Unavailable')
+                            const isConnectorAvailable = isOnline && connectorStatus === 'Available';
+                            
+                            // Determine connector status badge color
+                            const connectorBadgeColor = connectorStatus === 'Available' ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' :
+                                                       connectorStatus === 'Charging' ? 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)' :
+                                                       'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)';
+                            
+                            return `
+                                <div id="${connectorCardId}"
+                                     class="connector-card-item"
+                                     data-connector-id="${conn.connectorId}"
+                                     data-charger-id="${charger.chargingPointId}"
+                                     onclick="${isConnectorAvailable ? `window.openChargingPopup('${charger.chargingPointId}', '${conn.connectorId}', '${charger.deviceId}', '${conn.connectorType || charger.connectorType}', '${conn.power || charger.power}', ${charger.pricePerKwh || 0}, '${connectorStatus}')` : 'void(0)'}"
+                                     style="padding: 12px; border: 1px solid ${isConnectorAvailable ? '#e9ecef' : '#f0f0f0'}; 
+                                            border-radius: 10px; background: ${isConnectorAvailable ? 'linear-gradient(135deg, #f8f9fa 0%, #ffffff 100%)' : '#fafafa'}; 
+                                            cursor: ${isConnectorAvailable ? 'pointer' : 'not-allowed'}; 
+                                            transition: all 0.2s; opacity: ${isConnectorAvailable ? '1' : '0.6'};"
+                                     onmouseover="${isConnectorAvailable ? `this.style.borderColor='#667eea'; this.style.boxShadow='0 2px 8px rgba(102, 126, 234, 0.15)'; this.style.transform='translateY(-1px)'` : ''}"
+                                     onmouseout="${isConnectorAvailable ? `this.style.borderColor='#e9ecef'; this.style.boxShadow='none'; this.style.transform='translateY(0)'` : ''}">
+                                    <div style="display: flex; align-items: center; gap: 12px;">
+                                        <div style="width: 36px; height: 36px; border-radius: 8px; background: ${isConnectorAvailable ? 'linear-gradient(135deg, #667eea15 0%, #667eea25 100%)' : '#f5f5f5'}; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                                            <i class="fas fa-plug" style="font-size: 16px; color: ${isConnectorAvailable ? '#667eea' : '#9e9e9e'};"></i>
                                         </div>
-                                    </div>
-                                `;
-                            }).join('')}
-                </div>
+                                        <div style="flex: 1; min-width: 0;">
+                                            <div style="font-size: 13px; font-weight: 700; color: #212529; margin-bottom: 3px;">
+                                                Connector ${conn.connectorId}
+                                            </div>
+                                            <div style="font-size: 11px; color: #6c757d; margin-bottom: 6px;">
+                                                ${conn.connectorType || charger.connectorType}
+                                            </div>
+                                            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                                <span style="background: ${connectorBadgeColor}; color: white; font-size: 9px; padding: 3px 8px; border-radius: 10px; font-weight: 600; text-transform: uppercase;">
+                                                    ${connectorStatus}
+                                                </span>
+                                                <div style="display: flex; align-items: center; gap: 4px; font-size: 11px; color: #6c757d;">
+                                                    <i class="fas fa-bolt" style="font-size: 10px; color: #f59e0b;"></i>
+                                                    <span>Upto ${conn.power || charger.power}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        ${isConnectorAvailable ? `
+                                            <i class="fas fa-chevron-right" style="color: #6c757d; font-size: 14px; flex-shrink: 0;"></i>
                 ` : ''}
-                `}
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                ` : (isOffline ? `
+                    <div style="font-size: 12px; color: #6c757d; display: flex; align-items: center; gap: 6px;">
+                        <i class="fas fa-times-circle" style="font-size: 11px; color: #ef4444;"></i>
+                        <span>Charger unavailable</span>
+                    </div>
+                ` : '')}
             </div>
         `;
     }).join('');
@@ -778,6 +794,16 @@ window.openChargingPopup = async function(chargingPointId, connectorId, deviceId
         return;
     }
     
+    // Fetch current wallet balance
+    let walletBalance = 0;
+    try {
+        const walletResponse = await getWalletBalance();
+        walletBalance = walletResponse.success ? parseFloat(walletResponse.balance || 0) : 0;
+    } catch (error) {
+        console.error('Error fetching wallet balance:', error);
+        walletBalance = 0;
+    }
+    
     // Create popup modal
     const modalId = `charging-popup-${chargingPointId}-${connectorId}`;
     const amountInputId = `popup-amount-input-${chargingPointId}-${connectorId}`;
@@ -787,6 +813,11 @@ window.openChargingPopup = async function(chargingPointId, connectorId, deviceId
     // Check if modal already exists
     let modal = document.getElementById(modalId);
     if (modal) {
+        // Update wallet balance in existing modal
+        const modalContent = modal.querySelector('.charging-popup-content');
+        if (modalContent) {
+            modalContent.dataset.walletBalance = walletBalance;
+        }
         modal.style.display = 'flex';
         return;
     }
@@ -799,6 +830,7 @@ window.openChargingPopup = async function(chargingPointId, connectorId, deviceId
                     padding: 20px;"
              onclick="if(event.target.id === '${modalId}') window.closeChargingPopup('${modalId}')">
             <div class="charging-popup-content" 
+                 data-wallet-balance="${walletBalance}"
                  style="background: white; border-radius: 16px; padding: 24px; width: 100%; max-width: 400px; 
                         max-height: 90vh; overflow-y: auto; position: relative;"
                  onclick="event.stopPropagation()">
@@ -865,10 +897,12 @@ window.openChargingPopup = async function(chargingPointId, connectorId, deviceId
                            placeholder="Enter amount"
                            min="1"
                            step="0.01"
+                           max="${walletBalance}"
                            style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px; background: white; color: var(--text-primary); outline: none; transition: border-color 0.2s;"
                            onfocus="this.style.borderColor='var(--primary-color)'"
                            onblur="this.style.borderColor='#e0e0e0'"
-                           oninput="window.calculateEstimatedCostInPopup('${modalId}', ${pricePerKwh || 0}); window.onAmountEnteredInPopup('${modalId}', '${chargingPointId}', '${connectorId}')">
+                           oninput="window.restrictAmountInput(this, ${walletBalance}, '${modalId}', ${pricePerKwh || 0}, '${chargingPointId}', '${connectorId}')">
+                    <div id="amount-error-${modalId}" style="display: none; margin-top: 6px; font-size: 12px; color: #dc3545;"></div>
                     ${pricePerKwh ? `
                         <div id="estimated-cost-${modalId}" style="display: none; margin-top: 6px; font-size: 12px; color: var(--text-secondary);">
                             <span id="estimated-energy-${modalId}"></span> • 
@@ -891,6 +925,35 @@ window.openChargingPopup = async function(chargingPointId, connectorId, deviceId
     
     // Append modal to body
     document.body.insertAdjacentHTML('beforeend', modalHTML);
+    
+    // Add input restriction after modal is added to DOM
+    setTimeout(() => {
+        const amountInput = document.getElementById(amountInputId);
+        if (amountInput) {
+            // Restrict input to wallet balance
+            amountInput.addEventListener('input', function(e) {
+                const value = parseFloat(e.target.value) || 0;
+                if (value > walletBalance) {
+                    e.target.value = walletBalance.toFixed(2);
+                    // Trigger calculation functions
+                    window.calculateEstimatedCostInPopup(modalId, pricePerKwh || 0);
+                    window.onAmountEnteredInPopup(modalId, chargingPointId, connectorId);
+                }
+            });
+            
+            // Prevent pasting values greater than balance
+            amountInput.addEventListener('paste', function(e) {
+                setTimeout(() => {
+                    const value = parseFloat(e.target.value) || 0;
+                    if (value > walletBalance) {
+                        e.target.value = walletBalance.toFixed(2);
+                        window.calculateEstimatedCostInPopup(modalId, pricePerKwh || 0);
+                        window.onAmountEnteredInPopup(modalId, chargingPointId, connectorId);
+                    }
+                }, 0);
+            });
+        }
+    }, 100);
 };
 
 // Close charging popup
@@ -932,10 +995,15 @@ window.onAmountEnteredInPopup = function(modalId, chargingPointId, connectorId) 
     
     if (!amountInput || !startBtn || !vehicleSelect) return;
     
+    // Get wallet balance from modal
+    const modalContent = document.getElementById(modalId)?.querySelector('.charging-popup-content');
+    const walletBalance = modalContent ? parseFloat(modalContent.dataset.walletBalance || 0) : 0;
+    
     const amount = parseFloat(amountInput.value);
     const vehicleId = vehicleSelect.value;
     
-    if (amount && amount >= 1 && vehicleId) {
+    // Validate amount against wallet balance
+    if (amount && amount >= 1 && amount <= walletBalance && vehicleId) {
         // Enable start button
         startBtn.disabled = false;
         startBtn.style.background = 'var(--primary-color)';
@@ -948,6 +1016,17 @@ window.onAmountEnteredInPopup = function(modalId, chargingPointId, connectorId) 
         startBtn.style.cursor = 'not-allowed';
         startBtn.style.opacity = '0.6';
     }
+};
+
+// Restrict amount input to wallet balance
+window.restrictAmountInput = function(inputElement, walletBalance, modalId, pricePerKwh, chargingPointId, connectorId) {
+    const value = parseFloat(inputElement.value) || 0;
+    if (value > walletBalance) {
+        inputElement.value = walletBalance.toFixed(2);
+    }
+    // Call calculation functions
+    window.calculateEstimatedCostInPopup(modalId, pricePerKwh);
+    window.onAmountEnteredInPopup(modalId, chargingPointId, connectorId);
 };
 
 // Calculate estimated cost in popup
@@ -970,9 +1049,15 @@ window.calculateEstimatedCostInPopup = function(modalId, pricePerKwh) {
         return;
     }
     
+    // Get wallet balance from modal
+    const modalContent = document.getElementById(modalId)?.querySelector('.charging-popup-content');
+    const walletBalance = modalContent ? parseFloat(modalContent.dataset.walletBalance || 0) : 0;
+    
     const estimatedCostDiv = document.getElementById(`estimated-cost-${modalId}`);
     const estimatedEnergy = document.getElementById(`estimated-energy-${modalId}`);
     const estimatedCostValue = document.getElementById(`estimated-cost-value-${modalId}`);
+    const amountErrorDiv = document.getElementById(`amount-error-${modalId}`);
+    const startBtn = document.getElementById(`popup-start-btn-${chargingPointId}-${connectorId}`);
     
     if (!estimatedCostDiv || !estimatedEnergy || !estimatedCostValue) {
         console.error('Estimated cost elements not found for modalId:', modalId);
@@ -985,6 +1070,34 @@ window.calculateEstimatedCostInPopup = function(modalId, pricePerKwh) {
     }
     
     const amount = parseFloat(amountInput.value) || 0;
+    
+    // Validate amount against wallet balance
+    if (amount > walletBalance) {
+        // Show error message
+        if (amountErrorDiv) {
+            amountErrorDiv.textContent = `Amount cannot exceed wallet balance (₹${walletBalance.toFixed(2)})`;
+            amountErrorDiv.style.display = 'block';
+        }
+        // Change input border to red
+        amountInput.style.borderColor = '#dc3545';
+        // Disable start button
+        if (startBtn) {
+            startBtn.disabled = true;
+            startBtn.style.background = '#cccccc';
+            startBtn.style.cursor = 'not-allowed';
+            startBtn.style.opacity = '0.6';
+        }
+        // Hide estimated cost
+        estimatedCostDiv.style.display = 'none';
+        return;
+    } else {
+        // Clear error message
+        if (amountErrorDiv) {
+            amountErrorDiv.style.display = 'none';
+        }
+        // Reset input border
+        amountInput.style.borderColor = '';
+    }
     
     if (amount > 0) {
         // Calculate estimated kWh based on amount and price per kWh
@@ -1014,9 +1127,20 @@ window.startChargingFromPopup = async function(modalId, chargingPointId, connect
         return;
     }
     
+    // Get wallet balance from modal
+    const modalContent = document.getElementById(modalId)?.querySelector('.charging-popup-content');
+    const walletBalance = modalContent ? parseFloat(modalContent.dataset.walletBalance || 0) : 0;
+    
     const amount = parseFloat(amountInput.value);
     if (!amount || amount < 1) {
         showError('Please enter a valid amount (minimum ₹1.00)');
+        amountInput.focus();
+        return;
+    }
+    
+    // Validate amount against wallet balance
+    if (amount > walletBalance) {
+        showError(`Amount cannot exceed wallet balance (₹${walletBalance.toFixed(2)}). Please enter a lower amount or top up your wallet.`);
         amountInput.focus();
         return;
     }

@@ -182,31 +182,32 @@ export async function loadDashboard() {
                     </div>
                     
                     <!-- Connector Types -->
-                    <div style="margin-bottom: 0;">
+                    <div style="margin-bottom: 0; position: relative;">
                         <div style="font-size: 10px; color: var(--text-secondary); margin-bottom: 4px; font-weight: 600;">Supported Connectors</div>
-                        <div id="stationCardConnectors" style="display: flex; flex-wrap: wrap; gap: 6px;">
+                        <div id="stationCardConnectors" style="display: flex; flex-wrap: wrap; gap: 6px; align-items: center;">
                             <!-- Connector icons will be inserted here -->
                         </div>
+                        <!-- Navigate Button - Aligned with connectors -->
+                        <button 
+                            id="stationCardNavigateBtn"
+                            style="position: absolute; bottom: 0; right: 0; background: transparent; border: none; cursor: pointer; padding: 0; display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; transition: all 0.2s; z-index: 10;"
+                            onclick="event.stopPropagation(); window.navigateToStation()"
+                            onmouseover="this.style.transform='scale(1.1)'"
+                            onmouseout="this.style.transform='scale(1)'"
+                            title="Navigate to station"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 512 512" fill="#dc3545">
+                                <path d="M416 96L96 224l128 64 64 128z"/>
+                            </svg>
+                        </button>
                     </div>
-                    
-                    <!-- Navigate Button - Fixed at bottom right -->
-                    <button 
-                        id="stationCardNavigateBtn"
-                        style="position: absolute; bottom: 12px; right: 12px; background: var(--primary-color); border: none; color: white; cursor: pointer; padding: 10px; font-size: 18px; display: flex; align-items: center; justify-content: center; border-radius: 50%; width: 44px; height: 44px; box-shadow: 0 2px 8px rgba(0,0,0,0.2); transition: all 0.2s; z-index: 10;"
-                        onclick="event.stopPropagation(); window.navigateToStation()"
-                        onmouseover="this.style.transform='scale(1.1)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.3)'"
-                        onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 8px rgba(0,0,0,0.2)'"
-                        title="Navigate to station"
-                    >
-                        <i class="fas fa-map-marked-alt"></i>
-                    </button>
                 </div>
                 
                 <!-- Floating Location Button (Bottom Right) -->
                 <div id="floatingLocationBtn" 
-                     style="position: absolute; bottom: 90px; right: 16px; z-index: 999; pointer-events: auto; display: block;"
-                     onclick="window.handleLocationButtonClick()">
-                    <div id="locationButtonContent" style="background: ${userLocation ? '#007bff' : '#dc3545'}; border-radius: 50%; width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px ${userLocation ? 'rgba(0, 123, 255, 0.4)' : 'rgba(220, 53, 69, 0.4)'}; cursor: pointer; transition: all 0.3s; border: 3px solid white;"
+                     style="position: absolute; bottom: 90px; right: 16px; z-index: 999; pointer-events: auto; display: block; cursor: pointer;"
+                     onclick="window.handleLocationButtonClick(event)">
+                    <div id="locationButtonContent" style="background: ${userLocation ? '#007bff' : '#dc3545'}; border-radius: 50%; width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px ${userLocation ? 'rgba(0, 123, 255, 0.4)' : 'rgba(220, 53, 69, 0.4)'}; cursor: pointer; transition: all 0.3s; border: 3px solid white; pointer-events: none;"
                          onmouseover="this.style.transform='scale(1.1)'; this.style.boxShadow='0 6px 16px ${userLocation ? 'rgba(0, 123, 255, 0.5)' : 'rgba(220, 53, 69, 0.5)'}'"
                          onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 4px 12px ${userLocation ? 'rgba(0, 123, 255, 0.4)' : 'rgba(220, 53, 69, 0.4)'}'">
                         <i class="fas ${userLocation ? 'fa-crosshairs' : 'fa-map-marker-alt'}" style="color: white; font-size: 20px;"></i>
@@ -228,6 +229,20 @@ export async function loadDashboard() {
                 } else {
                     clearBtn.style.display = 'none';
                 }
+            });
+        }
+        
+        // Setup location button click event listener
+        const locationBtn = document.getElementById('floatingLocationBtn');
+        if (locationBtn) {
+            // Remove any existing listeners and add new one
+            const newBtn = locationBtn.cloneNode(true);
+            locationBtn.parentNode.replaceChild(newBtn, locationBtn);
+            
+            newBtn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                e.preventDefault();
+                window.handleLocationButtonClick(e);
             });
         }
         
@@ -287,12 +302,38 @@ function updateLocationButtonState() {
 }
 
 // Handle location button click
-window.handleLocationButtonClick = function() {
+window.handleLocationButtonClick = function(event) {
+    // Prevent event bubbling
+    if (event) {
+        event.stopPropagation();
+        event.preventDefault();
+    }
+    
     if (userLocation) {
         // If location is already active, re-center map on user location
         if (map) {
-            map.setCenter(userLocation);
-            map.setZoom(12);
+            try {
+                // Convert userLocation to LatLng if needed
+                const location = userLocation.lat && userLocation.lng 
+                    ? new google.maps.LatLng(userLocation.lat, userLocation.lng)
+                    : userLocation;
+                
+                // Center and zoom map to user location
+                map.setCenter(location);
+                map.setZoom(12);
+                
+                // Also pan to ensure smooth transition
+                map.panTo(location);
+            } catch (error) {
+                console.error('Error centering map on location:', error);
+                // Fallback: try with direct object
+                if (userLocation.lat && userLocation.lng) {
+                    map.setCenter({ lat: userLocation.lat, lng: userLocation.lng });
+                    map.setZoom(12);
+                }
+            }
+        } else {
+            console.warn('Map not initialized');
         }
     } else {
         // Request location permission
@@ -643,6 +684,78 @@ function getOrganizationIcon(organization) {
     return orgLogos[normalizedOrg] || orgLogos['genx']; // Default to GenX robot icon
 }
 
+// Create marker icon that matches GenXMarkerOverlay design exactly (for clustering support)
+function createMarkerIconFromStation(station) {
+    const isOperational = station.status === 'Online';
+    const statusIcon = isOperational ? '✓' : '✕';
+    const statusColor = isOperational ? '#28a745' : '#dc3545';
+    
+    const orgValue = station.organization || station.organizationDisplay || 'genx';
+    const orgIcon = getOrganizationIcon(orgValue);
+    
+    const gradientId = 'grad_' + Math.random().toString(36).substr(2, 9);
+    const shadowId = 'shadow_' + Math.random().toString(36).substr(2, 9);
+    
+    // Determine center content to match GenXMarkerOverlay exactly
+    let centerContent = '';
+    if (orgIcon.type === 'icon' && orgIcon.value.includes('robot')) {
+        // GenX - robot icon
+        centerContent = '<text x="22.5" y="28" font-size="16" font-weight="700" fill="white" text-anchor="middle" font-family="Arial, sans-serif" style="text-shadow: 0 1px 2px rgba(0,0,0,0.3);">🤖</text>';
+    } else if (orgIcon.type === 'image') {
+        // Organization logos - use text representation
+        const orgText = orgValue.includes('1c') || orgValue.includes('1C') ? '1C' : 
+                       orgValue.includes('massive') || orgValue.includes('1S') ? '1S' : 'III';
+        centerContent = `<text x="22.5" y="28" font-size="14" font-weight="700" fill="white" text-anchor="middle" font-family="Arial, sans-serif" style="text-shadow: 0 1px 2px rgba(0,0,0,0.3);">${orgText}</text>`;
+    } else {
+        centerContent = '<text x="22.5" y="28" font-size="14" font-weight="700" fill="white" text-anchor="middle" font-family="Arial, sans-serif" style="text-shadow: 0 1px 2px rgba(0,0,0,0.3);">III</text>';
+    }
+    
+    // Create SVG matching GenXMarkerOverlay teardrop design exactly
+    const svgContent = `
+        <svg width="45" height="55" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+                <linearGradient id="${gradientId}" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" style="stop-color:#dc3545;stop-opacity:1" />
+                    <stop offset="100%" style="stop-color:#c82333;stop-opacity:1" />
+                </linearGradient>
+                <filter id="${shadowId}" x="-50%" y="-50%" width="200%" height="200%">
+                    <feGaussianBlur in="SourceAlpha" stdDeviation="2"/>
+                    <feOffset dx="0" dy="2" result="offsetblur"/>
+                    <feComponentTransfer>
+                        <feFuncA type="linear" slope="0.3"/>
+                    </feComponentTransfer>
+                    <feMerge>
+                        <feMergeNode/>
+                        <feMergeNode in="SourceGraphic"/>
+                    </feMerge>
+                </filter>
+            </defs>
+            <!-- Teardrop shape (matches CSS border-radius: 50% 50% 50% 0, rotated -45deg) -->
+            <path d="M 22.5 0 L 45 22.5 L 22.5 45 L 0 22.5 Z" 
+                  fill="url(#${gradientId})" 
+                  stroke="white" 
+                  stroke-width="2.5" 
+                  transform="rotate(-45 22.5 22.5)"
+                  filter="url(#${shadowId})"/>
+            <!-- Inner circle background -->
+            <circle cx="22.5" cy="22.5" r="18" fill="white" opacity="0.1"/>
+            <!-- Organization icon/text -->
+            ${centerContent}
+            <!-- Status indicator -->
+            <circle cx="42" cy="3" r="8" fill="${statusColor}" stroke="white" stroke-width="2" filter="url(#${shadowId})"/>
+            <text x="42" y="7" font-size="9" font-weight="700" fill="white" text-anchor="middle" font-family="Arial, sans-serif">${statusIcon}</text>
+        </svg>
+    `;
+    
+    const base64Svg = btoa(unescape(encodeURIComponent(svgContent)));
+    
+    return {
+        url: 'data:image/svg+xml;base64,' + base64Svg,
+        scaledSize: new google.maps.Size(45, 55),
+        anchor: new google.maps.Point(22.5, 55)
+    };
+}
+
 // Custom Google Maps Overlay for GenX markers
 class GenXMarkerOverlay extends google.maps.OverlayView {
     constructor(position, station, map) {
@@ -801,16 +914,233 @@ function updateMapWithStations(stations) {
         bounds.extend(new google.maps.LatLng(userLocation.lat, userLocation.lng));
     }
     
-    // Create markers for each station
+    // Create original GenXMarkerOverlay markers (unchanged)
     stationsWithCoords.forEach(station => {
         const position = new google.maps.LatLng(station.latitude, station.longitude);
         
-        // Create custom overlay marker
+        // Create custom overlay marker (ORIGINAL - NOT CHANGED)
         const marker = new GenXMarkerOverlay(position, station, map);
         
         mapMarkers.push(marker);
         bounds.extend(position);
     });
+    
+    // Add clustering using invisible standard markers for clustering only
+    if (mapMarkers.length > 0) {
+        const initClustering = () => {
+            // Check for MarkerClusterer library
+            let ClustererClass = null;
+            let SuperClusterAlgorithm = null;
+            
+            if (typeof window !== 'undefined' && window.markerClusterer) {
+                ClustererClass = window.markerClusterer.MarkerClusterer || window.markerClusterer.default?.MarkerClusterer;
+                SuperClusterAlgorithm = window.markerClusterer.SuperClusterAlgorithm || window.markerClusterer.default?.SuperClusterAlgorithm;
+            }
+            
+            if (!ClustererClass && typeof markerClusterer !== 'undefined') {
+                ClustererClass = markerClusterer.MarkerClusterer || markerClusterer.default?.MarkerClusterer;
+                SuperClusterAlgorithm = markerClusterer.SuperClusterAlgorithm || markerClusterer.default?.SuperClusterAlgorithm;
+            }
+            
+            if (!ClustererClass && typeof MarkerClusterer !== 'undefined') {
+                ClustererClass = MarkerClusterer;
+            }
+            
+            if (ClustererClass) {
+                try {
+                    // Create standard markers for clustering (they need to be on the map for clustering to work)
+                    const clusteringMarkers = stationsWithCoords.map(station => {
+                        const position = new google.maps.LatLng(station.latitude, station.longitude);
+                        // Create a tiny invisible marker for clustering
+                        return new google.maps.Marker({
+                            position: position,
+                            map: map, // Must be on map for clustering
+                            visible: true, // Must be visible for clustering to count them
+                            icon: {
+                                url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent('<svg width="1" height="1" xmlns="http://www.w3.org/2000/svg"><circle cx="0.5" cy="0.5" r="0.5" fill="transparent"/></svg>'),
+                                scaledSize: new google.maps.Size(1, 1),
+                                anchor: new google.maps.Point(0.5, 0.5)
+                            },
+                            optimized: false,
+                            zIndex: -1000 // Behind everything
+                        });
+                    });
+                    
+                    // Simple cluster renderer with just numbers
+                    const clusterRenderer = {
+                        render: ({ count, position }) => {
+                            const size = count < 10 ? 40 : count < 100 ? 46 : 52;
+                            
+                            const svg = `
+                                <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 50 50">
+                                    <defs>
+                                        <filter id="clusterShadow" x="-20%" y="-20%" width="140%" height="140%">
+                                            <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="rgba(0,0,0,0.35)" />
+                                        </filter>
+                                    </defs>
+                                    <circle cx="25" cy="25" r="22" fill="#D9262E" stroke="white" stroke-width="3" filter="url(#clusterShadow)"/>
+                                    <text x="50%" y="50%" dy=".3em" text-anchor="middle"
+                                          font-size="18" font-family="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+                                          font-weight="700" fill="white">
+                                        ${count}
+                                    </text>
+                                </svg>
+                            `;
+                            
+                            const icon = {
+                                url: 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg),
+                                scaledSize: new google.maps.Size(size, size),
+                                anchor: new google.maps.Point(size / 2, size / 2),
+                            };
+                            
+                            return new google.maps.Marker({
+                                position,
+                                icon,
+                                zIndex: google.maps.Marker.MAX_ZINDEX - 1,
+                            });
+                        }
+                    };
+                    
+                    // Initialize MarkerClusterer with invisible markers
+                    const clusterOptions = {
+                        map: map,
+                        markers: clusteringMarkers,
+                        renderer: clusterRenderer
+                    };
+                    
+                    if (SuperClusterAlgorithm) {
+                        clusterOptions.algorithm = new SuperClusterAlgorithm({
+                            radius: 80,
+                            maxZoom: 15
+                        });
+                    }
+                    
+                    markerCluster = new ClustererClass(clusterOptions);
+                    
+                    // Add click handler to clusters to zoom in
+                    if (markerCluster.addListener) {
+                        markerCluster.addListener('clusterclick', (event) => {
+                            const clusterMarker = event.marker;
+                            const clusterPosition = clusterMarker.getPosition();
+                            
+                            // Zoom in on cluster - zoom to at least 14 to show markers
+                            map.panTo(clusterPosition);
+                            const currentZoom = map.getZoom();
+                            const targetZoom = Math.max(currentZoom + 2, 14);
+                            map.setZoom(Math.min(targetZoom, 18));
+                            
+                            // Force update marker visibility after zoom
+                            setTimeout(() => {
+                                updateMarkerVisibility();
+                            }, 300);
+                        });
+                    }
+                    
+                    // Hide/show original markers based on zoom level
+                    // When zoomed out: show clusters, hide original markers
+                    // When zoomed in (>= 12): hide clusters, show original markers
+                    // IMPORTANT: Clustering markers must ALWAYS be visible to the clusterer so it can count them
+                    const updateMarkerVisibility = () => {
+                        const zoom = map.getZoom();
+                        // Show markers at zoom 12 or higher
+                        const shouldShowOriginalMarkers = zoom >= 12;
+                        
+                        // DO NOT hide clustering markers - they must remain visible to the clusterer
+                        // They are already invisible (1px transparent) so they won't show visually
+                        // But they need to be "visible" to the clusterer so it can count all markers
+                        // clusteringMarkers.forEach(marker => {
+                        //     if (marker) {
+                        //         marker.setVisible(true); // Always visible to clusterer
+                        //     }
+                        // });
+                        
+                        // Show/hide original markers
+                        mapMarkers.forEach(marker => {
+                            if (marker) {
+                                if (shouldShowOriginalMarkers) {
+                                    // Show original markers
+                                    if (marker.div) {
+                                        marker.div.style.display = 'block';
+                                        marker.div.style.visibility = 'visible';
+                                        marker.div.style.opacity = '1';
+                                    }
+                                    // Redraw overlay to ensure it's visible and positioned correctly
+                                    if (marker.draw) {
+                                        marker.draw();
+                                    }
+                                } else {
+                                    // Hide original markers when clusters are shown
+                                    if (marker.div) {
+                                        marker.div.style.display = 'none';
+                                    }
+                                }
+                            }
+                        });
+                    };
+                    
+                    // Listen to cluster updates to sync marker visibility
+                    if (markerCluster && markerCluster.addListener) {
+                        try {
+                            markerCluster.addListener('clusteringend', () => {
+                                updateMarkerVisibility();
+                            });
+                        } catch (e) {
+                            // Some versions might not support this event
+                        }
+                    }
+                    
+                    // Update on zoom change
+                    map.addListener('zoom_changed', () => {
+                        // Force cluster recalculation on zoom change
+                        setTimeout(() => {
+                            updateMarkerVisibility();
+                            // Force clusterer to recalculate with new zoom
+                            if (markerCluster && markerCluster.render) {
+                                markerCluster.render();
+                            }
+                        }, 100);
+                    });
+                    // Update on idle (after clustering updates)
+                    map.addListener('idle', () => {
+                        updateMarkerVisibility();
+                        // Force cluster recalculation when map is idle
+                        if (markerCluster && markerCluster.render) {
+                            markerCluster.render();
+                        }
+                    });
+                    // Update on bounds change
+                    map.addListener('bounds_changed', () => {
+                        setTimeout(() => {
+                            updateMarkerVisibility();
+                            // Force cluster recalculation on bounds change
+                            if (markerCluster && markerCluster.render) {
+                                markerCluster.render();
+                            }
+                        }, 50);
+                    });
+                    // Initial update
+                    setTimeout(() => {
+                        updateMarkerVisibility();
+                        // Force initial cluster render
+                        if (markerCluster && markerCluster.render) {
+                            markerCluster.render();
+                        }
+                    }, 300);
+                    
+                    console.log('Marker clustering initialized with original markers preserved');
+                } catch (error) {
+                    console.warn('Error initializing marker clusterer:', error);
+                }
+            }
+        };
+        
+        // Try to initialize immediately, or wait for library to load
+        if (typeof window !== 'undefined' && (window.markerClusterer || typeof markerClusterer !== 'undefined' || typeof MarkerClusterer !== 'undefined')) {
+            initClustering();
+        } else {
+            setTimeout(initClustering, 200);
+        }
+    }
     
     // Add user location marker if available
     if (userLocation) {
@@ -829,12 +1159,7 @@ function updateMapWithStations(stations) {
                 map.fitBounds(bounds, {
                     padding: 50
                 });
-                // Limit max zoom to prevent too much zooming in
-                map.addListener('bounds_changed', function() {
-                    if (map.getZoom() > 15) {
-                        map.setZoom(15);
-                    }
-                });
+                // Allow full zoom range - clustering handles visibility at different zoom levels
             }
             map.hasInitialFit = true; // Mark that initial fit has been done
         } catch (error) {
@@ -934,8 +1259,11 @@ function showStationDetailCard(station) {
     if (connectorsContainer) {
         if (station.connectorTypes && Array.isArray(station.connectorTypes) && station.connectorTypes.length > 0) {
             connectorsContainer.innerHTML = station.connectorTypes.map(type => getConnectorTypeIcon(type)).join('');
+            // Add right padding to make room for navigate button
+            connectorsContainer.style.paddingRight = '40px';
         } else {
             connectorsContainer.innerHTML = '<span style="font-size: 12px; color: var(--text-secondary);">No connector information available</span>';
+            connectorsContainer.style.paddingRight = '0';
         }
     }
     

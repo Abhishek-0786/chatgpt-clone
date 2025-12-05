@@ -14,6 +14,8 @@ const rabbitmqProducer = require('./rabbitmq/producer');
 const { QUEUES } = require('./rabbitmq/queues');
 const apiClient = require('./utils/api_client');
 const { MESSAGE_TYPE } = require('./utils/ocpp');
+const listManager = require('../backend/redis/listManager');
+const updater = require('../backend/redis/updater');
 
 // Socket.io instance (will be set by server.js)
 let ioInstance = null;
@@ -143,6 +145,10 @@ async function handleIncomingMessage(deviceId, ws, rawData) {
         messageSender.sendCallResult(ws, parsed.id, payload);
         await chargerManager.updateLastSeen(deviceId);
         console.log(`💓 Replied Heartbeat for ${deviceId}`);
+        // Update heartbeat in Redis
+        updater(deviceId, { heartbeat: true }).catch(err => {
+          console.error(`❌ [Updater] Error updating heartbeat for ${deviceId}:`, err.message);
+        });
         // Heartbeat is not logged (excluded from ALLOWED_LOG_TYPES)
         return;
       }
@@ -323,6 +329,25 @@ async function handleStopTransaction(deviceId, ws, charger, parsed, messageForSt
   messageSender.sendCallResult(ws, parsed.id, payload);
   console.log(`✅ Replied StopTransaction for ${deviceId}`);
 
+  // Update Redis status to "Available" when charging stops
+  // This ensures the UI updates immediately even if StatusNotification is delayed
+  try {
+    await updater(deviceId, { status: 'Available' });
+    console.log(`✅ [StopTransaction] Updated Redis status to Available for ${deviceId}`);
+  } catch (redisErr) {
+    console.error(`❌ [Redis] Error updating status in StopTransaction for ${deviceId}:`, redisErr.message);
+  }
+
+  // Update charger status in database
+  if (charger && charger.id) {
+    try {
+      await chargerManager.updateChargerStatus(deviceId, 'Available');
+      console.log(`✅ [StopTransaction] Updated charger ${deviceId} status to Available in database`);
+    } catch (dbErr) {
+      console.error(`❌ [DB] Error updating charger status in StopTransaction for ${deviceId}:`, dbErr.message);
+    }
+  }
+
   // Store messages
   // NOTE: StopTransaction is already logged in handleIncomingMessage via storeLog()
   // We only need to store the response, not the incoming message again (would cause duplicates)
@@ -352,6 +377,7 @@ async function handleStopTransaction(deviceId, ws, charger, parsed, messageForSt
  */
 async function handleStatusNotification(deviceId, ws, charger, parsed, messageForStorage, rawStr) {
   const connectorId = parsed.payload?.connectorId ?? 0;
+  const payload = parsed.payload || {};
   
   messageSender.sendCallResult(ws, parsed.id, {});
   console.log(`✅ Replied StatusNotification for ${deviceId}`);
@@ -364,6 +390,22 @@ async function handleStatusNotification(deviceId, ws, charger, parsed, messageFo
     console.error(`❌ [LOG] Error logging outgoing response:`, err.message);
   });
   
+  // Update Redis with listManager and updater
+  try {
+    // Push to events list and trim
+    await listManager.push(`events:${deviceId}`, payload);
+    await listManager.trim(`events:${deviceId}`, 100);
+    
+    // Update status (include errorCode if status indicates error like Faulted, Unavailable)
+    const updateData = { status: payload.status };
+    if (payload.status === 'Faulted' || payload.status === 'Unavailable') {
+      updateData.errorCode = payload.errorCode || payload.status;
+    }
+    await updater(deviceId, updateData);
+  } catch (err) {
+    console.error(`❌ [Redis] Error updating StatusNotification for ${deviceId}:`, err.message);
+  }
+  
   // Note: Incoming message already logged in handleIncomingMessage
   // storeMessageWithFallback is no longer needed for logging (would cause duplicates)
   // It's kept only for OCPP message queue publishing if needed
@@ -373,6 +415,8 @@ async function handleStatusNotification(deviceId, ws, charger, parsed, messageFo
  * Handle MeterValues
  */
 async function handleMeterValues(deviceId, ws, charger, parsed, messageForStorage, rawStr) {
+  const payload = parsed.payload || {};
+  
   messageSender.sendCallResult(ws, parsed.id, {});
   console.log(`✅ Replied MeterValues for ${deviceId}`);
 
@@ -387,6 +431,37 @@ async function handleMeterValues(deviceId, ws, charger, parsed, messageForStorag
     direction: 'Outgoing',
     raw: [MESSAGE_TYPE.CALL_RESULT, parsed.id, {}]
   }, JSON.stringify([MESSAGE_TYPE.CALL_RESULT, parsed.id, {}]));
+  
+  // Update Redis with listManager and updater
+  try {
+    // Push to OCPP list and trim
+    await listManager.push(`ocpp:list:${deviceId}`, payload);
+    await listManager.trim(`ocpp:list:${deviceId}`, 200);
+    
+    // Extract latest meter value (kWh)
+    let latestMeterValue = null;
+    if (payload.meterValue && Array.isArray(payload.meterValue) && payload.meterValue.length > 0) {
+      const sampledValues = payload.meterValue[0].sampledValue;
+      if (sampledValues && Array.isArray(sampledValues)) {
+        const energySample = sampledValues.find(sample => 
+          sample.measurand === 'Energy.Active.Import.Register' || 
+          sample.measurand === 'energy' ||
+          sample.measurand === 'Energy'
+        );
+        if (energySample && energySample.value) {
+          // Convert Wh to kWh
+          latestMeterValue = parseFloat(energySample.value) / 1000;
+        }
+      }
+    }
+    
+    // Update meter if we have a value
+    if (latestMeterValue !== null) {
+      await updater(deviceId, { meter: latestMeterValue });
+    }
+  } catch (err) {
+    console.error(`❌ [Redis] Error updating MeterValues for ${deviceId}:`, err.message);
+  }
 }
 
 /**

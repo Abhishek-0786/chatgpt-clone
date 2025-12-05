@@ -89,7 +89,7 @@ export async function loadConnectorSelection(chargingPointId, deviceId, deviceNa
                 <div class="card">
                     <h3 class="card-title">Select Connector</h3>
                     <div style="display: flex; flex-direction: column; gap: 12px;">
-                        ${connectors.length > 0 ? connectors.map(connector => {
+                        ${connectors.length > 0 ? connectors.sort((a, b) => (a.connectorId || 0) - (b.connectorId || 0)).map(connector => {
                             const connectorTypeNames = {
                                 'type2': 'Type 2',
                                 'ccs2': 'CCS',

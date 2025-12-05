@@ -23,6 +23,7 @@ export function loadTariffManagementModule() {
                 font-size: 24px;
                 font-weight: 600;
                 margin: 0;
+                color: var(--text-primary);
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
             }
             
@@ -33,20 +34,22 @@ export function loadTariffManagementModule() {
                 margin-bottom: 20px;
                 flex-wrap: wrap;
                 padding: 15px;
-                background-color: #f8f9fa;
+                background-color: var(--bg-tertiary);
                 border-radius: 8px;
-                border: 1px solid #e0e0e0;
+                border: 1px solid var(--border-color);
             }
             
             .search-input {
                 flex: 1;
                 min-width: 250px;
                 padding: 10px 15px;
-                border: 1px solid #e0e0e0;
+                border: 1px solid var(--input-border);
                 border-radius: 4px;
                 font-size: 14px;
+                background-color: var(--input-bg);
+                color: var(--text-primary);
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
-                transition: border-color 0.2s;
+                transition: border-color 0.2s, background-color 0.2s, color 0.2s;
             }
             
             .search-input:focus {
@@ -62,7 +65,7 @@ export function loadTariffManagementModule() {
             }
             
             .date-input-group span {
-                color: #666;
+                color: var(--text-secondary);
                 font-size: 14px;
                 font-weight: 500;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
@@ -70,17 +73,28 @@ export function loadTariffManagementModule() {
             
             .date-input {
                 padding: 10px 15px;
-                border: 1px solid #e0e0e0;
+                border: 1px solid var(--input-border);
                 border-radius: 4px;
                 font-size: 14px;
+                background-color: var(--input-bg);
+                color: var(--text-primary);
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
-                transition: border-color 0.2s;
+                transition: border-color 0.2s, background-color 0.2s, color 0.2s;
             }
             
             .date-input:focus {
                 outline: none;
                 border-color: #007bff;
                 box-shadow: 0 0 0 3px rgba(0,123,255,0.1);
+            }
+            
+            .date-input::-webkit-calendar-picker-indicator {
+                filter: invert(0);
+                cursor: pointer;
+            }
+            
+            [data-theme="dark"] .date-input::-webkit-calendar-picker-indicator {
+                filter: invert(1);
             }
             
             .apply-btn {
@@ -109,6 +123,7 @@ export function loadTariffManagementModule() {
                 gap: 15px;
                 align-items: center;
                 font-size: 12px;
+                color: var(--text-secondary);
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
             }
             
@@ -133,11 +148,11 @@ export function loadTariffManagementModule() {
             }
             
             .table-wrapper {
-                background-color: #ffffff;
-                border: 1px solid #e0e0e0;
+                background-color: var(--card-bg);
+                border: 1px solid var(--border-color);
                 border-radius: 8px;
                 overflow: hidden;
-                box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+                box-shadow: 0 1px 3px var(--shadow);
             }
             
             .table-scroll {
@@ -151,16 +166,16 @@ export function loadTariffManagementModule() {
             }
             
             .table-scroll::-webkit-scrollbar-track {
-                background: #f1f1f1;
+                background: var(--bg-tertiary);
             }
             
             .table-scroll::-webkit-scrollbar-thumb {
-                background: #888;
+                background: var(--text-muted);
                 border-radius: 4px;
             }
             
             .table-scroll::-webkit-scrollbar-thumb:hover {
-                background: #555;
+                background: var(--text-secondary);
             }
             
             #tariffTable {
@@ -169,7 +184,7 @@ export function loadTariffManagementModule() {
                 border-collapse: separate;
                 border-spacing: 0;
                 font-size: 14px;
-                background-color: #ffffff;
+                background-color: var(--card-bg);
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
             }
             
@@ -179,6 +194,10 @@ export function loadTariffManagementModule() {
                 position: sticky;
                 top: 0;
                 z-index: 10;
+            }
+            
+            [data-theme="dark"] #tariffTable thead {
+                background-color: #1a1a1a;
             }
             
             #tariffTable thead th {
@@ -200,24 +219,24 @@ export function loadTariffManagementModule() {
             }
             
             #tariffTable tbody tr {
-                border-bottom: 1px solid #e0e0e0;
+                border-bottom: 1px solid var(--border-color);
                 transition: background-color 0.2s;
-                background-color: #ffffff;
+                background-color: var(--card-bg);
             }
             
             #tariffTable tbody tr:nth-child(even) {
-                background-color: #f8f9fa;
+                background-color: var(--bg-tertiary);
             }
             
             #tariffTable tbody tr:hover {
-                background-color: #e9ecef;
+                background-color: var(--hover-bg);
             }
             
             #tariffTable tbody td {
                 padding: 14px 12px;
                 vertical-align: middle;
-                border-right: 1px solid #f0f0f0;
-                color: #333;
+                border-right: 1px solid var(--border-color);
+                color: var(--text-primary);
                 font-size: 14px;
                 white-space: nowrap;
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
@@ -249,7 +268,7 @@ export function loadTariffManagementModule() {
             }
             
             .tariff-id-text {
-                color: #333;
+                color: var(--text-primary);
                 font-weight: 500;
             }
             
@@ -262,7 +281,53 @@ export function loadTariffManagementModule() {
             
             .action-btn:hover {
                 transform: translateY(-1px);
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                box-shadow: 0 2px 4px var(--shadow);
+            }
+            
+            .table-footer {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-top: 20px;
+                padding: 15px 0;
+                border-top: 1px solid var(--border-color);
+            }
+            
+            .pagination {
+                margin: 0;
+            }
+            
+            .pagination .page-link {
+                color: #007bff;
+                border: 1px solid var(--border-color);
+                background-color: var(--card-bg);
+                padding: 8px 14px;
+                margin: 0 2px;
+                border-radius: 4px;
+                transition: all 0.2s;
+            }
+            
+            .pagination .page-link:hover {
+                background-color: var(--hover-bg);
+                border-color: var(--border-color);
+            }
+            
+            .pagination .page-item.active .page-link {
+                background-color: #007bff;
+                border-color: #007bff;
+                color: white;
+            }
+            
+            .pagination .page-item.disabled .page-link {
+                color: var(--text-muted);
+                pointer-events: none;
+                background-color: var(--card-bg);
+                border-color: var(--border-color);
+                opacity: 0.5;
+            }
+            
+            #showingTextTariff {
+                color: var(--text-secondary) !important;
             }
         </style>
         

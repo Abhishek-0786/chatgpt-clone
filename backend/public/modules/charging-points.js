@@ -13,6 +13,9 @@ let pointsFilters = {
     toDate: '',
     status: ''
 };
+// Sorting state
+let currentSortField = null;
+let currentSortDirection = 'asc'; // 'asc' or 'desc'
 
 // Export function to clear refresh interval (called when navigating away)
 export function clearPointsRefreshInterval() {
@@ -37,7 +40,7 @@ async function viewStationFromPoints(stationId) {
     });
     
     // Push state to browser history for station detail view
-    const url = `/cms.html?module=charging-stations&station=${stationId}`;
+    const url = `/cms?module=charging-stations&station=${stationId}`;
     window.history.pushState({ module: 'charging-stations', stationId: stationId, view: 'detail' }, '', url);
     
     // Dynamically import and load station detail view
@@ -142,7 +145,8 @@ export function loadChargingPointsModule() {
                 filter: invert(1);
             }
             
-            .status-select {
+            .status-select,
+            .sort-select {
                 padding: 10px 40px 10px 15px;
                 border: 1px solid var(--input-border);
                 border-radius: 4px;
@@ -161,17 +165,20 @@ export function loadChargingPointsModule() {
                 background-size: 16px;
             }
             
-            [data-theme="dark"] .status-select {
+            [data-theme="dark"] .status-select,
+            [data-theme="dark"] .sort-select {
                 background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23e0e0e0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
             }
             
-            .status-select:focus {
+            .status-select:focus,
+            .sort-select:focus {
                 outline: none;
                 border-color: var(--input-border);
                 box-shadow: none;
             }
             
-            .status-select:hover {
+            .status-select:hover,
+            .sort-select:hover {
                 border-color: var(--input-border);
             }
             
@@ -459,6 +466,15 @@ export function loadChargingPointsModule() {
                     <option value="Offline">Offline</option>
                     <option value="Faulted">Faulted</option>
                 </select>
+                <select class="sort-select" id="pointSort">
+                    <option value="">Sort By</option>
+                    <option value="sessions-asc">Sessions (Low to High)</option>
+                    <option value="sessions-desc">Sessions (High to Low)</option>
+                    <option value="billedAmount-asc">Billed Amount (Low to High)</option>
+                    <option value="billedAmount-desc">Billed Amount (High to Low)</option>
+                    <option value="energy-asc">Energy (Low to High)</option>
+                    <option value="energy-desc">Energy (High to Low)</option>
+                </select>
                 <button class="apply-btn" onclick="window.applyPointFilters()">APPLY</button>
             </div>
             
@@ -596,8 +612,8 @@ export async function loadPointsData(page = 1, limit = 10, searchTerm = '', from
         currentPointsPage = page;
         currentPointsLimit = limit;
         
-        // Check if we need to fetch all points (when date filters are active)
-        const hasClientSideFilters = fromDate || toDate;
+        // Check if we need to fetch all points (when date filters or sorting is active)
+        const hasClientSideFilters = fromDate || toDate || currentSortField;
         
         let allPoints = [];
         let totalPoints = 0;
@@ -683,6 +699,11 @@ export async function loadPointsData(page = 1, limit = 10, searchTerm = '', from
                 const pointDate = new Date(point.createdAt);
                 return pointDate <= to;
             });
+        }
+        
+        // Apply sorting if sort field is set
+        if (currentSortField) {
+            filteredPoints = sortPointsData(filteredPoints, currentSortField, currentSortDirection);
         }
         
         // Apply client-side pagination if filters are active
@@ -811,6 +832,38 @@ export function displayPoints(data) {
     generatePointsPagination(data.page, data.totalPages);
 }
 
+// Sort points data
+function sortPointsData(points, sortField, sortDirection) {
+    const sorted = [...points].sort((a, b) => {
+        let aValue, bValue;
+        
+        switch(sortField) {
+            case 'sessions':
+                aValue = a.sessions || 0;
+                bValue = b.sessions || 0;
+                break;
+            case 'billedAmount':
+                aValue = parseFloat(a.billedAmount || 0);
+                bValue = parseFloat(b.billedAmount || 0);
+                break;
+            case 'energy':
+                aValue = parseFloat(a.energy || 0);
+                bValue = parseFloat(b.energy || 0);
+                break;
+            default:
+                return 0;
+        }
+        
+        if (sortDirection === 'asc') {
+            return aValue - bValue;
+        } else {
+            return bValue - aValue;
+        }
+    });
+    
+    return sorted;
+}
+
 // Helper function to get C.STATUS badge class
 function getCStatusClass(cStatus) {
     if (!cStatus) return 'c-status-unavailable';
@@ -924,7 +977,7 @@ export async function viewPoint(chargingPointId) {
     clearPointsRefreshInterval();
     
     // Push state to browser history for point detail view (default to details tab)
-    const url = `/cms.html?module=charging-points&point=${chargingPointId}&tab=details`;
+    const url = `/cms?module=charging-points&point=${chargingPointId}&tab=details`;
     window.history.pushState({ module: 'charging-points', chargingPointId: chargingPointId, view: 'detail', tab: 'details' }, '', url);
     
     // Dynamically import and load charging point detail view (default to details tab)
@@ -973,6 +1026,17 @@ function applyPointFilters() {
     const fromDate = document.getElementById('pointFromDate')?.value || '';
     const toDate = document.getElementById('pointToDate')?.value || '';
     const statusSelect = document.getElementById('pointStatus')?.value || '';
+    const sortSelect = document.getElementById('pointSort')?.value || '';
+    
+    // Parse sort value
+    if (sortSelect) {
+        const [sortField, sortDirection] = sortSelect.split('-');
+        currentSortField = sortField;
+        currentSortDirection = sortDirection || 'asc';
+    } else {
+        currentSortField = null;
+        currentSortDirection = 'asc';
+    }
     
     // Update filters
     pointsFilters.search = searchTerm;
@@ -1031,6 +1095,7 @@ function restorePointFilters() {
     const fromDateInput = document.getElementById('pointFromDate');
     const toDateInput = document.getElementById('pointToDate');
     const statusSelect = document.getElementById('pointStatus');
+    const sortSelect = document.getElementById('pointSort');
     
     if (searchInput) searchInput.value = pointsFilters.search || '';
     if (fromDateInput) {
@@ -1050,6 +1115,13 @@ function restorePointFilters() {
         }
     }
     if (statusSelect) statusSelect.value = pointsFilters.status || '';
+    
+    // Restore sort selection
+    if (sortSelect && currentSortField) {
+        sortSelect.value = `${currentSortField}-${currentSortDirection}`;
+    } else if (sortSelect) {
+        sortSelect.value = '';
+    }
 }
 
 // Make functions globally available for onclick handlers

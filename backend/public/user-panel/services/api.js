@@ -57,7 +57,7 @@ async function apiCall(endpoint, options = {}) {
             
             // Redirect to login if not already on auth screen
             if (!window.location.href.includes('auth')) {
-                window.location.href = '/user-panel.html';
+                window.location.href = '/user-panel';
             }
             
             throw new Error('Session expired. Please login again.');

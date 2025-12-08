@@ -1,6 +1,6 @@
 // Test script for Redis client connection
 require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
-const redisClient = require('../redis/redisClient');
+const redisClient = require('../libs/redis/redisClient');
 
 async function testRedisConnection() {
   console.log('🧪 Testing Redis Connection...\n');

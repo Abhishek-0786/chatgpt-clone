@@ -2,6 +2,10 @@
 import { getActiveSessions, getCompletedSessions } from '../services/api.js';
 import { formatDate } from '../utils/helpers.js';
 
+// Global variables for sorting
+let currentSessionsSortField = null;
+let currentSessionsSortDirection = 'asc';
+
 // Export main function to load module
 export function loadChargingSessionsModule() {
     const moduleContent = document.getElementById('moduleContent');
@@ -91,6 +95,40 @@ export function loadChargingSessionsModule() {
             
             [data-theme="dark"] .date-input::-webkit-calendar-picker-indicator {
                 filter: invert(1);
+            }
+            
+            .sort-select {
+                padding: 10px 40px 10px 15px;
+                border: 1px solid var(--input-border);
+                border-radius: 4px;
+                font-size: 14px;
+                font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+                background-color: var(--input-bg);
+                color: var(--text-primary);
+                cursor: pointer;
+                transition: border-color 0.2s, background-color 0.2s, color 0.2s;
+                appearance: none;
+                -webkit-appearance: none;
+                -moz-appearance: none;
+                background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23333' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+                background-repeat: no-repeat;
+                background-position: right 12px center;
+                background-size: 16px;
+                min-width: 200px;
+            }
+            
+            [data-theme="dark"] .sort-select {
+                background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23e0e0e0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+            }
+            
+            .sort-select:focus {
+                outline: none;
+                border-color: var(--input-border);
+                box-shadow: none;
+            }
+            
+            .sort-select:hover {
+                border-color: var(--input-border);
             }
             
             .apply-btn {
@@ -315,6 +353,15 @@ export function loadChargingSessionsModule() {
                     <span>From</span>
                     <input type="date" class="date-input" id="toDate" onchange="window.handleSessionsToDateChange()">
                     <span>To</span>
+                    <select class="sort-select" id="sessionSort" style="display: none;">
+                        <option value="">Sort By</option>
+                        <option value="duration-asc">Session Duration (Low to High)</option>
+                        <option value="duration-desc">Session Duration (High to Low)</option>
+                        <option value="billedAmount-asc">Billed Amount (Low to High)</option>
+                        <option value="billedAmount-desc">Billed Amount (High to Low)</option>
+                        <option value="energy-asc">Energy (Low to High)</option>
+                        <option value="energy-desc">Energy (High to Low)</option>
+                    </select>
                     <button class="apply-btn" onclick="window.applyFilters()">APPLY</button>
                 </div>
             </div>
@@ -492,6 +539,17 @@ export function switchSessionsTab(tabName) {
         // Setup date pickers when filters are shown
         if (tabName === 'completed') {
             setupSessionsDatePickers();
+            // Show sort dropdown for completed sessions
+            const sortSelect = document.getElementById('sessionSort');
+            if (sortSelect) {
+                sortSelect.style.display = 'block';
+            }
+        } else {
+            // Hide sort dropdown for active sessions
+            const sortSelect = document.getElementById('sessionSort');
+            if (sortSelect) {
+                sortSelect.style.display = 'none';
+            }
         }
     }
     
@@ -502,6 +560,12 @@ export function switchSessionsTab(tabName) {
     document.getElementById('sessionSearch').value = '';
     document.getElementById('fromDate').value = '';
     document.getElementById('toDate').value = '';
+    const sortSelect = document.getElementById('sessionSort');
+    if (sortSelect) {
+        sortSelect.value = '';
+    }
+    currentSessionsSortField = null;
+    currentSessionsSortDirection = 'asc';
     loadSessionsData();
 }
 
@@ -511,6 +575,17 @@ export function applyFilters() {
     const searchTerm = document.getElementById('sessionSearch')?.value || '';
     const fromDate = document.getElementById('fromDate')?.value || '';
     const toDate = document.getElementById('toDate')?.value || '';
+    const sortSelect = document.getElementById('sessionSort')?.value || '';
+    
+    // Parse sort value
+    if (sortSelect) {
+        const [sortField, sortDirection] = sortSelect.split('-');
+        currentSessionsSortField = sortField;
+        currentSessionsSortDirection = sortDirection || 'asc';
+    } else {
+        currentSessionsSortField = null;
+        currentSessionsSortDirection = 'asc';
+    }
     
     // Reload data with filters
     const currentTab = window.currentSessionsTab || 'active';
@@ -522,20 +597,109 @@ export async function loadSessionsData(page = 1, limit = 10, searchTerm = '', fr
     try {
         const currentTab = window.currentSessionsTab || 'active';
         
-        let data;
-        if (currentTab === 'active') {
-            // Load active sessions
-            data = await getActiveSessions({ page, limit, search: searchTerm });
+        // Check if we need to fetch all data for client-side sorting (only for completed sessions)
+        const hasClientSideFilters = currentTab === 'completed' && (currentSessionsSortField || fromDate || toDate);
+        
+        let allSessions = [];
+        let totalSessions = 0;
+        
+        if (hasClientSideFilters) {
+            // Fetch all sessions for client-side sorting/filtering
+            let hasMore = true;
+            let currentPage = 1;
+            const fetchLimit = 100; // Fetch in batches
+            
+            while (hasMore) {
+                const batchData = await getCompletedSessions({ 
+                    page: currentPage, 
+                    limit: fetchLimit, 
+                    search: searchTerm, 
+                    fromDate: '', 
+                    toDate: '' // Don't filter by date on backend, we'll do it client-side
+                });
+                
+                if (batchData.success && batchData.sessions) {
+                    allSessions = allSessions.concat(batchData.sessions);
+                    totalSessions = batchData.total || allSessions.length;
+                    
+                    if (batchData.sessions.length < fetchLimit || allSessions.length >= totalSessions) {
+                        hasMore = false;
+                    } else {
+                        currentPage++;
+                    }
+                } else {
+                    hasMore = false;
+                }
+            }
         } else {
-            // Load completed sessions
-            data = await getCompletedSessions({ page, limit, search: searchTerm, fromDate, toDate });
+            // Use normal pagination when no client-side filters
+            let data;
+            if (currentTab === 'active') {
+                // Load active sessions
+                data = await getActiveSessions({ page, limit, search: searchTerm });
+            } else {
+                // Load completed sessions
+                data = await getCompletedSessions({ page, limit, search: searchTerm, fromDate, toDate });
+            }
+            
+            if (!data.success) {
+                throw new Error(data.error || 'Failed to load sessions');
+            }
+            
+            allSessions = data.sessions || [];
+            totalSessions = data.total || 0;
         }
         
-        if (!data.success) {
-            throw new Error(data.error || 'Failed to load sessions');
+        // Apply client-side date filtering if needed
+        let filteredSessions = allSessions;
+        
+        if (fromDate) {
+            const from = new Date(fromDate);
+            from.setHours(0, 0, 0, 0);
+            filteredSessions = filteredSessions.filter(session => {
+                const sessionDate = new Date(session.startTime);
+                sessionDate.setHours(0, 0, 0, 0);
+                return sessionDate >= from;
+            });
         }
         
-        displaySessions(data);
+        if (toDate) {
+            const to = new Date(toDate);
+            to.setHours(23, 59, 59, 999);
+            filteredSessions = filteredSessions.filter(session => {
+                const sessionDate = new Date(session.startTime);
+                return sessionDate <= to;
+            });
+        }
+        
+        // Apply sorting if sort field is set (only for completed sessions)
+        if (currentTab === 'completed' && currentSessionsSortField) {
+            filteredSessions = sortSessionsData(filteredSessions, currentSessionsSortField, currentSessionsSortDirection);
+        }
+        
+        // Apply client-side pagination if filters are active
+        let paginatedSessions = filteredSessions;
+        let totalPages = 1;
+        let total = filteredSessions.length;
+        
+        if (hasClientSideFilters) {
+            totalPages = Math.ceil(total / limit);
+            const startIndex = (page - 1) * limit;
+            const endIndex = startIndex + limit;
+            paginatedSessions = filteredSessions.slice(startIndex, endIndex);
+        } else {
+            totalPages = Math.ceil(totalSessions / limit);
+        }
+        
+        const displayData = {
+            sessions: paginatedSessions,
+            total: total,
+            page: page,
+            limit: limit,
+            totalPages: totalPages
+        };
+        
+        displaySessions(displayData);
     } catch (error) {
         console.error('Error loading sessions:', error);
         const currentTab = window.currentSessionsTab || 'active';
@@ -709,6 +873,52 @@ function loadSessionsDataMock(page = 1, limit = 10, searchTerm = '', fromDate = 
             </tr>
         `;
     }
+}
+
+// Helper function to convert duration string (HH:MM:SS) to seconds for sorting
+function durationToSeconds(duration) {
+    if (!duration || duration === 'N/A') return 0;
+    const parts = duration.split(':');
+    if (parts.length !== 3) return 0;
+    const hours = parseInt(parts[0]) || 0;
+    const minutes = parseInt(parts[1]) || 0;
+    const seconds = parseInt(parts[2]) || 0;
+    return hours * 3600 + minutes * 60 + seconds;
+}
+
+// Sort sessions data
+function sortSessionsData(sessions, sortField, sortDirection) {
+    if (!sortField || !sessions || sessions.length === 0) return sessions;
+    
+    const sorted = [...sessions].sort((a, b) => {
+        let aValue, bValue;
+        
+        switch(sortField) {
+            case 'duration':
+                // Convert duration string to seconds for comparison
+                aValue = durationToSeconds(a.sessionDuration);
+                bValue = durationToSeconds(b.sessionDuration);
+                break;
+            case 'billedAmount':
+                aValue = parseFloat(a.billedAmount || 0);
+                bValue = parseFloat(b.billedAmount || 0);
+                break;
+            case 'energy':
+                aValue = parseFloat(a.energy || 0);
+                bValue = parseFloat(b.energy || 0);
+                break;
+            default:
+                return 0;
+        }
+        
+        if (sortDirection === 'asc') {
+            return aValue - bValue;
+        } else {
+            return bValue - aValue;
+        }
+    });
+    
+    return sorted;
 }
 
 // Export display function

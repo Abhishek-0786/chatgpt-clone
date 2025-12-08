@@ -48,16 +48,9 @@ export async function loadChargingPointDetailView(chargingPointId, activeTab = '
         window.currentChargingPointDeviceId = point.deviceId;
         initCmsSocket();
         
-        // Calculate real-time status for header
-        const OFFLINE_THRESHOLD = 5 * 60 * 1000; // 5 minutes
+        // Use real-time status from backend (already calculated)
+        // Backend now returns calculated real-time status, so use it directly
         let headerStatus = point.status || 'Offline';
-        if (point.chargerLastSeen) {
-            const lastActiveTime = new Date(point.chargerLastSeen);
-            const now = new Date();
-            const timeDiff = now - lastActiveTime;
-            const isOnline = timeDiff <= OFFLINE_THRESHOLD;
-            headerStatus = isOnline ? 'Online' : 'Offline';
-        }
         
         // Create detail view HTML
         moduleContent.innerHTML = `
@@ -924,16 +917,9 @@ async function loadConnectorsTab(chargingPointId, point, isInitialLoad = false) 
             return;
         }
         
-        // Calculate real-time online status based on charger's lastSeen
-        const OFFLINE_THRESHOLD = 5 * 60 * 1000; // 5 minutes
+        // Use real-time status from backend (already calculated)
+        // Backend now returns calculated real-time status, so use it directly
         let realTimeStatus = point.status || 'Offline';
-        if (point.chargerLastSeen) {
-            const lastActiveTime = new Date(point.chargerLastSeen);
-            const now = new Date();
-            const timeDiff = now - lastActiveTime;
-            const isOnline = timeDiff <= OFFLINE_THRESHOLD;
-            realTimeStatus = isOnline ? 'Online' : 'Offline';
-        }
         
         // Get active transactions for each connector
         const connectorsWithStatus = await Promise.all(
@@ -3344,7 +3330,42 @@ function initCmsSocket() {
             const connectorId = payload.data.connectorId ?? 0;
             const key = `${payload.data.deviceId}_${connectorId}`;
             pendingRemoteStarts.delete(key);
-            scheduleConnectorRefresh();
+            
+            // Immediately update button state if we're on the connectors tab
+            // Find button by class and check if it's for the right connector
+            const stopButtons = document.querySelectorAll('.btn-stop-charging');
+            stopButtons.forEach(button => {
+                const onclickAttr = button.getAttribute('onclick') || '';
+                if (onclickAttr.includes(`'${payload.data.deviceId}'`) && onclickAttr.includes(`${connectorId},`)) {
+                    button.disabled = false;
+                    button.className = 'btn-start-charging';
+                    button.innerHTML = '<i class="fas fa-play me-2"></i>Start Charging';
+                    // Update onclick to start charging
+                    button.setAttribute('onclick', `window.startChargingFromDetail('${payload.data.deviceId}', ${connectorId}, this)`);
+                }
+            });
+            
+            scheduleConnectorRefresh(300); // Quick refresh
+            return;
+        }
+        
+        if (payload.type === 'charging.remote.stop.response') {
+            // Also handle stop response (includes rejected cases)
+            const connectorId = payload.data.connectorId ?? 0;
+            if (payload.data.status === 'Accepted' || payload.data.status === 'Rejected') {
+                const stopButtons = document.querySelectorAll('.btn-stop-charging');
+                stopButtons.forEach(button => {
+                    const onclickAttr = button.getAttribute('onclick') || '';
+                    if (onclickAttr.includes(`'${payload.data.deviceId}'`) && onclickAttr.includes(`${connectorId},`)) {
+                        button.disabled = false;
+                        button.className = 'btn-start-charging';
+                        button.innerHTML = '<i class="fas fa-play me-2"></i>Start Charging';
+                        // Update onclick to start charging
+                        button.setAttribute('onclick', `window.startChargingFromDetail('${payload.data.deviceId}', ${connectorId}, this)`);
+                    }
+                });
+                scheduleConnectorRefresh(300);
+            }
             return;
         }
 
@@ -3440,10 +3461,12 @@ async function startChargingFromDetail(deviceId, connectorId, button) {
         button.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Starting...';
         
 
+        const authToken = localStorage.getItem('authToken');
         const response = await fetch('/api/cms/charging/start', {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
             },
             body: JSON.stringify({
                 deviceId: deviceId,
@@ -3547,10 +3570,12 @@ async function stopChargingFromDetail(deviceId, connectorId, transactionId, sess
         
         console.log(`📤 [Stop Charging] Sending request: deviceId=${deviceId}, connectorId=${connectorId}, transactionId=${normalizedTransactionId}, sessionId=${normalizedSessionId}`);
         
+        const authToken = localStorage.getItem('authToken');
         const response = await fetch('/api/cms/charging/stop', {
             method: 'POST',
             headers: {
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${authToken}`
             },
             body: JSON.stringify({
                 deviceId: deviceId,
@@ -3569,17 +3594,12 @@ async function stopChargingFromDetail(deviceId, connectorId, transactionId, sess
             showSuccess('Charging stopped successfully!');
 
             clearPendingStart(deviceId, connectorId);
-            // Reload connectors tab to update status after a short delay
-            setTimeout(async () => {
-                if (window.currentChargingPointId) {
-                    const pointResponse = await getChargingPoint(window.currentChargingPointId);
-                    if (pointResponse.success && pointResponse.point) {
-
-                        await loadConnectorsTab(window.currentChargingPointId, pointResponse.point, false);
-                    }
-                }
-            }, 3000); // Wait 3 seconds for StopTransaction to arrive and ChargingSession to update
-            // Also refresh again after 8 seconds to ensure it's fully updated
+            
+            // Immediately reset button state (will be updated by refresh)
+            button.disabled = false;
+            button.innerHTML = '<i class="fas fa-play me-2"></i>Start Charging';
+            
+            // Reload connectors tab immediately and then again after delays
             setTimeout(async () => {
                 if (window.currentChargingPointId) {
                     const pointResponse = await getChargingPoint(window.currentChargingPointId);
@@ -3587,7 +3607,26 @@ async function stopChargingFromDetail(deviceId, connectorId, transactionId, sess
                         await loadConnectorsTab(window.currentChargingPointId, pointResponse.point, false);
                     }
                 }
-            }, 8000);
+            }, 500); // Quick refresh after 500ms
+            
+            setTimeout(async () => {
+                if (window.currentChargingPointId) {
+                    const pointResponse = await getChargingPoint(window.currentChargingPointId);
+                    if (pointResponse.success && pointResponse.point) {
+                        await loadConnectorsTab(window.currentChargingPointId, pointResponse.point, false);
+                    }
+                }
+            }, 2000); // Wait 2 seconds for StopTransaction to arrive and ChargingSession to update
+            
+            // Also refresh again after 5 seconds to ensure it's fully updated
+            setTimeout(async () => {
+                if (window.currentChargingPointId) {
+                    const pointResponse = await getChargingPoint(window.currentChargingPointId);
+                    if (pointResponse.success && pointResponse.point) {
+                        await loadConnectorsTab(window.currentChargingPointId, pointResponse.point, false);
+                    }
+                }
+            }, 5000);
         } else {
 
             // Show error message from API or default message
@@ -3612,7 +3651,7 @@ async function stopChargingFromDetail(deviceId, connectorId, transactionId, sess
 // Switch tab
 export function switchPointTab(tabName, chargingPointId) {
     // Update URL with tab parameter
-    const url = `/cms.html?module=charging-points&point=${chargingPointId}&tab=${tabName}`;
+    const url = `/cms?module=charging-points&point=${chargingPointId}&tab=${tabName}`;
     window.history.pushState({ module: 'charging-points', chargingPointId: chargingPointId, tab: tabName }, '', url);
     
     // Clear logs refresh interval if switching away from logs tab
@@ -3685,7 +3724,7 @@ export function switchPointTab(tabName, chargingPointId) {
 // Edit point details
 export function editPointDetails(chargingPointId) {
     // Push state to browser history for edit view
-    const url = `/cms.html?module=charging-points&point=${chargingPointId}&action=edit`;
+    const url = `/cms?module=charging-points&point=${chargingPointId}&action=edit`;
     window.history.pushState({ module: 'charging-points', chargingPointId: chargingPointId, view: 'edit' }, '', url);
     
     // Dynamically import and open edit charging point form
@@ -3708,7 +3747,7 @@ export function goBackToPointsList() {
     }
     
     // Update URL and load points list
-    const url = `/cms.html?module=charging-points`;
+    const url = `/cms?module=charging-points`;
     window.history.pushState({ module: 'charging-points' }, '', url);
     loadChargingPointsModule();
 }

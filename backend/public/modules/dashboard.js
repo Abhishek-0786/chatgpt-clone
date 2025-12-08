@@ -763,18 +763,21 @@ async function loadChartData() {
 // Load Sessions Chart independently
 async function loadSessionsChart() {
     try {
-        const sessionsPeriod = document.getElementById('sessionsPeriod')?.value || 30;
+        const sessionsPeriod = parseInt(document.getElementById('sessionsPeriod')?.value || 30);
         
+        // Pass period as query parameter to backend
         const response = await fetch(`/api/cms/dashboard/charts?period=${sessionsPeriod}`);
         
         if (!response.ok) {
             throw new Error('Failed to fetch sessions chart data');
         }
         
-        const data = await response.json();
+        const result = await response.json();
         
-        if (data.success) {
-            renderSessionsChart(data.sessions, sessionsPeriod);
+        if (result.success && result.data) {
+            // Backend now returns filtered data based on period
+            const sessionsData = result.data.sessions || [];
+            renderSessionsChart(sessionsData, sessionsPeriod);
         }
     } catch (error) {
         console.error('Error loading sessions chart:', error);
@@ -784,18 +787,21 @@ async function loadSessionsChart() {
 // Load Revenue Chart independently
 async function loadRevenueChart() {
     try {
-        const revenuePeriod = document.getElementById('revenuePeriod')?.value || 30;
+        const revenuePeriod = parseInt(document.getElementById('revenuePeriod')?.value || 30);
         
+        // Pass period as query parameter to backend
         const response = await fetch(`/api/cms/dashboard/charts?period=${revenuePeriod}`);
         
         if (!response.ok) {
             throw new Error('Failed to fetch revenue chart data');
         }
         
-        const data = await response.json();
+        const result = await response.json();
         
-        if (data.success) {
-            renderRevenueChart(data.revenue, revenuePeriod);
+        if (result.success && result.data) {
+            // Backend now returns filtered data based on period
+            const revenueData = result.data.revenue || [];
+            renderRevenueChart(revenueData, revenuePeriod);
         }
     } catch (error) {
         console.error('Error loading revenue chart:', error);
@@ -813,17 +819,44 @@ function renderSessionsChart(sessionsData, period) {
     }
     
     const labels = sessionsData.map(item => {
-        const date = new Date(item.date);
+        // Handle different date keys: date, week, or month
+        const dateValue = item.date || item.week || item.month;
+        if (!dateValue) return 'N/A';
+        
+        // Parse date - handle ISO string format
+        let date;
+        if (typeof dateValue === 'string' && dateValue.includes('T')) {
+            // ISO string - parse and use local date to avoid timezone issues
+            const isoDate = new Date(dateValue);
+            // Create a new date using local timezone components to avoid day shift
+            date = new Date(isoDate.getFullYear(), isoDate.getMonth(), isoDate.getDate());
+        } else {
+            date = new Date(dateValue);
+        }
+        
+        // Check if date is valid
+        if (isNaN(date.getTime())) {
+            console.warn('Invalid date value:', dateValue);
+            return 'Invalid Date';
+        }
+        
+        // Format based on period
         if (period <= 7) {
+            // For 7 days or less, show day and month
             return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         } else if (period <= 30) {
+            // For 30 days, show day and month
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        } else if (period <= 90) {
+            // For weekly data, show week range or start date
             return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         } else {
-            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            // For monthly data, show month and year
+            return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
         }
     });
     
-    const data = sessionsData.map(item => item.count);
+    const data = sessionsData.map(item => item.value || 0);
     
     sessionsChart = new Chart(ctx, {
         type: 'line',
@@ -910,17 +943,44 @@ function renderRevenueChart(revenueData, period) {
     }
     
     const labels = revenueData.map(item => {
-        const date = new Date(item.date);
+        // Handle different date keys: date, week, or month
+        const dateValue = item.date || item.week || item.month;
+        if (!dateValue) return 'N/A';
+        
+        // Parse date - handle ISO string format
+        let date;
+        if (typeof dateValue === 'string' && dateValue.includes('T')) {
+            // ISO string - parse and use local date to avoid timezone issues
+            const isoDate = new Date(dateValue);
+            // Create a new date using local timezone components to avoid day shift
+            date = new Date(isoDate.getFullYear(), isoDate.getMonth(), isoDate.getDate());
+        } else {
+            date = new Date(dateValue);
+        }
+        
+        // Check if date is valid
+        if (isNaN(date.getTime())) {
+            console.warn('Invalid date value:', dateValue);
+            return 'Invalid Date';
+        }
+        
+        // Format based on period
         if (period <= 7) {
+            // For 7 days or less, show day and month
             return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         } else if (period <= 30) {
+            // For 30 days, show day and month
+            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        } else if (period <= 90) {
+            // For weekly data, show week range or start date
             return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
         } else {
-            return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            // For monthly data, show month and year
+            return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
         }
     });
     
-    const data = revenueData.map(item => item.revenue);
+    const data = revenueData.map(item => item.value || 0);
     
     revenueChart = new Chart(ctx, {
         type: 'bar',
@@ -1203,7 +1263,10 @@ function updateStationStatus(stationStatus) {
         return;
     }
     
-    if (stationStatus.offlineStations && stationStatus.offlineStations.length > 0) {
+    const offlineCount = stationStatus.offline || 0;
+    
+    // Check offline count first - if there are offline stations, show them
+    if (offlineCount > 0 && stationStatus.offlineStations && stationStatus.offlineStations.length > 0) {
         // Limit to 3 stations max to prevent layout breaking
         const displayStations = stationStatus.offlineStations.slice(0, 3);
         const remainingCount = stationStatus.offlineStations.length - 3;
@@ -1214,7 +1277,7 @@ function updateStationStatus(stationStatus) {
                 ${displayStations.map(s => `
                     <div style="padding: 6px 10px; background: #fee2e2; border-radius: 6px; margin-bottom: 6px; font-size: 12px; display: flex; align-items: center; min-width: 0;">
                         <i class="fas fa-exclamation-circle" style="color: #ef4444; margin-right: 6px; flex-shrink: 0;"></i>
-                        <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; color: #721c24; font-weight: 500;">${s.name}</span>
+                        <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; color: #721c24; font-weight: 500;">${s.name || s.stationName || 'Unknown Station'}</span>
                     </div>
                 `).join('')}
                 ${remainingCount > 0 ? `
@@ -1224,7 +1287,11 @@ function updateStationStatus(stationStatus) {
                 ` : ''}
             </div>
         `;
+    } else if (offlineCount > 0) {
+        // If offline count > 0 but no array, show count message
+        offlineList.innerHTML = `<div style="text-align: center; color: var(--text-muted); padding: 20px; font-size: 12px;">${offlineCount} station${offlineCount > 1 ? 's are' : ' is'} offline</div>`;
     } else {
+        // Only show "All stations are online" when offline count is actually 0
         offlineList.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 20px; font-size: 12px;">All stations are online</div>';
     }
 }
@@ -1326,7 +1393,7 @@ async function viewStationFromDashboard(stationId) {
     });
     
     // Push state to browser history for station detail view
-    const url = `/cms.html?module=charging-stations&station=${stationId}&tab=details`;
+    const url = `/cms?module=charging-stations&station=${stationId}&tab=details`;
     window.history.pushState({ module: 'charging-stations', stationId: stationId, view: 'detail', tab: 'details' }, '', url);
     
     // Dynamically import and load station detail view
@@ -1446,7 +1513,7 @@ async function viewCustomerDetailFromDashboard(customerId) {
     // Navigate to customers module and load customer detail view
     try {
         // Push state to browser history for customer detail view
-        const url = `/cms.html?module=customers&customer=${customerId}&tab=details`;
+        const url = `/cms?module=customers&customer=${customerId}&tab=details`;
         window.history.pushState({ module: 'customers', customerId: customerId, view: 'detail', tab: 'details' }, '', url);
         
         // Dynamically import and load customer detail view

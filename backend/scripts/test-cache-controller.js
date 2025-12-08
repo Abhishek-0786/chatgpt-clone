@@ -1,6 +1,6 @@
 // Test script for Cache Controller
 require('dotenv').config({ path: require('path').join(__dirname, '../.env') });
-const cacheController = require('../redis/cacheController');
+const cacheController = require('../libs/redis/cacheController');
 
 async function testCacheController() {
   console.log('🧪 Testing Cache Controller...\n');
@@ -100,7 +100,7 @@ async function testCacheController() {
     console.log('✅ All tests passed! Cache Controller is working correctly.\n');
     
     // Close Redis connection
-    const redisClient = require('../redis/redisClient');
+    const redisClient = require('../libs/redis/redisClient');
     await redisClient.quit();
     console.log('🔴 Redis connection closed.');
     

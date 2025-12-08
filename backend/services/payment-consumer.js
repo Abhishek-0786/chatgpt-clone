@@ -6,11 +6,11 @@
  * TODO: Ensure idempotency to avoid double wallet updates
  */
 
-const BaseConsumer = require('./rabbitmq/consumer');
-const { QUEUES, ROUTING_KEYS } = require('./rabbitmq/queues');
+const BaseConsumer = require('../libs/rabbitmq/consumer');
+const { QUEUES, ROUTING_KEYS } = require('../libs/rabbitmq/queues');
 const { Wallet, WalletTransaction } = require('../models');
 const { Op } = require('sequelize');
-const { getPaymentDetails } = require('../utils/razorpay');
+const { getPaymentDetails } = require('../libs/razorpay');
 
 class PaymentConsumer extends BaseConsumer {
   constructor() {

@@ -83,6 +83,14 @@ function dashboardStatsKey() {
   return 'dashboard:stats';
 }
 
+/**
+ * Get dashboard charts key
+ * @returns {string} Redis key: dashboard:charts
+ */
+function dashboardChartsKey() {
+  return 'dashboard:charts';
+}
+
 module.exports = {
   statusKey,
   meterKey,
@@ -92,6 +100,7 @@ module.exports = {
   meterHistoryKey,
   metadataKey,
   stationChargingPointsKey,
-  dashboardStatsKey
+  dashboardStatsKey,
+  dashboardChartsKey
 };
 

@@ -1,23 +1,29 @@
 const express = require('express');
 const { body, validationResult, query } = require('express-validator');
-const jwt = require('jsonwebtoken');
-const { Customer, Station, ChargingPoint, Connector, Tariff, Vehicle, Wallet, WalletTransaction, ChargingSession } = require('../models');
 const { authenticateCustomerToken } = require('../middleware/customerAuth');
+const customerController = require('../controllers/customerController');
+const walletController = require('../controllers/walletController');
+const paymentController = require('../controllers/paymentController');
+const stationController = require('../controllers/stationController');
+const chargingController = require('../controllers/chargingController');
+const paymentService = require('../services/paymentService');
+const walletService = require('../services/walletService');
+
+// Import remaining models and services for routes not yet refactored
+const { Customer, Station, ChargingPoint, Connector, Tariff, Vehicle, Wallet, WalletTransaction, ChargingSession } = require('../models');
 const { Op } = require('sequelize');
 const Charger = require('../models/Charger');
 const ChargerData = require('../models/ChargerData');
-const { createOrder, verifyPayment, getPaymentDetails, verifyWebhookSignature } = require('../utils/razorpay');
-const crypto = require('crypto');
 const axios = require('axios');
 
-// RabbitMQ producer (optional - only if enabled)
+// RabbitMQ producer (optional - only if enabled) - Still needed for charging routes
 const ENABLE_RABBITMQ = process.env.ENABLE_RABBITMQ === 'true';
 let publishChargingEvent = null;
 let publishNotification = null;
 let publishChargingCommand = null;
 if (ENABLE_RABBITMQ) {
   try {
-    const producer = require('../services/rabbitmq/producer');
+    const producer = require('../libs/rabbitmq/producer');
     publishChargingEvent = producer.publishChargingEvent;
     publishNotification = producer.publishNotification;
     publishChargingCommand = producer.publishChargingCommand;
@@ -56,69 +62,17 @@ router.post('/auth/register', [
       }
       return true;
     })
-], async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ 
-        success: false,
-        error: errors.array()[0].msg,
-        errors: errors.array()
-      });
-    }
-
-    const { fullName, email, phone, password } = req.body;
-
-    // Check if customer already exists
-    const existingCustomer = await Customer.findOne({
-      where: {
-        [Op.or]: [{ email }, { phone }]
-      }
-    });
-
-    if (existingCustomer) {
-      return res.status(400).json({ 
-        success: false,
-        error: 'Customer with this email or phone number already exists' 
-      });
-    }
-
-        // Create new customer
-        const customer = await Customer.create({
-          fullName,
-          email,
-          phone,
-          password
-        });
-
-        // Auto-create wallet for new customer
-        await Wallet.create({
-          customerId: customer.id,
-          balance: 0.00,
-          currency: 'INR'
-        });
-
-        // Generate JWT token
-        const token = jwt.sign(
-          { customerId: customer.id, email: customer.email },
-          process.env.JWT_SECRET,
-          { expiresIn: '7d' }
-        );
-
-        res.status(201).json({
-          success: true,
-          message: 'Customer registered successfully',
-          token,
-          user: customer.toJSON()
-        });
-  } catch (error) {
-    console.error('Registration error:', error);
-    res.status(500).json({ 
+], (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ 
       success: false,
-      error: 'Internal server error' 
+      error: errors.array()[0].msg,
+      errors: errors.array()
     });
   }
-});
+  next();
+}, customerController.register);
 
 // Login (User Panel)
 router.post('/auth/login', [
@@ -128,74 +82,20 @@ router.post('/auth/login', [
   body('password')
     .notEmpty()
     .withMessage('Password is required')
-], async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ 
-        success: false,
-        error: errors.array()[0].msg,
-        errors: errors.array()
-      });
-    }
-
-    const { email, password } = req.body;
-
-    // Find customer by email
-    const customer = await Customer.findOne({ where: { email } });
-    if (!customer) {
-      return res.status(401).json({ 
-        success: false,
-        error: 'Invalid credentials' 
-      });
-    }
-
-    // Validate password
-    const isValidPassword = await customer.validatePassword(password);
-    if (!isValidPassword) {
-      return res.status(401).json({ 
-        success: false,
-        error: 'Invalid credentials' 
-      });
-    }
-
-    // Generate JWT token
-    const token = jwt.sign(
-      { customerId: customer.id, email: customer.email },
-      process.env.JWT_SECRET,
-      { expiresIn: '7d' }
-    );
-
-    res.json({
-      success: true,
-      message: 'Login successful',
-      token,
-      user: customer.toJSON()
-    });
-  } catch (error) {
-    console.error('Login error:', error);
-    res.status(500).json({ 
+], (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ 
       success: false,
-      error: 'Internal server error' 
+      error: errors.array()[0].msg,
+      errors: errors.array()
     });
   }
-});
+  next();
+}, customerController.login);
 
 // Get current customer
-router.get('/auth/me', authenticateCustomerToken, async (req, res) => {
-  try {
-    res.json({ 
-      success: true,
-      user: req.customer.toJSON() 
-    });
-  } catch (error) {
-    console.error('Get customer error:', error);
-    res.status(500).json({ 
-      success: false,
-      error: 'Internal server error' 
-    });
-  }
-});
+router.get('/auth/me', authenticateCustomerToken, customerController.getCurrentCustomer);
 
 // Update customer profile
 router.put('/auth/profile', authenticateCustomerToken, [
@@ -211,66 +111,16 @@ router.put('/auth/profile', authenticateCustomerToken, [
     .optional()
     .isLength({ min: 10, max: 15 })
     .withMessage('Phone number must be between 10 and 15 characters')
-], async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        error: errors.array()[0].msg
-      });
-    }
-
-    const { fullName, email, phone } = req.body;
-    const customer = req.customer;
-
-    // Check if email is being changed and if it's already taken
-    if (email && email !== customer.email) {
-      const existingCustomer = await Customer.findOne({
-        where: { email, id: { [Op.ne]: customer.id } }
-      });
-      if (existingCustomer) {
-        return res.status(400).json({
-          success: false,
-          error: 'Email is already registered'
-        });
-      }
-    }
-
-    // Check if phone is being changed and if it's already taken
-    if (phone && phone !== customer.phone) {
-      const existingCustomer = await Customer.findOne({
-        where: { phone, id: { [Op.ne]: customer.id } }
-      });
-      if (existingCustomer) {
-        return res.status(400).json({
-          success: false,
-          error: 'Phone number is already registered'
-        });
-      }
-    }
-
-    // Update customer
-    const updateData = {};
-    if (fullName) updateData.fullName = fullName;
-    if (email) updateData.email = email;
-    if (phone) updateData.phone = phone;
-
-    await customer.update(updateData);
-
-    res.json({
-      success: true,
-      message: 'Profile updated successfully',
-      user: customer.toJSON()
-    });
-  } catch (error) {
-    console.error('Update profile error:', error);
-    res.status(500).json({
+], (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
       success: false,
-      error: 'Failed to update profile'
+      error: errors.array()[0].msg
     });
   }
-});
+  next();
+}, customerController.updateProfile);
 
 // Change Password
 router.put('/auth/change-password', authenticateCustomerToken, [
@@ -287,126 +137,304 @@ router.put('/auth/change-password', authenticateCustomerToken, [
       }
       return true;
     })
-], async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        error: errors.array()[0].msg
-      });
-    }
-
-    const { currentPassword, newPassword } = req.body;
-    const customer = req.customer;
-
-    // Verify current password
-    const isValidPassword = await customer.validatePassword(currentPassword);
-    if (!isValidPassword) {
-      return res.status(400).json({
-        success: false,
-        error: 'Current password is incorrect'
-      });
-    }
-
-    // Check if new password is same as current password
-    const isSamePassword = await customer.validatePassword(newPassword);
-    if (isSamePassword) {
-      return res.status(400).json({
-        success: false,
-        error: 'New password must be different from current password'
-      });
-    }
-
-    // Update password
-    customer.password = newPassword;
-    await customer.save();
-
-    res.json({
-      success: true,
-      message: 'Password changed successfully'
-    });
-  } catch (error) {
-    console.error('Change password error:', error);
-    res.status(500).json({
+], (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
       success: false,
-      error: 'Failed to change password'
+      error: errors.array()[0].msg
     });
   }
-});
+  next();
+}, customerController.changePassword);
 
 // Forgot Password
 router.post('/auth/forgot-password', [
   body('email')
     .isEmail()
     .withMessage('Please provide a valid email')
-], async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ 
-        success: false,
-        error: errors.array()[0].msg,
-        errors: errors.array()
-      });
-    }
-
-    const { email } = req.body;
-
-    // Find customer
-    const customer = await Customer.findOne({ where: { email } });
-    
-    // Always return success for security (don't reveal if email exists)
-    if (!customer) {
-      return res.json({ 
-        success: true,
-        message: 'If that email exists, we\'ve sent a password reset link.' 
-      });
-    }
-
-    // Generate reset token
-    const crypto = require('crypto');
-    const resetToken = crypto.randomBytes(32).toString('hex');
-    const resetTokenExpires = new Date(Date.now() + 3600000); // 1 hour
-
-    // Save token to database
-    await customer.update({
-      resetPasswordToken: resetToken,
-      resetPasswordExpires: resetTokenExpires
-    });
-
-    // Generate reset link for CUSTOMER (Web App - separate from CMS)
-    const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/user-panel/reset-password.html?token=${resetToken}`;
-    
-    // Log the reset link for development
-    console.log(`Password reset link for ${email}: ${resetLink}`);
-    
-    // Send email with reset link
-    try {
-      const { sendPasswordResetEmail } = require('../utils/email');
-      const emailSent = await sendPasswordResetEmail(email, resetLink);
-      
-      if (!emailSent) {
-        console.log('⚠️ Email not sent, showing reset link in console for testing');
-      }
-    } catch (emailError) {
-      console.error('❌ Error during email sending:', emailError);
-      console.log('📧 Reset link (copy this):', resetLink);
-    }
-
-    res.json({
-      success: true,
-      message: 'If that email exists, we\'ve sent a password reset link.'
-    });
-
-  } catch (error) {
-    console.error('Forgot password error:', error);
-    res.status(500).json({ 
+], (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ 
       success: false,
-      error: 'Internal server error' 
+      error: errors.array()[0].msg,
+      errors: errors.array()
     });
   }
-});
+  next();
+}, customerController.forgotPassword);
+
+// Reset Password
+router.post('/auth/reset-password', [
+  body('token')
+    .notEmpty()
+    .withMessage('Reset token is required'),
+  body('password')
+    .isLength({ min: 6 })
+    .withMessage('Password must be at least 6 characters long')
+], (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ 
+      success: false,
+      error: errors.array()[0].msg,
+      errors: errors.array()
+    });
+  }
+  next();
+}, customerController.resetPassword);
+
+// ============================================
+// VEHICLES APIs
+// ============================================
+
+/**
+ * GET /api/user/vehicles
+ * Get all vehicles for customer
+ */
+router.get('/vehicles', authenticateCustomerToken, customerController.getVehicles);
+
+/**
+ * GET /api/user/vehicles/:vehicleId
+ * Get vehicle by ID
+ */
+router.get('/vehicles/:vehicleId', authenticateCustomerToken, customerController.getVehicleById);
+
+/**
+ * POST /api/user/vehicles
+ * Create new vehicle
+ */
+router.post('/vehicles', authenticateCustomerToken, [
+  body('vehicleName')
+    .notEmpty()
+    .withMessage('Vehicle name is required')
+    .isLength({ min: 1, max: 100 })
+    .withMessage('Vehicle name must be between 1 and 100 characters'),
+  body('vehicleType')
+    .notEmpty()
+    .withMessage('Vehicle type is required')
+    .isIn(['2W', '3W', '4W'])
+    .withMessage('Vehicle type must be 2W, 3W, or 4W'),
+  body('batteryCapacity')
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage('Battery capacity must be a positive number'),
+  body('connectorType')
+    .optional()
+    .isString()
+    .withMessage('Connector type must be a string')
+], (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      success: false,
+      error: errors.array()[0].msg
+    });
+  }
+  next();
+}, customerController.createVehicle);
+
+/**
+ * PUT /api/user/vehicles/:vehicleId
+ * Update vehicle
+ */
+router.put('/vehicles/:vehicleId', authenticateCustomerToken, [
+  body('vehicleName')
+    .optional()
+    .isLength({ min: 1, max: 100 })
+    .withMessage('Vehicle name must be between 1 and 100 characters'),
+  body('vehicleType')
+    .optional()
+    .isIn(['2W', '3W', '4W'])
+    .withMessage('Vehicle type must be 2W, 3W, or 4W'),
+  body('batteryCapacity')
+    .optional()
+    .isFloat({ min: 0 })
+    .withMessage('Battery capacity must be a positive number'),
+  body('connectorType')
+    .optional()
+    .isString()
+    .withMessage('Connector type must be a string')
+], (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      success: false,
+      error: errors.array()[0].msg
+    });
+  }
+  next();
+}, customerController.updateVehicle);
+
+/**
+ * DELETE /api/user/vehicles/:vehicleId
+ * Delete vehicle
+ */
+router.delete('/vehicles/:vehicleId', authenticateCustomerToken, customerController.deleteVehicle);
+
+// ============================================
+// WALLET APIs
+// ============================================
+
+/**
+ * GET /api/user/wallet/balance
+ * Get current wallet balance
+ */
+router.get('/wallet/balance', authenticateCustomerToken, walletController.getBalance);
+
+/**
+ * GET /api/user/wallet/transactions
+ * Get wallet transaction history
+ */
+router.get('/wallet/transactions', authenticateCustomerToken, [
+  query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
+  query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
+  query('fromDate').optional().isISO8601().withMessage('From date must be a valid date'),
+  query('toDate').optional().isISO8601().withMessage('To date must be a valid date'),
+  query('type').optional().isIn(['credit', 'debit', 'refund']).withMessage('Type must be credit, debit, or refund')
+], (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      success: false,
+      error: errors.array()[0].msg
+    });
+  }
+  next();
+}, walletController.getTransactions);
+
+/**
+ * POST /api/user/wallet/debit (Internal API - for charging sessions)
+ * Deduct amount from wallet
+ */
+router.post('/wallet/debit', authenticateCustomerToken, [
+  body('amount')
+    .notEmpty()
+    .withMessage('Amount is required')
+    .isFloat({ min: 0.01 })
+    .withMessage('Amount must be greater than 0'),
+  body('description')
+    .notEmpty()
+    .withMessage('Description is required'),
+  body('referenceId')
+    .optional()
+    .isString()
+    .withMessage('Reference ID must be a string')
+], (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      success: false,
+      error: errors.array()[0].msg
+    });
+  }
+  next();
+}, walletController.debit);
+
+/**
+ * POST /api/user/wallet/topup
+ * Create Razorpay order for wallet top-up
+ */
+router.post('/wallet/topup', authenticateCustomerToken, [
+  body('amount')
+    .notEmpty()
+    .withMessage('Amount is required')
+    .isFloat({ min: 1 })
+    .withMessage('Amount must be at least ₹1')
+], (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      success: false,
+      error: errors.array()[0].msg
+    });
+  }
+  next();
+}, paymentController.createTopupOrder);
+
+/**
+ * POST /api/user/wallet/topup/verify
+ * Verify Razorpay payment and update wallet
+ */
+router.post('/wallet/topup/verify', authenticateCustomerToken, [
+  body('razorpay_order_id')
+    .notEmpty()
+    .withMessage('Razorpay order ID is required'),
+  body('razorpay_payment_id')
+    .notEmpty()
+    .withMessage('Razorpay payment ID is required'),
+  body('razorpay_signature')
+    .notEmpty()
+    .withMessage('Razorpay signature is required')
+], (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      success: false,
+      error: errors.array()[0].msg
+    });
+  }
+  next();
+}, paymentController.verifyTopupPayment);
+
+/**
+ * POST /api/user/wallet/topup/failed
+ * Mark failed payment attempt
+ */
+router.post('/wallet/topup/failed', authenticateCustomerToken, [
+  body('razorpay_order_id')
+    .notEmpty()
+    .withMessage('Razorpay order ID is required')
+], (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      success: false,
+      error: errors.array()[0].msg
+    });
+  }
+  next();
+}, paymentController.markFailedPayment);
+
+// ============================================
+// STATIONS APIs
+// ============================================
+
+/**
+ * GET /api/user/stations
+ * Get all stations with real-time status and statistics
+ */
+router.get('/stations', stationController.getAllStations);
+
+/**
+ * GET /api/user/stations/:stationId
+ * Get single station by stationId
+ */
+router.get('/stations/:stationId', stationController.getStationById);
+
+// ============================================
+// REMAINING ROUTES (Not yet refactored - will be done in next phase)
+// ============================================
+
+// Helper functions still needed for remaining routes
+async function getOrCreateWallet(customerId) {
+  const { getOrCreateWallet: getWallet } = require('../services/walletService');
+  return await getWallet(customerId);
+}
+
+// Extract meter value helper - now in libs/ocpp.js
+const { extractMeterValue } = require('../libs/ocpp');
+
+// Generate session ID helper - now in libs/chargingHelpers.js
+const { generateSessionId } = require('../libs/chargingHelpers');
+
+// Calculate session stats - now in stationService
+const { calculateSessionStats } = require('../services/stationService');
+
+// ============================================
+// REMAINING ROUTES (Not yet refactored - will be done in next phase)
+// ============================================
 
 // Reset Password
 router.post('/auth/reset-password', [
@@ -471,37 +499,7 @@ router.post('/auth/reset-password', [
 // STATIONS API ROUTES
 // ============================================
 
-/**
- * Helper function to extract meter value from MeterValues log
- */
-function extractMeterValue(meterValuesLog) {
-  if (!meterValuesLog || !meterValuesLog.messageData) {
-    return null;
-  }
-
-  const meterValue = meterValuesLog.messageData.meterValue;
-  if (!meterValue || !Array.isArray(meterValue) || meterValue.length === 0) {
-    return null;
-  }
-
-  const sampledValues = meterValue[0].sampledValue;
-  if (!sampledValues || !Array.isArray(sampledValues)) {
-    return null;
-  }
-
-  // Find Energy.Active.Import.Register
-  const energySample = sampledValues.find(sample => 
-    sample.measurand === 'Energy.Active.Import.Register' || 
-    sample.measurand === 'energy' ||
-    sample.measurand === 'Energy'
-  );
-
-  if (energySample && energySample.value) {
-    return parseFloat(energySample.value);
-  }
-
-  return null;
-}
+// extractMeterValue is now imported from libs/ocpp.js (see line 425)
 
 /**
  * Helper function to check if charger has active transaction
@@ -746,178 +744,15 @@ async function hasFault(deviceId) {
   }
 }
 
-/**
- * Helper function to calculate session statistics for a charging point
- */
-async function calculateSessionStats(deviceId, chargingPoint) {
-  try {
-    // Get all StartTransaction messages for this device
-    const startTransactions = await ChargerData.findAll({
-      where: {
-        deviceId: deviceId,
-        message: 'StartTransaction',
-        direction: 'Incoming'
-      },
-      order: [['timestamp', 'DESC']],
-      limit: 10000
-    });
-
-    // Get all StopTransaction messages for this device
-    const stopTransactions = await ChargerData.findAll({
-      where: {
-        deviceId: deviceId,
-        message: 'StopTransaction',
-        direction: 'Incoming'
-      },
-      order: [['timestamp', 'DESC']],
-      limit: 10000
-    });
-
-    // Create a map of transactionId -> StopTransaction
-    const stopTransactionMap = new Map();
-    stopTransactions.forEach(stop => {
-      let transactionId = null;
-      if (stop.messageData && stop.messageData.transactionId) {
-        transactionId = stop.messageData.transactionId;
-      } else if (stop.raw && Array.isArray(stop.raw) && stop.raw[2] && stop.raw[2].transactionId) {
-        transactionId = stop.raw[2].transactionId;
-      }
-      if (transactionId) {
-        stopTransactionMap.set(transactionId.toString(), stop);
-      }
-    });
-
-    let totalSessions = 0;
-    let totalEnergy = 0;
-    let totalBilledAmount = 0;
-    const processedTransactionIds = new Set();
-
-    // Get tariff details
-    const tariff = chargingPoint.tariff;
-    const baseCharges = tariff ? parseFloat(tariff.baseCharges) : 0;
-    const tax = tariff ? parseFloat(tariff.tax) : 0;
-
-    for (const start of startTransactions) {
-      // Get transactionId from StartTransaction response
-      let transactionId = null;
-      const startResponse = await ChargerData.findOne({
-        where: {
-          message: 'Response',
-          messageId: start.messageId,
-          direction: 'Outgoing'
-        }
-      });
-
-      if (startResponse) {
-        if (startResponse.messageData && startResponse.messageData.transactionId) {
-          transactionId = startResponse.messageData.transactionId;
-        } else if (startResponse.raw && Array.isArray(startResponse.raw) && startResponse.raw[2] && startResponse.raw[2].transactionId) {
-          transactionId = startResponse.raw[2].transactionId;
-        }
-      }
-
-      // Fallback: try to get from StartTransaction itself
-      if (!transactionId && start.messageData && start.messageData.transactionId) {
-        transactionId = start.messageData.transactionId;
-      } else if (!transactionId && start.raw && Array.isArray(start.raw)) {
-        const payload = start.raw[2];
-        if (payload && payload.transactionId) {
-          transactionId = payload.transactionId;
-        }
-      }
-
-      if (!transactionId || processedTransactionIds.has(transactionId.toString())) {
-        continue;
-      }
-
-      // Check if there's a StopTransaction for this transactionId
-      const stop = stopTransactionMap.get(transactionId.toString());
-      if (!stop) {
-        continue; // No stop transaction, skip (it's active or incomplete)
-      }
-
-      processedTransactionIds.add(transactionId.toString());
-
-      const startTime = new Date(start.timestamp || start.createdAt);
-      const endTime = new Date(stop.timestamp || stop.createdAt);
-
-      // Get meter_start from first MeterValues after StartTransaction
-      let meterStart = null;
-      const startMeterValues = await ChargerData.findOne({
-        where: {
-          deviceId: deviceId,
-          message: 'MeterValues',
-          direction: 'Incoming',
-          timestamp: {
-            [Op.gte]: startTime,
-            [Op.lte]: endTime
-          }
-        },
-        order: [['timestamp', 'ASC']],
-        limit: 1
-      });
-
-      if (startMeterValues) {
-        meterStart = extractMeterValue(startMeterValues);
-      }
-
-      // Get meter_end from last MeterValues before StopTransaction
-      let meterEnd = null;
-      const endMeterValues = await ChargerData.findOne({
-        where: {
-          deviceId: deviceId,
-          message: 'MeterValues',
-          direction: 'Incoming',
-          timestamp: {
-            [Op.gte]: startTime,
-            [Op.lte]: endTime
-          }
-        },
-        order: [['timestamp', 'DESC']],
-        limit: 1
-      });
-
-      if (endMeterValues) {
-        meterEnd = extractMeterValue(endMeterValues);
-      }
-
-      // Calculate energy: (meter_end - meter_start) / 1000
-      let energy = 0;
-      if (meterStart !== null && meterEnd !== null && meterEnd >= meterStart) {
-        energy = (meterEnd - meterStart) / 1000;
-        if (energy < 0) energy = 0; // Prevent negative values
-      }
-
-      // Calculate billed amount: (Energy × Base Charge) × (1 + Tax/100)
-      const baseAmount = energy * baseCharges;
-      const taxMultiplier = 1 + (tax / 100);
-      const billedAmount = baseAmount * taxMultiplier;
-
-      totalSessions++;
-      totalEnergy += energy;
-      totalBilledAmount += billedAmount;
-    }
-
-    return {
-      sessions: totalSessions,
-      energy: parseFloat(totalEnergy.toFixed(2)),
-      billedAmount: parseFloat(totalBilledAmount.toFixed(2))
-    };
-  } catch (error) {
-    console.error(`Error calculating session stats for deviceId ${deviceId}:`, error);
-    return {
-      sessions: 0,
-      energy: 0,
-      billedAmount: 0
-    };
-  }
-}
+// calculateSessionStats is now imported from services/stationService.js (see line 431)
 
 /**
- * GET /api/user/stations
- * Get all stations with real-time status and statistics
- * Query params: location (city/state search), sortBy (lastActive, createdAt)
+ * GET /api/user/stations (DUPLICATE - REMOVED)
+ * This route is now handled by stationController.getAllStations (see above)
+ * Keeping this comment to show the old route was removed
  */
+// OLD ROUTE REMOVED - Now using stationController.getAllStations
+/*
 router.get('/stations', async (req, res) => {
   try {
     const { location, sortBy } = req.query;
@@ -1610,14 +1445,20 @@ router.get('/charging-points/:chargingPointId', async (req, res) => {
 });
 
 // ============================================
-// VEHICLES API ROUTES
+// VEHICLES API ROUTES (Already refactored above - removing duplicate)
+// ============================================
+
+// Vehicle routes are now handled by customerController (see above)
+
+// ============================================
+// REMAINING ROUTES (Not yet refactored - will be done in next phase)
 // ============================================
 
 /**
- * GET /api/user/vehicles
- * Get all vehicles for the authenticated customer
+ * GET /api/user/stations/:stationId/points
+ * Get charging points for a station (NOT YET REFACTORED)
  */
-router.get('/vehicles', authenticateCustomerToken, async (req, res) => {
+router.get('/stations/:stationId/points', async (req, res) => {
   try {
     const customer = req.customer;
 
@@ -2606,9 +2447,6 @@ router.post('/wallet/topup/failed', authenticateCustomerToken, [
  * Razorpay webhook handler
  * Receives payment events from Razorpay and publishes to RabbitMQ queue for async processing
  * 
- * TODO: Move this logic to PaymentMicroservice in future
- * TODO: Ensure idempotency to avoid double wallet updates
- * 
  * Note: This handler expects raw body (Buffer) from express.raw() middleware
  * The raw body middleware is applied in server.js before JSON parsing for this specific route
  */
@@ -2646,6 +2484,7 @@ async function handlePaymentWebhook(req, res) {
     const rawBody = req.body.toString('utf8');
     
     // Verify webhook signature (must use raw body string)
+    const { verifyWebhookSignature } = require('../libs/razorpay');
     const isValidSignature = verifyWebhookSignature(rawBody, signature, webhookSecret);
     if (!isValidSignature) {
       console.error('[Payment Webhook] Invalid signature');
@@ -2689,7 +2528,7 @@ async function handlePaymentWebhook(req, res) {
     }
 
     // Import publishPayment dynamically to avoid circular dependencies
-    const { publishPayment } = require('../services/rabbitmq/producer');
+    const { publishPayment } = require('../libs/rabbitmq/producer');
 
     // Publish to RabbitMQ queue immediately (before any DB operations)
     const published = await publishPayment({
@@ -2754,43 +2593,14 @@ router.post('/wallet/debit', authenticateCustomerToken, [
     const customer = req.customer;
     const { amount, description, referenceId } = req.body;
 
-    const wallet = await getOrCreateWallet(customer.id);
-    const currentBalance = parseFloat(wallet.balance);
-
-    if (currentBalance < amount) {
-      return res.status(400).json({
-        success: false,
-        error: 'Insufficient wallet balance'
-      });
-    }
-
-    // Deduct from wallet
-    const newBalance = currentBalance - amount;
-
-    await wallet.update({
-      balance: newBalance
-    });
-
-    // Create transaction
-    const transaction = await WalletTransaction.create({
-      walletId: wallet.id,
-      customerId: customer.id,
-      transactionType: 'debit',
-      amount: amount,
-      balanceBefore: currentBalance,
-      balanceAfter: newBalance,
-      description: description,
-      referenceId: referenceId || null,
-      status: 'completed',
-      transactionCategory: 'charging'
-    });
+    const result = await walletService.debitWallet(customer.id, amount, description, referenceId || null);
 
     res.json({
       success: true,
       transaction: {
-        id: transaction.id,
-        amount: parseFloat(transaction.amount),
-        balanceAfter: newBalance
+        id: result.transaction.id,
+        amount: result.transaction.amount,
+        balanceAfter: result.transaction.balanceAfter
       }
     });
   } catch (error) {
@@ -2806,44 +2616,8 @@ router.post('/wallet/debit', authenticateCustomerToken, [
 // CHARGING SESSION APIs
 // ============================================
 
-/**
- * Helper function to generate unique session ID
- */
-function generateSessionId() {
-  return `SESS_${Date.now()}_${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
-}
-
-/**
- * Helper function to extract meter value from MeterValues log
- */
-function extractMeterValue(meterValuesLog) {
-  if (!meterValuesLog || !meterValuesLog.messageData) {
-    return null;
-  }
-
-  const meterValue = meterValuesLog.messageData.meterValue;
-  if (!meterValue || !Array.isArray(meterValue) || meterValue.length === 0) {
-    return null;
-  }
-
-  const sampledValues = meterValue[0].sampledValue;
-  if (!sampledValues || !Array.isArray(sampledValues)) {
-    return null;
-  }
-
-  // Find Energy.Active.Import.Register
-  const energySample = sampledValues.find(sample => 
-    sample.measurand === 'Energy.Active.Import.Register' || 
-    sample.measurand === 'energy' ||
-    sample.measurand === 'Energy'
-  );
-
-  if (energySample && energySample.value) {
-    return parseFloat(energySample.value);
-  }
-
-  return null;
-}
+// generateSessionId is now imported from libs/chargingHelpers.js (see line 428)
+// extractMeterValue is now imported from libs/ocpp.js (see line 425)
 
 /**
  * POST /api/user/charging/start
@@ -2864,331 +2638,46 @@ router.post('/charging/start', authenticateCustomerToken, [
   body('chargingPointId')
     .optional()
     .trim()
-], async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        error: errors.array()[0].msg
-      });
-    }
-
-    const customer = req.customer;
-    const { deviceId, connectorId, amount, chargingPointId, vehicleId } = req.body;
-    const amountValue = parseFloat(amount);
-    
-    // Validate vehicleId if provided
-    let vehicleDbId = null;
-    if (vehicleId) {
-      const vehicleIdInt = parseInt(vehicleId);
-      if (isNaN(vehicleIdInt)) {
-        return res.status(400).json({
-          success: false,
-          error: 'Invalid vehicle ID'
-        });
-      }
-      
-      // Verify vehicle belongs to customer
-      const vehicle = await Vehicle.findOne({
-        where: {
-          id: vehicleIdInt,
-          customerId: customer.id
-        }
-      });
-      
-      if (!vehicle) {
-        return res.status(400).json({
-          success: false,
-          error: 'Vehicle not found or does not belong to you'
-        });
-      }
-      
-      vehicleDbId = vehicleIdInt;
-    }
-
-    // Get or create wallet
-    const wallet = await getOrCreateWallet(customer.id);
-    const currentBalance = parseFloat(wallet.balance);
-
-    // Check wallet balance
-    if (amountValue > currentBalance) {
-      return res.status(400).json({
-        success: false,
-        error: `Amount (₹${amountValue.toFixed(2)}) cannot exceed wallet balance (₹${currentBalance.toFixed(2)}). Please enter a lower amount or top up your wallet.`
-      });
-    }
-
-    // REMOVED: Customer-level session check - now allowing customers to charge on multiple connectors simultaneously
-    // A customer can now charge on connector 1 and connector 2 at the same time if they want
-    // The connector-level check below will prevent conflicts with other customers while allowing
-    // the same customer to use different connectors
-
-    // CRITICAL: Check if charger/connector is already in use by another customer
-    // This prevents race condition where 2 customers try to start charging simultaneously on the same connector
-    // NOTE: This check excludes current customer's sessions, allowing same customer to use different connectors
-    const activeSessionOnCharger = await ChargingSession.findOne({
-      where: {
-        deviceId: deviceId,
-        connectorId: parseInt(connectorId),
-        status: {
-          [Op.in]: ['pending', 'active']
-        },
-        endTime: null,
-        customerId: {
-          [Op.ne]: customer.id // Exclude current customer's sessions - allows same customer to use different connectors
-        }
-      }
-    });
-
-    if (activeSessionOnCharger) {
-      return res.status(400).json({
-        success: false,
-        error: 'This charger connector is currently in use by another customer. Please try a different connector or wait for the current session to end.'
-      });
-    }
-
-    // Deduct amount from wallet
-    const newBalance = currentBalance - amountValue;
-    await wallet.update({ balance: newBalance });
-
-    // Generate unique session ID first (needed for wallet transaction reference)
-    const sessionId = generateSessionId();
-
-    // Create wallet transaction (debit) - link to sessionId for easy refund tracking
-    const walletTransaction = await WalletTransaction.create({
-      walletId: wallet.id,
-      customerId: customer.id,
-      transactionType: 'debit',
-      amount: amountValue,
-      balanceBefore: currentBalance,
-      balanceAfter: newBalance,
-      description: `Charging Session - Device ${deviceId}`,
-      referenceId: sessionId, // Link to session for easy refund tracking
-      status: 'completed',
-      transactionCategory: 'charging'
-    });
-
-    // Look up ChargingPoint by chargingPointId string to get the integer id
-    let chargingPointDbId = null;
-    if (chargingPointId) {
-      const chargingPoint = await ChargingPoint.findOne({
-        where: { chargingPointId: chargingPointId },
-        attributes: ['id']
-      });
-      if (chargingPoint) {
-        chargingPointDbId = chargingPoint.id;
-      }
-    }
-
-    // Create charging session record
-    const chargingSession = await ChargingSession.create({
-      customerId: customer.id,
-      vehicleId: vehicleDbId, // Store vehicle ID if provided
-      chargingPointId: chargingPointDbId, // Use integer id, not string chargingPointId
-      deviceId: deviceId,
-      connectorId: parseInt(connectorId),
-      sessionId: sessionId,
-      transactionId: null, // Will be updated when charger responds
-      status: 'pending',
-      amountRequested: amountValue,
-      amountDeducted: amountValue,
-      energyConsumed: null,
-      finalAmount: null,
-      refundAmount: null,
-      meterStart: null,
-      meterEnd: null,
-      startTime: null,
-      endTime: null,
-      stopReason: null
-    });
-
-    // Queue-based microservice flow: Publish remote start command to queue
-    // TODO: Remove fallback after queue flow fully validated
-    let useQueueFlow = ENABLE_RABBITMQ && publishChargingCommand;
-    
-    if (useQueueFlow) {
-      // NEW: Queue-based flow (asynchronous, microservice architecture)
-      console.log(`📤 [Queue] Publishing remote start command for session ${sessionId}`);
-      
-      try {
-        const commandPublished = await publishChargingCommand({
-          command: 'RemoteStartTransaction',
-          deviceId: deviceId,
-          payload: {
-            connectorId: parseInt(connectorId),
-            idTag: `CUSTOMER_${customer.id}`
-          },
-          sessionId: sessionId,
-          customerId: customer.id,
-          connectorId: parseInt(connectorId),
-          idTag: `CUSTOMER_${customer.id}`,
-          transactionId: null, // Will be set by charger response
-          timestamp: new Date(),
-          useQueueFlow: true // Use new routing key
-        });
-
-        if (commandPublished) {
-          console.log(`✅ [Queue] Remote start command published for session ${sessionId}`);
-          // Session status will be updated by ChargingResponsesConsumer when response is received
-          // Return success immediately - response will be processed asynchronously
-          res.json({
-            success: true,
-            message: 'Charging session started. Waiting for charger confirmation...',
-            session: {
-              id: chargingSession.id,
-              sessionId: chargingSession.sessionId,
-              status: 'pending', // Will be updated to 'active' when charger responds
-              deviceId: deviceId,
-              connectorId: parseInt(connectorId),
-              amountDeducted: amountValue
-            }
-          });
-          return; // Exit early - response handled asynchronously
-        } else {
-          console.warn(`⚠️ [Queue] Failed to publish remote start command, falling back to direct call`);
-          useQueueFlow = false; // Fall back to direct call
-        }
-      } catch (queueError) {
-        console.error(`❌ [Queue] Error publishing remote start command:`, queueError.message);
-        console.warn(`⚠️ [Queue] Falling back to direct call`);
-        useQueueFlow = false; // Fall back to direct call
-      }
-    }
-
-    // FALLBACK: Direct API call (legacy flow - will be removed after queue flow validated)
-    if (!useQueueFlow) {
-      console.log(`🔄 [FALLBACK] Using direct API call for remote start (queue flow disabled or failed)`);
-      try {
-        const chargerResponse = await axios.post(
-          `${process.env.BACKEND_URL || 'http://localhost:3000'}/api/charger/remote-start`,
-          {
-            deviceId: deviceId,
-            connectorId: parseInt(connectorId),
-            idTag: `CUSTOMER_${customer.id}` // Use customer ID as idTag
-          },
-          {
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            timeout: 60000 // 60 seconds timeout
-          }
-        );
-
-        if (chargerResponse.data && chargerResponse.data.success) {
-          // Update session status to active
-          await chargingSession.update({
-            status: 'active',
-            startTime: new Date()
-          });
-
-          // Publish charging started event to RabbitMQ (if enabled)
-          if (ENABLE_RABBITMQ && publishChargingEvent && publishNotification) {
-            try {
-              // Publish charging event
-              await publishChargingEvent({
-                type: 'charging.started',
-                sessionId: chargingSession.sessionId,
-                customerId: customer.id,
-                deviceId: deviceId,
-                connectorId: parseInt(connectorId),
-                additionalData: {
-                  amountDeducted: amountValue,
-                  chargingPointId: chargingPointId
-                }
-              });
-
-              // Publish notification for real-time frontend update
-              await publishNotification({
-                type: 'charging.started',
-                data: {
-                  sessionId: chargingSession.sessionId,
-                  customerId: customer.id,
-                  deviceId: deviceId,
-                  connectorId: parseInt(connectorId),
-                  amountDeducted: amountValue,
-                  startTime: chargingSession.startTime
-                },
-                recipients: [customer.id]
-              });
-
-              console.log(`📤 [RABBITMQ] Published charging.started event for session ${chargingSession.sessionId}`);
-              console.log(`📤 [RABBITMQ] Published charging.started notification with recipients: [${customer.id}]`);
-            } catch (rabbitmqError) {
-              console.warn('⚠️ [RABBITMQ] Failed to publish charging.started event:', rabbitmqError.message);
-              console.error('⚠️ [RABBITMQ] Error details:', rabbitmqError);
-              // Don't fail the request if RabbitMQ fails
-            }
-          } else {
-            console.log(`🔍 [DEBUG] Skipping RabbitMQ publish - ENABLE_RABBITMQ: ${ENABLE_RABBITMQ}, publishChargingEvent: ${!!publishChargingEvent}, publishNotification: ${!!publishNotification}`);
-          }
-
-          res.json({
-            success: true,
-            message: 'Charging started successfully',
-            session: {
-              id: chargingSession.id,
-              sessionId: chargingSession.sessionId,
-              deviceId: chargingSession.deviceId,
-              connectorId: chargingSession.connectorId,
-              amountDeducted: parseFloat(chargingSession.amountDeducted),
-              status: chargingSession.status,
-              startTime: chargingSession.startTime
-            }
-          });
-        } else {
-          // Charger rejected - refund wallet
-          await wallet.update({ balance: currentBalance });
-          await walletTransaction.update({
-            transactionType: 'refund',
-            balanceBefore: newBalance,
-            balanceAfter: currentBalance,
-            description: `Refund - Charging rejected: ${chargerResponse.data.error || 'Unknown error'}`
-          });
-          await chargingSession.update({
-            status: 'failed',
-            refundAmount: amountValue
-          });
-
-          return res.status(400).json({
-            success: false,
-            error: chargerResponse.data.error || 'Charger rejected the charging request'
-          });
-        }
-      } catch (chargerError) {
-        // Charger API error - refund wallet
-        await wallet.update({ balance: currentBalance });
-        await walletTransaction.update({
-          transactionType: 'refund',
-          balanceBefore: newBalance,
-          balanceAfter: currentBalance,
-          description: `Refund - Charging failed: ${chargerError.response?.data?.error || chargerError.message || 'Charger connection error'}`
-        });
-        await chargingSession.update({
-          status: 'failed',
-          refundAmount: amountValue
-        });
-
-        const errorMessage = chargerError.response?.data?.error || chargerError.message || 'Failed to start charging';
-        return res.status(400).json({
-          success: false,
-          error: errorMessage
-        });
-      }
-    }
-  } catch (error) {
-    console.error('Error starting charging session:', error);
-    res.status(500).json({
+], (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
       success: false,
-      error: 'Failed to start charging session'
+      error: errors.array()[0].msg
     });
   }
-});
+  next();
+}, chargingController.startCharging);
 
 /**
  * POST /api/user/charging/stop
  * Stop charging session - Stop charging, calculate final cost, process refund
  */
+router.post('/charging/stop', authenticateCustomerToken, [
+  body('deviceId')
+    .notEmpty()
+    .withMessage('Device ID is required'),
+  body('connectorId')
+    .notEmpty()
+    .withMessage('Connector ID is required'),
+  body('transactionId')
+    .optional()
+    .isString()
+    .withMessage('Transaction ID must be a string')
+], (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      success: false,
+      error: errors.array()[0].msg
+    });
+  }
+  next();
+}, chargingController.stopCharging);
+
+// OLD ROUTE CODE REMOVED - Now using chargingController.stopCharging
+// This route handler was moved to backend/services/chargingService.js and backend/controllers/chargingController.js
+/*
 router.post('/charging/stop', authenticateCustomerToken, [
   body('deviceId')
     .notEmpty()
@@ -3690,13 +3179,13 @@ router.post('/charging/stop', authenticateCustomerToken, [
     // Update Redis status to "Available" when charging stops
     // This ensures the UI updates immediately in the CMS
     try {
-      const updater = require('../redis/updater');
+      const updater = require('../libs/redis/updater');
       await updater(deviceId, { status: 'Available' });
       console.log(`✅ [Stop Charging] Updated Redis status to Available for ${deviceId}`);
       
       // Invalidate cache for charging points list to ensure UI updates immediately
-      const cacheController = require('../redis/cacheController');
-      const redisClient = require('../redis/redisClient');
+      const cacheController = require('../libs/redis/cacheController');
+      const redisClient = require('../libs/redis/redisClient');
       
       // Delete all charging-points cache keys (pattern: charging-points:list:*)
       // This includes both old page-based keys and new global keys
@@ -3838,195 +3327,7 @@ router.post('/charging/stop', authenticateCustomerToken, [
  * GET /api/user/charging/active-session
  * Get active charging session for the customer
  */
-router.get('/charging/active-session', authenticateCustomerToken, async (req, res) => {
-  try {
-    const customer = req.customer;
-
-    // Find active session (exclude sessions with endTime set, as they are stopped)
-    const session = await ChargingSession.findOne({
-      where: {
-        customerId: customer.id,
-        status: {
-          [Op.in]: ['pending', 'active']
-        },
-        endTime: null
-      },
-      include: [
-        {
-          model: ChargingPoint,
-          as: 'chargingPoint',
-          include: [
-            {
-              model: Station,
-              as: 'station',
-              attributes: ['id', 'stationId', 'stationName']
-            },
-            {
-              model: Tariff,
-              as: 'tariff'
-            }
-          ]
-        }
-      ],
-      order: [['createdAt', 'DESC']]
-    });
-
-    if (!session) {
-      return res.json({
-        success: true,
-        session: null
-      });
-    }
-
-    // CRITICAL: Double-check by deviceId - if no active sessions exist for this deviceId, charging has stopped
-    // This catches cases where CMS stopped the session but the customer's session query still found it
-    const deviceId = session.deviceId;
-    const activeSessionsForDevice = await ChargingSession.count({
-      where: {
-        deviceId: deviceId,
-        status: {
-          [Op.in]: ['pending', 'active']
-        },
-        endTime: null
-      }
-    });
-
-    // If no active sessions exist for this deviceId, the session was stopped (possibly from CMS)
-    if (activeSessionsForDevice === 0) {
-      console.log(`[Active Session] No active sessions found for deviceId ${deviceId} - session was stopped`);
-      return res.json({
-        success: true,
-        session: null
-      });
-    }
-
-    // Reload session to ensure we have the latest data
-    await session.reload();
-
-    // Double-check session is still active after reload
-    if (session.status && ['stopped', 'completed', 'failed'].includes(session.status)) {
-      console.log(`[Active Session] Session ${session.sessionId} has status ${session.status} - returning null`);
-      return res.json({
-        success: true,
-        session: null
-      });
-    }
-
-    // Double-check endTime is still null
-    if (session.endTime) {
-      console.log(`[Active Session] Session ${session.sessionId} has endTime ${session.endTime} - returning null`);
-      return res.json({
-        success: true,
-        session: null
-      });
-    }
-
-    // Get current meter reading for real-time energy calculation
-    let currentEnergy = 0;
-    let meterNow = null;
-
-    if (session.deviceId) {
-      // Get latest MeterValues
-      const latestMeterValues = await ChargerData.findOne({
-        where: {
-          deviceId: session.deviceId,
-          message: 'MeterValues',
-          direction: 'Incoming'
-        },
-        order: [['createdAt', 'DESC']],
-        limit: 1
-      });
-
-      if (latestMeterValues) {
-        meterNow = extractMeterValue(latestMeterValues);
-      }
-
-      // Get meter_start from first MeterValues after session start
-      let meterStart = session.meterStart;
-      if (!meterStart && session.startTime) {
-        const startMeterValues = await ChargerData.findOne({
-          where: {
-            deviceId: session.deviceId,
-            message: 'MeterValues',
-            direction: 'Incoming',
-            createdAt: {
-              [Op.gte]: session.startTime
-            }
-          },
-          order: [['createdAt', 'ASC']],
-          limit: 1
-        });
-
-        if (startMeterValues) {
-          meterStart = extractMeterValue(startMeterValues);
-          await session.update({ meterStart: meterStart });
-        }
-      }
-
-      // Calculate current energy
-      if (meterStart !== null && meterNow !== null && meterNow >= meterStart) {
-        currentEnergy = (meterNow - meterStart) / 1000; // Convert Wh to kWh
-        if (currentEnergy < 0) currentEnergy = 0;
-      }
-    }
-
-    // Calculate current cost
-    let currentCost = 0;
-    const tariff = session.chargingPoint?.tariff;
-    if (currentEnergy > 0 && tariff) {
-      const baseCharges = parseFloat(tariff.baseCharges) || 0;
-      const tax = parseFloat(tariff.tax) || 0;
-      const baseAmount = currentEnergy * baseCharges;
-      const taxMultiplier = 1 + (tax / 100);
-      currentCost = baseAmount * taxMultiplier;
-    }
-
-    // AUTO-STOP: Check if cost has reached 95% of prepaid amount
-    const amountDeducted = parseFloat(session.amountDeducted);
-    // Stop at 95% threshold to prevent overcharging
-    const stopThreshold = amountDeducted * 0.95;
-    const shouldAutoStop = amountDeducted > 0 && currentCost >= stopThreshold;
-    
-    // Note: Auto-stop is handled by frontend to avoid circular API calls
-    // Frontend will call stop charging endpoint when shouldAutoStop is true
-
-    res.json({
-      success: true,
-      session: {
-        id: session.id,
-        sessionId: session.sessionId,
-        deviceId: session.deviceId,
-        deviceName: session.chargingPoint?.deviceName || session.deviceId,
-        connectorId: session.connectorId,
-        transactionId: session.transactionId,
-        amountDeducted: parseFloat(session.amountDeducted),
-        energy: parseFloat(currentEnergy.toFixed(3)),
-        cost: parseFloat(currentCost.toFixed(2)),
-        status: session.status,
-        startTime: session.startTime,
-        endTime: session.endTime, // Include endTime so frontend can detect CMS stops
-        shouldAutoStop: shouldAutoStop, // Let frontend know if auto-stop should trigger
-        station: session.chargingPoint?.station ? {
-          stationId: session.chargingPoint.station.stationId,
-          stationName: session.chargingPoint.station.stationName
-        } : null,
-        tariff: tariff ? {
-          tariffId: tariff.tariffId,
-          tariffName: tariff.tariffName,
-          baseCharges: parseFloat(tariff.baseCharges),
-          tax: parseFloat(tariff.tax),
-          currency: tariff.currency
-        } : null
-      }
-    });
-  } catch (error) {
-    console.error('Error fetching active session:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch active session'
-    });
-  }
-});
+router.get('/charging/active-session', authenticateCustomerToken, chargingController.getActiveSession);
 
 // ============================================
 // SESSIONS API ROUTES
@@ -4041,212 +3342,94 @@ router.get('/sessions', authenticateCustomerToken, [
   query('toDate').optional().isISO8601().withMessage('To date must be a valid ISO8601 date'),
   query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
   query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100')
-], async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        error: errors.array()[0].msg
-      });
-    }
-
-    const customer = req.customer;
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
-    const offset = (page - 1) * limit;
-    
-    // Parse dates and set proper time boundaries
-    let fromDate = null;
-    let toDate = null;
-    
-    if (req.query.fromDate) {
-      fromDate = new Date(req.query.fromDate);
-      // Set to start of day (00:00:00.000) in local timezone
-      fromDate.setHours(0, 0, 0, 0);
-    }
-    
-    if (req.query.toDate) {
-      toDate = new Date(req.query.toDate);
-      // Set to end of day (23:59:59.999) in local timezone to include all sessions on that day
-      toDate.setHours(23, 59, 59, 999);
-    }
-
-    // Build where clause
-    const whereClause = {
-      customerId: customer.id,
-      status: {
-        [Op.in]: ['stopped', 'completed'] // Only completed/stopped sessions
-      }
-    };
-
-    // Add date filters
-    if (fromDate || toDate) {
-      whereClause.endTime = {};
-      if (fromDate) {
-        whereClause.endTime[Op.gte] = fromDate;
-      }
-      if (toDate) {
-        whereClause.endTime[Op.lte] = toDate;
-      }
-    }
-
-    // Get sessions with related data
-    const { count, rows: sessions } = await ChargingSession.findAndCountAll({
-      where: whereClause,
-      include: [
-        {
-          model: ChargingPoint,
-          as: 'chargingPoint',
-          include: [
-            {
-              model: Station,
-              as: 'station',
-              attributes: ['id', 'stationId', 'stationName']
-            },
-            {
-              model: Tariff,
-              as: 'tariff',
-              attributes: ['id', 'tariffId', 'tariffName', 'baseCharges', 'tax', 'currency']
-            }
-          ]
-        }
-      ],
-      order: [['endTime', 'DESC'], ['createdAt', 'DESC']],
-      limit: limit,
-      offset: offset
-    });
-
-    // Format sessions for response
-    const formattedSessions = sessions.map(session => {
-      const tariff = session.chargingPoint?.tariff;
-      const baseCharges = tariff ? parseFloat(tariff.baseCharges) : 0;
-      const tax = tariff ? parseFloat(tariff.tax) : 0;
-
-      return {
-        id: session.id,
-        sessionId: session.sessionId,
-        transactionId: session.transactionId,
-        deviceId: session.deviceId,
-        deviceName: session.chargingPoint?.deviceName || session.deviceId,
-        connectorId: session.connectorId,
-        stationName: session.chargingPoint?.station?.stationName || 'N/A',
-        stationId: session.chargingPoint?.station?.stationId || null,
-        startTime: session.startTime,
-        endTime: session.endTime,
-        energy: parseFloat(session.energyConsumed || 0),
-        billedAmount: parseFloat(session.finalAmount || 0),
-        amountDeducted: parseFloat(session.amountDeducted),
-        refundAmount: parseFloat(session.refundAmount || 0),
-        baseCharges: baseCharges,
-        tax: tax,
-        currency: tariff ? tariff.currency : 'INR',
-        status: session.status,
-        stopReason: session.stopReason
-      };
-    });
-
-    const totalPages = Math.ceil(count / limit);
-
-    res.json({
-      success: true,
-      sessions: formattedSessions,
-      total: count,
-      page: page,
-      limit: limit,
-      totalPages: totalPages
-    });
-  } catch (error) {
-    console.error('Error fetching sessions:', error);
-    res.status(500).json({
+], (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
       success: false,
-      error: 'Failed to fetch sessions'
+      error: errors.array()[0].msg
     });
   }
-});
+  next();
+}, chargingController.getSessions);
 
 /**
  * GET /api/user/sessions/:sessionId
  * Get single session details
  */
-router.get('/sessions/:sessionId', authenticateCustomerToken, async (req, res) => {
-  try {
-    const customer = req.customer;
-    const { sessionId } = req.params;
-
-    const session = await ChargingSession.findOne({
-      where: {
-        sessionId: sessionId,
-        customerId: customer.id
-      },
-      include: [
-        {
-          model: ChargingPoint,
-          as: 'chargingPoint',
-          include: [
-            {
-              model: Station,
-              as: 'station',
-              attributes: ['id', 'stationId', 'stationName']
-            },
-            {
-              model: Tariff,
-              as: 'tariff',
-              attributes: ['id', 'tariffId', 'tariffName', 'baseCharges', 'tax', 'currency']
-            }
-          ]
-        }
-      ]
-    });
-
-    if (!session) {
-      return res.status(404).json({
-        success: false,
-        error: 'Session not found'
-      });
-    }
-
-    const tariff = session.chargingPoint?.tariff;
-    const baseCharges = tariff ? parseFloat(tariff.baseCharges) : 0;
-    const tax = tariff ? parseFloat(tariff.tax) : 0;
-
-    res.json({
-      success: true,
-      session: {
-        id: session.id,
-        sessionId: session.sessionId,
-        transactionId: session.transactionId,
-        deviceId: session.deviceId,
-        deviceName: session.chargingPoint?.deviceName || session.deviceId,
-        connectorId: session.connectorId,
-        stationName: session.chargingPoint?.station?.stationName || 'N/A',
-        stationId: session.chargingPoint?.station?.stationId || null,
-        startTime: session.startTime,
-        endTime: session.endTime,
-        energy: parseFloat(session.energyConsumed || 0),
-        billedAmount: parseFloat(session.finalAmount || 0),
-        amountDeducted: parseFloat(session.amountDeducted),
-        refundAmount: parseFloat(session.refundAmount || 0),
-        baseCharges: baseCharges,
-        tax: tax,
-        currency: tariff ? tariff.currency : 'INR',
-        status: session.status,
-        stopReason: session.stopReason,
-        meterStart: session.meterStart ? parseFloat(session.meterStart) : null,
-        meterEnd: session.meterEnd ? parseFloat(session.meterEnd) : null
-      }
-    });
-  } catch (error) {
-    console.error('Error fetching session:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch session'
-    });
-  }
-});
+router.get('/sessions/:sessionId', authenticateCustomerToken, chargingController.getSessionById);
 
 module.exports = router;
 
-// Export webhook handler for use in server.js (after router export)
-module.exports.handlePaymentWebhook = handlePaymentWebhook;
+// Export webhook handler for use in server.js
+// Note: Webhook handler needs special raw body handling, so we keep it here
+module.exports.handlePaymentWebhook = async function(req, res) {
+  try {
+    const signature = req.headers['x-razorpay-signature'];
+    if (!signature) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing signature header'
+      });
+    }
+
+    // Get webhook secret from environment
+    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+    if (!webhookSecret) {
+      return res.status(500).json({
+        success: false,
+        error: 'Webhook secret not configured'
+      });
+    }
+
+    // Get raw body - express.raw() middleware provides Buffer
+    if (!Buffer.isBuffer(req.body)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid request body format'
+      });
+    }
+
+    const rawBody = req.body.toString('utf8');
+    
+    // Verify webhook signature
+    const { verifyWebhookSignature } = require('../libs/razorpay');
+    const isValidSignature = verifyWebhookSignature(rawBody, signature, webhookSecret);
+    if (!isValidSignature) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid webhook signature'
+      });
+    }
+
+    // Parse webhook payload
+    let webhookPayload;
+    try {
+      webhookPayload = JSON.parse(rawBody);
+    } catch (error) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid JSON payload'
+      });
+    }
+
+    // Only process payment.captured events
+    if (webhookPayload.event !== 'payment.captured') {
+      return res.status(200).json({
+        success: true,
+        message: 'Event ignored (not payment.captured)'
+      });
+    }
+
+    // Call payment service
+    const result = await paymentService.handlePaymentWebhook(webhookPayload, signature);
+    res.status(200).json(result);
+  } catch (error) {
+    console.error('[Payment Webhook] Error processing webhook:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to process webhook'
+    });
+  }
+};
 

@@ -22,6 +22,76 @@ A full-stack ChatGPT-style web application built with Node.js, Express.js, Postg
 - **JWT** - Authentication tokens
 - **bcryptjs** - Password hashing
 - **Google Gemini API** - LLM integration
+- **Redis** - Caching and real-time status
+- **RabbitMQ** - Message queue for async processing
+- **WebSocket** - Real-time OCPP communication (separate microservice)
+
+## Architecture
+
+This project follows a clean **MVC (Model-View-Controller)** architecture with the following structure:
+
+```
+backend/
+├── server.js                 # Main Express server
+├── public/                   # Static files (CMS + User Panel)
+├── routes/                   # Route definitions only (HTTP endpoints)
+│   ├── auth.js
+│   ├── chat.js
+│   ├── customer.js
+│   ├── cms.js
+│   ├── charger.js
+│   └── logs.js
+├── controllers/              # Controller layer (request/response handling)
+│   ├── authController.js
+│   ├── chatController.js
+│   └── logsController.js
+├── services/                 # Business logic + DB + Queues
+│   ├── charging-responses-consumer.js
+│   ├── notification-service.js
+│   ├── ocpp-logs-consumer.js
+│   ├── ocpp-message-processor.js
+│   └── payment-consumer.js
+├── models/                   # Sequelize Models (database schema)
+├── middleware/               # Auth middleware
+├── libs/                     # Library modules
+│   ├── redis/                # Redis client and utilities
+│   ├── rabbitmq/             # RabbitMQ connection and queues
+│   ├── email.js              # Email service
+│   ├── razorpay.js           # Payment gateway integration
+│   ├── ocpp.js               # OCPP protocol utilities
+│   └── websocket_client.js   # WebSocket client for OCPP service
+├── config/                   # Database configuration
+├── migrations/                # Sequelize migrations
+└── scripts/                  # Utility scripts
+
+websocket/                     # Independent WebSocket microservice (OCPP)
+├── index.js
+├── websocket_server.js
+├── api_server.js
+└── ...
+```
+
+### Request Flow Pattern
+
+```
+HTTP Request → Route → Controller → Service → Model → Database
+```
+
+**Example:**
+1. **Route** (`routes/auth.js`): Defines endpoint `/api/auth/login` with validation middleware
+2. **Controller** (`controllers/authController.js`): Handles request/response, validates input, calls services
+3. **Service** (if needed): Business logic, external API calls, complex operations
+4. **Model** (`models/User.js`): Database operations via Sequelize
+5. **Response**: Controller sends JSON response back to client
+
+### Key Principles
+
+- **Separation of Concerns**: Routes only define endpoints, controllers handle logic, services contain business logic
+- **Reusability**: Controllers and services can be reused across different routes
+- **Maintainability**: Clear structure makes it easy to find and modify code
+- **Testability**: Each layer can be tested independently
+
+For more details, see [docs/MVC_REFACTORING_SUMMARY.md](docs/MVC_REFACTORING_SUMMARY.md)
 
 ### Frontend
 - **HTML5** - Markup

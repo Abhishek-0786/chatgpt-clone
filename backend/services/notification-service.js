@@ -3,8 +3,8 @@
  * Consumes notifications from RabbitMQ and broadcasts to frontend via Socket.io
  */
 
-const BaseConsumer = require('./rabbitmq/consumer');
-const { QUEUES, ROUTING_KEYS } = require('./rabbitmq/queues');
+const BaseConsumer = require('../libs/rabbitmq/consumer');
+const { QUEUES, ROUTING_KEYS } = require('../libs/rabbitmq/queues');
 
 class NotificationService extends BaseConsumer {
   constructor(io) {

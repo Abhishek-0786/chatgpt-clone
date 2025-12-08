@@ -14,6 +14,9 @@ let stationsFilters = {
     toDate: '',
     status: ''
 };
+// Sorting state
+let currentSortField = null;
+let currentSortDirection = 'asc'; // 'asc' or 'desc'
 
 // Export function to clear refresh interval (called when navigating away)
 export function clearStationsRefreshInterval() {
@@ -136,7 +139,8 @@ export function loadChargingStationsModule() {
                 transform: translateY(1px);
             }
             
-            .status-select {
+            .status-select,
+            .sort-select {
                 padding: 10px 40px 10px 15px;
                 border: 1px solid var(--input-border);
                 border-radius: 4px;
@@ -155,17 +159,20 @@ export function loadChargingStationsModule() {
                 background-size: 16px;
             }
             
-            [data-theme="dark"] .status-select {
+            [data-theme="dark"] .status-select,
+            [data-theme="dark"] .sort-select {
                 background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23e0e0e0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
             }
             
-            .status-select:focus {
+            .status-select:focus,
+            .sort-select:focus {
                 outline: none;
                 border-color: var(--input-border);
                 box-shadow: none;
             }
             
-            .status-select:hover {
+            .status-select:hover,
+            .sort-select:hover {
                 border-color: var(--input-border);
             }
             
@@ -433,6 +440,15 @@ export function loadChargingStationsModule() {
                     <option value="Online">Online</option>
                     <option value="Offline">Offline</option>
                 </select>
+                <select class="sort-select" id="stationSort">
+                    <option value="">Sort By</option>
+                    <option value="sessions-asc">Sessions (Low to High)</option>
+                    <option value="sessions-desc">Sessions (High to Low)</option>
+                    <option value="billedAmount-asc">Billed Amount (Low to High)</option>
+                    <option value="billedAmount-desc">Billed Amount (High to Low)</option>
+                    <option value="energy-asc">Energy (Low to High)</option>
+                    <option value="energy-desc">Energy (High to Low)</option>
+                </select>
                 <button class="apply-btn" onclick="window.applyStationFilters()">APPLY</button>
             </div>
             
@@ -559,8 +575,8 @@ export async function loadStationsData(page = 1, limit = 10, searchTerm = '', fr
         currentStationsPage = page;
         currentStationsLimit = limit;
         
-        // Check if we need to fetch all stations (when date or status filters are active)
-        const hasClientSideFilters = fromDate || toDate || (status && status.trim() !== '');
+        // Check if we need to fetch all stations (when date, status filters, or sorting is active)
+        const hasClientSideFilters = fromDate || toDate || (status && status.trim() !== '') || currentSortField;
         
         let allStations = [];
         let totalStations = 0;
@@ -654,6 +670,11 @@ export async function loadStationsData(page = 1, limit = 10, searchTerm = '', fr
             filteredStations = filteredStations.filter(station => {
                 return station.status === status;
             });
+        }
+        
+        // Apply sorting if sort field is set
+        if (currentSortField) {
+            filteredStations = sortStationsData(filteredStations, currentSortField, currentSortDirection);
         }
         
         // Apply client-side pagination if filters are active
@@ -771,6 +792,38 @@ export function displayStations(data) {
     generatePagination(data.page, data.totalPages);
 }
 
+// Sort stations data
+function sortStationsData(stations, sortField, sortDirection) {
+    const sorted = [...stations].sort((a, b) => {
+        let aValue, bValue;
+        
+        switch(sortField) {
+            case 'sessions':
+                aValue = a.sessions || 0;
+                bValue = b.sessions || 0;
+                break;
+            case 'billedAmount':
+                aValue = parseFloat(a.billedAmount || 0);
+                bValue = parseFloat(b.billedAmount || 0);
+                break;
+            case 'energy':
+                aValue = parseFloat(a.energy || 0);
+                bValue = parseFloat(b.energy || 0);
+                break;
+            default:
+                return 0;
+        }
+        
+        if (sortDirection === 'asc') {
+            return aValue - bValue;
+        } else {
+            return bValue - aValue;
+        }
+    });
+    
+    return sorted;
+}
+
 // Export pagination function
 export function generatePagination(currentPage, totalPages) {
     const pagination = document.getElementById('pagination');
@@ -869,7 +922,7 @@ export async function viewStation(stationId) {
     clearStationsRefreshInterval();
     
     // Push state to browser history for station detail view (default to details tab)
-    const url = `/cms.html?module=charging-stations&station=${stationId}&tab=details`;
+    const url = `/cms?module=charging-stations&station=${stationId}&tab=details`;
     window.history.pushState({ module: 'charging-stations', stationId: stationId, view: 'detail', tab: 'details' }, '', url);
     
     // Dynamically import and load station detail view
@@ -918,6 +971,17 @@ function applyStationFilters() {
     const fromDate = document.getElementById('stationFromDate')?.value || '';
     const toDate = document.getElementById('stationToDate')?.value || '';
     const statusSelect = document.getElementById('stationStatus')?.value || '';
+    const sortSelect = document.getElementById('stationSort')?.value || '';
+    
+    // Parse sort value
+    if (sortSelect) {
+        const [sortField, sortDirection] = sortSelect.split('-');
+        currentSortField = sortField;
+        currentSortDirection = sortDirection || 'asc';
+    } else {
+        currentSortField = null;
+        currentSortDirection = 'asc';
+    }
     
     // Update filters
     stationsFilters.search = searchTerm;
@@ -955,11 +1019,19 @@ function restoreStationFilters() {
     const fromDateInput = document.getElementById('stationFromDate');
     const toDateInput = document.getElementById('stationToDate');
     const statusSelect = document.getElementById('stationStatus');
+    const sortSelect = document.getElementById('stationSort');
     
     if (searchInput) searchInput.value = stationsFilters.search || '';
     if (fromDateInput) fromDateInput.value = stationsFilters.fromDate || '';
     if (toDateInput) toDateInput.value = stationsFilters.toDate || '';
     if (statusSelect) statusSelect.value = stationsFilters.status || '';
+    
+    // Restore sort selection
+    if (sortSelect && currentSortField) {
+        sortSelect.value = `${currentSortField}-${currentSortDirection}`;
+    } else if (sortSelect) {
+        sortSelect.value = '';
+    }
 }
 
 window.loadStationsData = loadStationsData;

@@ -3,8 +3,8 @@
  * Consumes logs from RabbitMQ queue "ocpp.logs" and stores them in database
  */
 
-const BaseConsumer = require('./rabbitmq/consumer');
-const { QUEUES } = require('./rabbitmq/queues');
+const BaseConsumer = require('../libs/rabbitmq/consumer');
+const { QUEUES } = require('../libs/rabbitmq/queues');
 const Charger = require('../models/Charger');
 const ChargerData = require('../models/ChargerData');
 const { Op } = require('sequelize');

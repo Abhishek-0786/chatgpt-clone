@@ -1393,7 +1393,7 @@ window.goToWalletPage = function(customerId, page) {
 // Switch Tab Function
 export function switchCustomerTab(tabName, customerId) {
     // Update URL with tab parameter
-    const url = `/cms.html?module=customers&customer=${customerId}&tab=${tabName}`;
+    const url = `/cms?module=customers&customer=${customerId}&tab=${tabName}`;
     window.history.pushState({ module: 'customers', customerId: customerId, tab: tabName }, '', url);
     
     // Update tab items

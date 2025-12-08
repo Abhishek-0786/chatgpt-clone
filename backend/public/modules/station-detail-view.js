@@ -914,7 +914,7 @@ async function refreshChargingPointsTab(stationId) {
 // Switch Tab Function
 export function switchStationTab(tabName, stationId) {
     // Update URL with tab parameter
-    const url = `/cms.html?module=charging-stations&station=${stationId}&tab=${tabName}`;
+    const url = `/cms?module=charging-stations&station=${stationId}&tab=${tabName}`;
     window.history.pushState({ module: 'charging-stations', stationId: stationId, tab: tabName }, '', url);
     
     // Clear refresh interval when switching tabs
@@ -960,7 +960,7 @@ function copyToClipboard(text) {
 // Edit Station Details
 export function editStationDetails(stationId) {
     // Push state for edit view
-    const url = `/cms.html?module=charging-stations&station=${stationId}&action=edit`;
+    const url = `/cms?module=charging-stations&station=${stationId}&action=edit`;
     window.history.pushState({ module: 'charging-stations', stationId: stationId, view: 'edit' }, '', url);
     
     // Import and call edit station function
@@ -991,7 +991,7 @@ export function goBackToStationsList() {
     }
     
     // Update URL and load stations list (this will restart the auto-refresh)
-    const url = `/cms.html?module=charging-stations`;
+    const url = `/cms?module=charging-stations`;
     window.history.pushState({ module: 'charging-stations' }, '', url);
     loadChargingStationsModule();
 }
@@ -999,7 +999,7 @@ export function goBackToStationsList() {
 // View charging point from station detail
 async function viewPointFromStation(chargingPointId) {
     // Push state to browser history for point detail view (default to details tab)
-    const url = `/cms.html?module=charging-points&point=${chargingPointId}&tab=details`;
+    const url = `/cms?module=charging-points&point=${chargingPointId}&tab=details`;
     window.history.pushState({ module: 'charging-points', chargingPointId: chargingPointId, view: 'detail', tab: 'details' }, '', url);
     
     // Dynamically import and load charging point detail view (default to details tab)

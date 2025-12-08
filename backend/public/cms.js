@@ -37,7 +37,7 @@ function loadModule(moduleName, pushState = true) {
     
     // Update URL without reloading page
     if (pushState) {
-        const url = `/cms.html?module=${moduleName}`;
+        const url = `/cms?module=${moduleName}`;
         window.history.pushState({ module: moduleName }, '', url);
     }
     
@@ -155,7 +155,7 @@ function initializeCMS() {
     if (!moduleFromUrl) {
         moduleFromUrl = 'dashboard';
         // Update URL to include dashboard module
-        window.history.replaceState({ module: 'dashboard' }, '', '/cms.html?module=dashboard');
+        window.history.replaceState({ module: 'dashboard' }, '', '/cms?module=dashboard');
     }
     
     // Update active menu item based on URL IMMEDIATELY
@@ -259,7 +259,7 @@ function initializeCMS() {
     
     // Push initial state if not already in history
     if (!window.location.search.includes('module=')) {
-        window.history.replaceState({ module: moduleFromUrl }, '', `/cms.html?module=${moduleFromUrl}`);
+        window.history.replaceState({ module: moduleFromUrl }, '', `/cms?module=${moduleFromUrl}`);
     }
 }
 
@@ -269,7 +269,7 @@ async function checkCMSAuth() {
     
     if (!authToken) {
         // No token, redirect to home page
-        window.location.href = '/home.html';
+        window.location.href = '/';
         return false;
     }
 
@@ -284,7 +284,7 @@ async function checkCMSAuth() {
             // Invalid token, redirect to home
             localStorage.removeItem('authToken');
             localStorage.removeItem('currentUser');
-            window.location.href = '/home.html';
+            window.location.href = '/';
             return false;
         }
 
@@ -302,7 +302,7 @@ async function checkCMSAuth() {
         console.error('Auth check error:', error);
         localStorage.removeItem('authToken');
         localStorage.removeItem('currentUser');
-        window.location.href = '/home.html';
+        window.location.href = '/';
         return false;
     }
 }

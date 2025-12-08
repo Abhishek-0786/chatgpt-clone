@@ -3,15 +3,16 @@
  * Consumes remote start/stop responses from RabbitMQ and updates sessions
  */
 
-const BaseConsumer = require('./rabbitmq/consumer');
-const { ROUTING_KEYS } = require('./rabbitmq/queues');
+const BaseConsumer = require('../libs/rabbitmq/consumer');
+const { ROUTING_KEYS } = require('../libs/rabbitmq/queues');
 const ChargingSession = require('../models/ChargingSession');
 const Wallet = require('../models/Wallet');
 const WalletTransaction = require('../models/WalletTransaction');
 const ChargerData = require('../models/ChargerData');
 const Charger = require('../models/Charger');
-const { publishNotification } = require('./rabbitmq/producer');
+const { publishNotification } = require('../libs/rabbitmq/producer');
 const { Op } = require('sequelize');
+const { refundWallet } = require('./walletService');
 
 class ChargingResponsesConsumer extends BaseConsumer {
   constructor() {
@@ -29,6 +30,18 @@ class ChargingResponsesConsumer extends BaseConsumer {
   async processMessage(content, msg) {
     try {
       const routingKey = msg.fields.routingKey;
+      
+      // Validity check: Validate content payload
+      if (!content || typeof content !== 'object') {
+        console.error(`❌ [Queue] Invalid content payload: not an object`);
+        return true; // Acknowledge to prevent retries
+      }
+
+      if (!content.sessionId || typeof content.sessionId !== 'string') {
+        console.error(`❌ [Queue] Invalid content payload: missing or invalid sessionId`);
+        return true; // Acknowledge to prevent retries
+      }
+
       console.log(`📥 [Queue] Received charging response: ${routingKey} for session ${content.sessionId}`);
 
       if (routingKey === ROUTING_KEYS.CHARGING_REMOTE_START_RESPONSE) {
@@ -55,6 +68,12 @@ class ChargingResponsesConsumer extends BaseConsumer {
 
   async handleRemoteStartResponse(content) {
     try {
+      // Validity check: Validate required fields
+      if (!content.sessionId || typeof content.sessionId !== 'string') {
+        console.error(`❌ [Queue] Invalid content: missing or invalid sessionId`);
+        return true; // Acknowledge to prevent retries
+      }
+
       const { sessionId, deviceId, connectorId, status, transactionId, errorCode, errorDescription } = content;
       
       console.log(`🚀 [Queue] Processing remote start response for session ${sessionId}: ${status}`);
@@ -67,6 +86,12 @@ class ChargingResponsesConsumer extends BaseConsumer {
       if (!session) {
         console.warn(`⚠️ [Queue] Session ${sessionId} not found - may have been deleted`);
         return true; // Acknowledge - session doesn't exist
+      }
+
+      // Idempotency check: If session is already in final state, skip processing
+      if (['completed', 'stopped', 'failed'].includes(session.status)) {
+        console.log(`⚠️ [Queue] Session ${sessionId} already in final state (${session.status}), skipping duplicate processing`);
+        return true; // Acknowledge - already processed
       }
 
       let effectiveStatus = status;
@@ -94,10 +119,13 @@ class ChargingResponsesConsumer extends BaseConsumer {
           updatePayload.startTime = derivedStartTime;
         }
 
-        // Update session to active
-        await session.update(updatePayload);
-
-        console.log(`✅ [Queue] Session ${sessionId} activated successfully`);
+        // Idempotency check: Only update if not already active
+        if (session.status !== 'active') {
+          await session.update(updatePayload);
+          console.log(`✅ [Queue] Session ${sessionId} activated successfully`);
+        } else {
+          console.log(`⚠️ [Queue] Session ${sessionId} already active, skipping duplicate update`);
+        }
 
         await this.updateChargerStatus(deviceId, 'Charging');
         await this.publishChargingNotification('charging.remote.start.accepted', {
@@ -126,73 +154,35 @@ class ChargingResponsesConsumer extends BaseConsumer {
 
           if (existingRefund) {
             console.log(`⚠️ [Queue] Refund already exists for session ${sessionId}, skipping duplicate refund`);
+            // Return success silently - idempotent operation
           } else {
-            // Find the original debit transaction for THIS session
-            // CRITICAL: Must find the exact debit transaction created for this session
-            const originalDebit = await WalletTransaction.findOne({
-              where: {
-                customerId: session.customerId,
-                referenceId: sessionId, // Must match sessionId exactly - this is the key!
-                transactionType: 'debit',
-                transactionCategory: 'charging'
-              },
-              order: [['createdAt', 'DESC']],
-              limit: 1
-            });
-
-            const refundAmount = parseFloat(session.amountDeducted);
-            const currentBalance = parseFloat(wallet.balance);
-            
-            // CRITICAL: Calculate target balance correctly
-            // If we found the correct debit transaction (by sessionId), ALWAYS restore to its balanceBefore
-            // This ensures we restore to the exact original balance, even if previous refunds corrupted the balance
-            let targetBalance;
-            
-            if (originalDebit && originalDebit.balanceBefore !== null && originalDebit.referenceId === sessionId) {
-              // Found the correct debit transaction for this session - restore to its original balanceBefore
-              targetBalance = parseFloat(originalDebit.balanceBefore);
-              console.log(`✅ [Queue] Found correct debit transaction for session ${sessionId}`);
-              console.log(`📊 [Queue] Original balance before deduction: ₹${targetBalance}`);
-              console.log(`📊 [Queue] Current balance: ₹${currentBalance}`);
-              console.log(`📊 [Queue] Refund amount: ₹${refundAmount}`);
-              console.log(`📊 [Queue] Restoring balance to original: ₹${targetBalance}`);
-            } else {
-              // No matching debit transaction found - use safe approach: add refund to current balance
-              // This should only happen if the debit transaction wasn't created with referenceId
-              targetBalance = currentBalance + refundAmount;
-              console.warn(`⚠️ [Queue] Original debit transaction not found for session ${sessionId} (referenceId match)`);
-              console.log(`📊 [Queue] Using fallback: currentBalance + refundAmount = ₹${currentBalance} + ₹${refundAmount} = ₹${targetBalance}`);
+            try {
+              const refundAmount = parseFloat(session.amountDeducted);
+              const description = `Refund for failed charging session ${sessionId}: ${errorDescription || errorCode || 'Rejected'}`;
+              const result = await refundWallet(session.customerId, refundAmount, description, sessionId);
+              console.log(`💰 [Queue] Refunded ₹${refundAmount} to customer ${session.customerId} (Balance: ₹${result.transaction.balanceAfter})`);
+            } catch (refundError) {
+              // If refund fails due to duplicate transaction (from walletService validation), log and continue
+              if (refundError.message === 'Duplicate transaction') {
+                console.log(`⚠️ [Queue] Duplicate refund detected for session ${sessionId}, skipping`);
+              } else {
+                throw refundError; // Re-throw other errors
+              }
             }
-
-            // Update wallet balance to target balance
-            await wallet.update({ balance: targetBalance });
-
-            // Create refund transaction with correct field names
-            await WalletTransaction.create({
-              walletId: wallet.id,
-              customerId: session.customerId,
-              transactionType: 'refund',
-              amount: refundAmount,
-              balanceBefore: currentBalance,
-              balanceAfter: targetBalance,
-              description: `Refund for failed charging session ${sessionId}: ${errorDescription || errorCode || 'Rejected'}`,
-              referenceId: sessionId,
-              status: 'completed',
-              transactionCategory: 'refund'
-            });
-
-            console.log(`💰 [Queue] Refunded ₹${refundAmount} to customer ${session.customerId} (Balance: ₹${currentBalance} → ₹${targetBalance}, restored to original)`);
           }
         }
 
-        // Update session status
-        await session.update({
-          status: 'failed',
-          refundAmount: session.amountDeducted,
-          stopReason: errorDescription || errorCode || 'Rejected'
-        });
-
-        console.log(`❌ [Queue] Session ${sessionId} rejected: ${errorDescription || errorCode}`);
+        // Idempotency check: Only update if not already failed
+        if (session.status !== 'failed') {
+          await session.update({
+            status: 'failed',
+            refundAmount: session.amountDeducted,
+            stopReason: errorDescription || errorCode || 'Rejected'
+          });
+          console.log(`❌ [Queue] Session ${sessionId} rejected: ${errorDescription || errorCode}`);
+        } else {
+          console.log(`⚠️ [Queue] Session ${sessionId} already marked as failed, skipping duplicate update`);
+        }
       }
 
       return true; // Acknowledge message
@@ -211,6 +201,12 @@ class ChargingResponsesConsumer extends BaseConsumer {
 
   async handleRemoteStopResponse(content) {
     try {
+      // Validity check: Validate required fields
+      if (!content.sessionId || typeof content.sessionId !== 'string') {
+        console.error(`❌ [Queue] Invalid content: missing or invalid sessionId`);
+        return true; // Acknowledge to prevent retries
+      }
+
       const { sessionId, deviceId, status, errorCode, errorDescription } = content;
       
       console.log(`🛑 [Queue] Processing remote stop response for session ${sessionId}: ${status}`);
@@ -223,6 +219,12 @@ class ChargingResponsesConsumer extends BaseConsumer {
       if (!session) {
         console.warn(`⚠️ [Queue] Session ${sessionId} not found - may have been deleted`);
         return true; // Acknowledge - session doesn't exist
+      }
+
+      // Idempotency check: If session is already in final state, skip processing
+      if (['completed', 'stopped', 'failed'].includes(session.status)) {
+        console.log(`⚠️ [Queue] Session ${sessionId} already in final state (${session.status}), skipping duplicate processing`);
+        return true; // Acknowledge - already processed
       }
 
       if (status === 'Accepted') {

@@ -86,22 +86,42 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'home.html'));
 });
 
-// Serve the chat page
+// Clean URLs - Serve pages without .html extension
+app.get('/chat', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'chat.html'));
+});
+
+// Keep old route for backward compatibility
 app.get('/chat.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'chat.html'));
 });
 
-// Serve the CMS page
+// CMS page - clean URL
+app.get('/cms', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'cms.html'));
+});
+
+// Keep old route for backward compatibility
 app.get('/cms.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'cms.html'));
 });
 
-// Serve the User Panel page
+// User Panel page - clean URL
+app.get('/user-panel', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'user-panel.html'));
+});
+
+// Keep old route for backward compatibility
 app.get('/user-panel.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'user-panel.html'));
 });
 
-// Serve the Customer Reset Password page (Web App - separate from CMS)
+// Customer Reset Password page - clean URL
+app.get('/user-panel/reset-password', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'user-panel', 'reset-password.html'));
+});
+
+// Keep old route for backward compatibility
 app.get('/user-panel/reset-password.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'user-panel', 'reset-password.html'));
 });
@@ -111,7 +131,12 @@ app.use(express.static(path.join(__dirname, 'public'), {
   index: false // Disable automatic index.html serving
 }));
 
-// Serve reset password page
+// Reset password page - clean URL
+app.get('/reset-password', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'reset-password.html'));
+});
+
+// Keep old route for backward compatibility
 app.get('/reset-password.html', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'reset-password.html'));
 });
@@ -146,7 +171,7 @@ const startServer = async () => {
     // Initialize RabbitMQ (if enabled)
     if (ENABLE_RABBITMQ) {
       try {
-        const { initializeRabbitMQ } = require('./services/rabbitmq/connection');
+        const { initializeRabbitMQ } = require('./libs/rabbitmq/connection');
         await initializeRabbitMQ();
         rabbitmqInitialized = true;
         console.log('✅ RabbitMQ initialized successfully');

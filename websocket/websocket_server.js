@@ -14,8 +14,8 @@ const rabbitmqProducer = require('./rabbitmq/producer');
 const { QUEUES } = require('./rabbitmq/queues');
 const apiClient = require('./utils/api_client');
 const { MESSAGE_TYPE } = require('./utils/ocpp');
-const listManager = require('../backend/redis/listManager');
-const updater = require('../backend/redis/updater');
+const listManager = require('../backend/libs/redis/listManager');
+const updater = require('../backend/libs/redis/updater');
 
 // Socket.io instance (will be set by server.js)
 let ioInstance = null;

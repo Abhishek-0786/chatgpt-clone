@@ -11,7 +11,7 @@
  * and removes their Redis keys (ocpp:list, events, status, meter, heartbeat, etc.)
  */
 
-const { cleanupInactiveChargers } = require('../redis/cleanup');
+const { cleanupInactiveChargers } = require('../libs/redis/cleanup');
 
 async function runCleanup() {
   try {

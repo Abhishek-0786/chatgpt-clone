@@ -658,7 +658,7 @@ export function openAddStationForm() {
 // Cancel add station
 export function cancelAddStation() {
     // Update URL and reload charging stations module
-    const url = `/cms.html?module=charging-stations`;
+    const url = `/cms?module=charging-stations`;
     window.history.pushState({ module: 'charging-stations' }, '', url);
     loadChargingStationsModule();
 }
@@ -918,11 +918,13 @@ function fillEditFormData(station, stationId) {
         }
     }
     
-    if (station.status) {
+    // Use storedStatus if available (for editing), otherwise fall back to status
+    const statusToUse = station.storedStatus || station.status;
+    if (statusToUse) {
         const select = document.querySelector('select[name="status"]');
         if (select) {
             // Backend and frontend use same values (Active, Inactive, Maintenance)
-            select.value = station.status;
+            select.value = statusToUse;
         }
     }
     
@@ -954,9 +956,14 @@ function fillEditFormData(station, stationId) {
         if (input) input.value = station.state;
     }
     
-    if (station.country) {
+    // Set country - always try to set it, even if null/empty
+    if (station.country !== undefined && station.country !== null) {
         const select = document.querySelector('select[name="country"]');
-        if (select) select.value = station.country;
+        if (select) {
+            select.value = station.country;
+            // Trigger change event to update any dependent UI
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+        }
     }
     
     if (station.latitude) {
@@ -996,14 +1003,31 @@ function fillEditFormData(station, stationId) {
         if (checkbox) checkbox.checked = station.open24Hours;
     }
     
-    // Set working days checkboxes
-    if (station.workingDays && Array.isArray(station.workingDays)) {
+    // Set working days checkboxes - handle case-insensitive matching
+    if (station.workingDays && Array.isArray(station.workingDays) && station.workingDays.length > 0) {
+        // First, uncheck all working days checkboxes
+        const allDayCheckboxes = document.querySelectorAll('input[name="workingDays"]');
+        allDayCheckboxes.forEach(cb => cb.checked = false);
+        
+        // Then check the ones from the station data (case-insensitive)
         station.workingDays.forEach(day => {
-            const checkbox = document.getElementById(`day-${day}`);
+            const dayLower = day.toLowerCase();
+            const checkbox = document.getElementById(`day-${dayLower}`);
             if (checkbox) {
                 checkbox.checked = true;
+            } else {
+                // Try to find by value attribute as fallback
+                const checkboxByValue = document.querySelector(`input[name="workingDays"][value="${dayLower}"]`);
+                if (checkboxByValue) {
+                    checkboxByValue.checked = true;
+                }
             }
         });
+        updateWorkingDaysDisplay();
+    } else {
+        // If no working days, uncheck all
+        const allDayCheckboxes = document.querySelectorAll('input[name="workingDays"]');
+        allDayCheckboxes.forEach(cb => cb.checked = false);
         updateWorkingDaysDisplay();
     }
     
@@ -1040,14 +1064,30 @@ function fillEditFormData(station, stationId) {
         if (checkbox) checkbox.checked = station.sessionStartStopSMS;
     }
     
-    // Set amenities checkboxes
-    if (station.amenities && Array.isArray(station.amenities)) {
+    // Set amenities checkboxes - handle case-insensitive matching
+    if (station.amenities && Array.isArray(station.amenities) && station.amenities.length > 0) {
+        // First, uncheck all amenities checkboxes
+        const allAmenityCheckboxes = document.querySelectorAll('input[name="amenities"]');
+        allAmenityCheckboxes.forEach(cb => cb.checked = false);
+        
+        // Then check the ones from the station data (case-insensitive)
         station.amenities.forEach(amenity => {
-            const checkbox = document.querySelector(`input[name="amenities"][value="${amenity}"]`);
+            const amenityLower = amenity.toLowerCase();
+            const checkbox = document.querySelector(`input[name="amenities"][value="${amenityLower}"]`);
             if (checkbox) {
                 checkbox.checked = true;
+            } else {
+                // Try exact match as fallback
+                const checkboxExact = document.querySelector(`input[name="amenities"][value="${amenity}"]`);
+                if (checkboxExact) {
+                    checkboxExact.checked = true;
+                }
             }
         });
+    } else {
+        // If no amenities, uncheck all
+        const allAmenityCheckboxes = document.querySelectorAll('input[name="amenities"]');
+        allAmenityCheckboxes.forEach(cb => cb.checked = false);
     }
 }
 

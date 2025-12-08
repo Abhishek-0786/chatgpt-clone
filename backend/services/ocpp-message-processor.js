@@ -4,18 +4,18 @@
  * Moves the storeMessage logic from websocket-server.js here
  */
 
-const BaseConsumer = require('./rabbitmq/consumer');
-const { QUEUES, ROUTING_KEYS } = require('./rabbitmq/queues');
+const BaseConsumer = require('../libs/rabbitmq/consumer');
+const { QUEUES, ROUTING_KEYS } = require('../libs/rabbitmq/queues');
 const Charger = require('../models/Charger');
 const ChargerData = require('../models/ChargerData');
 const { Op } = require('sequelize');
 const {
   MESSAGE_TYPE,
   createMessageId
-} = require('../utils/ocpp');
-const { publishNotification } = require('./rabbitmq/producer');
-const listManager = require('../redis/listManager');
-const updater = require('../redis/updater');
+} = require('../libs/ocpp');
+const { publishNotification } = require('../libs/rabbitmq/producer');
+const listManager = require('../libs/redis/listManager');
+const updater = require('../libs/redis/updater');
 
 class OCPPMessageProcessor extends BaseConsumer {
   constructor() {
@@ -338,7 +338,7 @@ class OCPPMessageProcessor extends BaseConsumer {
       // Update Redis status to "Available" when charging stops
       // This ensures the UI updates immediately even if StatusNotification is delayed
       try {
-        const updater = require('../../redis/updater');
+        const updater = require('../libs/redis/updater');
         await updater(deviceId, { status: 'Available' });
         console.log(`✅ [StopTransaction] Updated Redis status to Available for ${deviceId}`);
       } catch (redisErr) {

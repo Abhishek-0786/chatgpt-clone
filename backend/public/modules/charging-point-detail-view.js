@@ -3390,9 +3390,17 @@ function initCmsSocket() {
         if (payload.type === 'charger.status.changed') {
             // StatusNotification received - refresh connectors to show updated status
             const connectorStatus = payload.data.status;
+            // Refresh if status changed to Available (charging stopped) or Charging/Finishing (charging started)
             if (connectorStatus === 'Charging' || connectorStatus === 'Available' || connectorStatus === 'Finishing') {
                 scheduleConnectorRefresh(300);
             }
+        }
+
+        if (payload.type === 'transaction.stopped' || payload.type === 'stop.transaction.received') {
+            // StopTransaction received from charger - refresh immediately
+            console.log(`🔄 [Socket] StopTransaction received, refreshing connectors...`);
+            scheduleConnectorRefresh(200); // Quick refresh
+            return;
         }
     });
 }

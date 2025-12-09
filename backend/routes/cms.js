@@ -4194,11 +4194,11 @@ router.post('/charging/start', authenticateToken, [
 }, chargingController.startCharging);
 
 router.post('/charging/stop', authenticateToken, [
-  body('deviceId').custom((value) => {
-    // Handle both string and number types
-    const parsed = typeof value === 'number' ? value : parseInt(value);
-    return !isNaN(parsed) && parsed >= 0;
-  }).withMessage('deviceId must be a valid integer'),
+  body('deviceId')
+    .notEmpty()
+    .withMessage('deviceId is required')
+    .isString()
+    .withMessage('deviceId must be a string'),
   body('connectorId').custom((value) => {
     // Handle both string and number types
     const parsed = typeof value === 'number' ? value : parseInt(value);

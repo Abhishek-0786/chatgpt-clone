@@ -60,7 +60,7 @@ class NotificationService extends BaseConsumer {
       if (type.includes('station')) {
         this.io.to('cms:dashboard').emit('notification', { type, data, timestamp: new Date() });
         this.io.to('cms:stations').emit('notification', { type, data, timestamp: new Date() });
-      } else if (type.includes('charger')) {
+      } else if (type.includes('charger') || type.includes('transaction')) {
         this.io.to('cms:dashboard').emit('notification', { type, data, timestamp: new Date() });
         this.io.to('cms:points').emit('notification', { type, data, timestamp: new Date() });
       } else if (type.includes('session')) {

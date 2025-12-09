@@ -328,13 +328,19 @@ class OCPPMessageProcessor extends BaseConsumer {
 
   /**
    * Handle StopTransaction
-   * Note: We don't publish session.stopped notification here because:
-   * - charging.stopped is already published by the customer route when charging is stopped
-   * - This prevents duplicate notifications to the customer
-   * - The customer route notification includes more context (sessionId, energyConsumed, refundAmount, etc.)
+   * Updates ChargingSession and publishes notifications for UI refresh
    */
   async handleStopTransaction(deviceId, chargerId, payload) {
     try {
+      const { ChargingSession } = require('../models');
+      
+      // Extract transactionId from payload
+      const transactionId = payload?.transactionId || payload?.transaction_id;
+      const connectorId = payload?.connectorId || payload?.connector_id || 0;
+      const meterStop = payload?.meterStop || payload?.meter_stop;
+      const reason = payload?.reason || 'Local';
+      const timestamp = payload?.timestamp ? new Date(payload.timestamp) : new Date();
+
       // Update Redis status to "Available" when charging stops
       // This ensures the UI updates immediately even if StatusNotification is delayed
       try {
@@ -361,9 +367,81 @@ class OCPPMessageProcessor extends BaseConsumer {
         }
       }
 
-      // Session stopped notification is handled by customer route (charging.stopped)
-      // This handler is kept for future extensions (e.g., CMS notifications, analytics)
-      // No notification published here to avoid duplicates
+      // Update ChargingSession if it exists (for both customer and CMS sessions)
+      if (transactionId) {
+        try {
+          const session = await ChargingSession.findOne({
+            where: {
+              deviceId: deviceId,
+              transactionId: transactionId.toString(),
+              status: { [Op.in]: ['pending', 'active'] },
+              endTime: null
+            }
+          });
+
+          if (session) {
+            // Update session to stopped status
+            await session.update({
+              status: 'stopped',
+              endTime: timestamp,
+              meterEnd: meterStop ? parseInt(meterStop) : null,
+              stopReason: reason || 'Local'
+            });
+            console.log(`✅ [StopTransaction] Updated ChargingSession ${session.sessionId} to stopped status`);
+
+            // Publish notification for customer (if customer session)
+            if (session.customerId) {
+              await publishNotification({
+                type: 'charging.stopped',
+                data: {
+                  sessionId: session.sessionId,
+                  deviceId: deviceId,
+                  connectorId: connectorId,
+                  transactionId: transactionId,
+                  timestamp: timestamp
+                },
+                recipients: [session.customerId]
+              });
+            }
+          } else {
+            console.log(`ℹ️ [StopTransaction] No active ChargingSession found for transactionId ${transactionId} (may be CMS-initiated or already stopped)`);
+          }
+        } catch (sessionErr) {
+          console.error(`❌ [DB] Error updating ChargingSession in StopTransaction for ${deviceId}:`, sessionErr.message);
+        }
+      }
+
+      // Publish CMS notification to refresh UI (always, regardless of ChargingSession)
+      // This ensures CMS UI refreshes even for CMS-initiated charging (no ChargingSession)
+      try {
+        // Publish charger status change notification
+        await publishNotification({
+          type: 'charger.status.changed',
+          data: {
+            deviceId: deviceId,
+            connectorId: connectorId,
+            status: 'Available',
+            transactionId: transactionId,
+            timestamp: timestamp
+          }
+        });
+        
+        // Also publish specific StopTransaction notification for immediate UI refresh
+        await publishNotification({
+          type: 'transaction.stopped',
+          data: {
+            deviceId: deviceId,
+            connectorId: connectorId,
+            transactionId: transactionId,
+            timestamp: timestamp,
+            reason: reason
+          }
+        });
+        
+        console.log(`✅ [StopTransaction] Published CMS notifications for deviceId ${deviceId}`);
+      } catch (notifErr) {
+        console.error(`❌ [Notification] Error publishing CMS notification for ${deviceId}:`, notifErr.message);
+      }
     } catch (error) {
       console.error(`❌ Error handling StopTransaction:`, error.message);
     }

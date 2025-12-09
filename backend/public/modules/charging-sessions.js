@@ -680,14 +680,18 @@ export async function loadSessionsData(page = 1, limit = 10, searchTerm = '', fr
         // Apply client-side pagination if filters are active
         let paginatedSessions = filteredSessions;
         let totalPages = 1;
-        let total = filteredSessions.length;
+        let total;
         
         if (hasClientSideFilters) {
+            // When using client-side filtering, total is the filtered count
+            total = filteredSessions.length;
             totalPages = Math.ceil(total / limit);
             const startIndex = (page - 1) * limit;
             const endIndex = startIndex + limit;
             paginatedSessions = filteredSessions.slice(startIndex, endIndex);
         } else {
+            // When using server-side pagination, total comes from API
+            total = totalSessions;
             totalPages = Math.ceil(totalSessions / limit);
         }
         

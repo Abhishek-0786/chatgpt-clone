@@ -651,7 +651,7 @@ function setupUserDropdown() {
 function handleCMSLogout() {
     localStorage.removeItem('authToken');
     localStorage.removeItem('currentUser');
-    window.location.href = '/home.html';
+    window.location.href = '/';
 }
 
 // Open change password modal

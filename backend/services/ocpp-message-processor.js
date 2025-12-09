@@ -381,21 +381,26 @@ class OCPPMessageProcessor extends BaseConsumer {
 
           if (session) {
             // Check if this is a customer session (not CMS/system customer)
-            const { Customer } = require('../models');
             const { isSystemCustomer } = require('../services/cmsCustomerService');
             const isCMS = await isSystemCustomer(session.customerId);
             
             // Determine stop reason
-            // If session was already stopped by user (stopReason = 'Remote'), preserve it
-            // Otherwise, use reason from charger or default to 'Local'
-            let stopReasonValue = reason || 'Local';
-            if (!isCMS && session.stopReason === 'Remote') {
-              // Customer session already stopped by user - preserve 'Remote' (User stopped charging)
+            // CRITICAL LOGIC:
+            // - For customer sessions: Always set to 'Remote' (User stopped charging)
+            //   This is because if StopTransaction arrives, it means the user initiated the stop
+            //   (either via web app or the charger responded to a user-initiated RemoteStopTransaction)
+            // - For CMS sessions: Set to 'Remote (CMS)'
+            // - Only preserve existing 'Remote' if it's already set (defensive check)
+            let stopReasonValue;
+            if (!isCMS) {
+              // Customer session - always set to 'Remote' (User stopped charging)
+              // Even if stopReason is already 'Remote', we'll set it again to ensure it's correct
               stopReasonValue = 'Remote';
-              console.log(`ℹ️ [StopTransaction] Preserving user stop reason 'Remote' for customer session ${session.sessionId}`);
-            } else if (isCMS) {
+              console.log(`ℹ️ [StopTransaction] Setting stop reason to 'Remote' for customer session ${session.sessionId} (user stopped charging)`);
+            } else {
               // CMS session - set to 'Remote (CMS)'
               stopReasonValue = 'Remote (CMS)';
+              console.log(`ℹ️ [StopTransaction] Setting stop reason to 'Remote (CMS)' for CMS session ${session.sessionId}`);
             }
             
             // Update session to stopped status

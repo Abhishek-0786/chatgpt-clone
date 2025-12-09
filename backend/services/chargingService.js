@@ -1047,17 +1047,78 @@ async function stopChargingSession(params) {
       determinedStopReason = 'Remote';
     }
   } else {
-    // CMS: Set default values for CMS sessions (no wallet operations)
-    energyConsumed = 0;
-    finalAmount = 0;
-    refundAmount = 0;
-    meterStart = null;
-    meterEnd = null;
+    // CMS: Use energy already calculated by MeterValues handler, or calculate from meterStart/meterEnd
+    // First, reload session to get latest values (in case MeterValues handler updated it)
+    await session.reload();
+    
+    // Check if energy was already calculated by MeterValues handler during charging
+    if (session.energyConsumed !== null && session.energyConsumed > 0) {
+      // Use values already calculated by MeterValues handler
+      energyConsumed = parseFloat(session.energyConsumed);
+      finalAmount = parseFloat(session.finalAmount || 0);
+      meterStart = session.meterStart;
+      meterEnd = session.meterEnd;
+      console.log(`✅ [Stop Charging - CMS] Using energy from MeterValues: ${energyConsumed.toFixed(3)} kWh, cost: ₹${finalAmount.toFixed(2)}`);
+    } else if (session.meterStart !== null && session.meterEnd !== null) {
+      // Calculate from meterStart and meterEnd if available
+      const meterStartWh = parseFloat(session.meterStart);
+      const meterEndWh = parseFloat(session.meterEnd);
+      
+      if (!isNaN(meterStartWh) && !isNaN(meterEndWh) && meterEndWh >= meterStartWh) {
+        energyConsumed = (meterEndWh - meterStartWh) / 1000; // Convert Wh to kWh
+        if (energyConsumed < 0) energyConsumed = 0;
+        
+        // Calculate cost if we have tariff
+        const tariff = session.chargingPoint?.tariff;
+        if (energyConsumed > 0 && tariff) {
+          const baseCharges = parseFloat(tariff.baseCharges || 0);
+          const tax = parseFloat(tariff.tax || 0);
+          
+          if (baseCharges > 0) {
+            const baseAmount = energyConsumed * baseCharges;
+            const taxMultiplier = 1 + (tax / 100);
+            finalAmount = baseAmount * taxMultiplier;
+            console.log(`📊 [Stop Charging - CMS] Calculated energy from meter values: ${energyConsumed.toFixed(3)} kWh, cost: ₹${finalAmount.toFixed(2)}`);
+          }
+        }
+        
+        meterStart = meterStartWh;
+        meterEnd = meterEndWh;
+      } else {
+        // Invalid meter values
+        energyConsumed = 0;
+        finalAmount = 0;
+        meterStart = session.meterStart;
+        meterEnd = session.meterEnd;
+        console.log(`⚠️ [Stop Charging - CMS] Invalid meter values, setting energy to 0`);
+      }
+    } else {
+      // No meter values available - set to 0
+      energyConsumed = 0;
+      finalAmount = 0;
+      meterStart = session.meterStart;
+      meterEnd = session.meterEnd;
+      console.log(`⚠️ [Stop Charging - CMS] No meter values available, setting energy to 0`);
+    }
+    
+    refundAmount = 0; // CMS sessions don't have refunds
     determinedStopReason = 'Remote (CMS)';
   }
 
   // Update session status to 'stopped' IMMEDIATELY (for both customer and CMS)
   if (session) {
+    // For customer sessions, reload to get latest values (in case MeterValues updated it)
+    if (customerId) {
+      await session.reload();
+      
+      // If MeterValues handler already calculated energy, use it (it's more accurate)
+      if (session.energyConsumed !== null && session.energyConsumed > 0 && energyConsumed === 0) {
+        energyConsumed = parseFloat(session.energyConsumed);
+        finalAmount = parseFloat(session.finalAmount || 0);
+        console.log(`✅ [Stop Charging - Customer] Using energy from MeterValues: ${energyConsumed.toFixed(3)} kWh, cost: ₹${finalAmount.toFixed(2)}`);
+      }
+    }
+    
     await session.update({
       status: 'stopped',
       transactionId: actualTransactionId,

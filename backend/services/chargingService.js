@@ -1039,12 +1039,15 @@ async function stopChargingSession(params) {
       }
     }
 
-    // Determine stop reason
-    let determinedStopReason = 'Remote';
+    // Determine stop reason for customer sessions
+    // 'Remote' means user stopped charging (will be displayed as "User stopped charging" in CMS)
+    let determinedStopReason = 'Remote'; // Default: User stopped charging
     if (refundAmount === 0 && finalAmount > 0 && Math.abs(finalAmount - amountDeducted) < 0.15) {
       determinedStopReason = 'ChargingCompleted';
     } else if (refundAmount > 0) {
-      determinedStopReason = 'Remote';
+      determinedStopReason = 'Remote'; // User stopped charging (with refund)
+    } else {
+      determinedStopReason = 'Remote'; // User stopped charging
     }
   } else {
     // CMS: Use energy already calculated by MeterValues handler, or calculate from meterStart/meterEnd
@@ -1112,10 +1115,22 @@ async function stopChargingSession(params) {
       await session.reload();
       
       // If MeterValues handler already calculated energy, use it (it's more accurate)
-      if (session.energyConsumed !== null && session.energyConsumed > 0 && energyConsumed === 0) {
+      // Check if MeterValues has more recent/accurate data than our calculations
+      if (session.energyConsumed !== null && session.energyConsumed > 0) {
+        // Use MeterValues calculated values (they're more accurate and real-time)
         energyConsumed = parseFloat(session.energyConsumed);
         finalAmount = parseFloat(session.finalAmount || 0);
-        console.log(`✅ [Stop Charging - Customer] Using energy from MeterValues: ${energyConsumed.toFixed(3)} kWh, cost: ₹${finalAmount.toFixed(2)}`);
+        
+        // CRITICAL: Recalculate refundAmount based on updated energy and finalAmount
+        // This ensures refund is correct when using MeterValues calculated values
+        // Refund = amountDeducted - finalAmount (unused portion)
+        if (finalAmount < amountDeducted) {
+          refundAmount = amountDeducted - finalAmount;
+        } else {
+          refundAmount = 0;
+        }
+        
+        console.log(`✅ [Stop Charging - Customer] Using energy from MeterValues: ${energyConsumed.toFixed(3)} kWh, cost: ₹${finalAmount.toFixed(2)}, refund: ₹${refundAmount.toFixed(2)}`);
       }
     }
     
@@ -1153,8 +1168,8 @@ async function stopChargingSession(params) {
       console.error(`❌ [Redis] Error updating status when stopping charging for ${deviceId}:`, redisErr.message);
     }
 
-    // Update wallet if refund is needed
-    if (refundAmount > 0) {
+    // Update wallet if refund is needed (only for customer sessions)
+    if (refundAmount > 0 && customerId) {
       const existingRefund = await WalletTransaction.findOne({
         where: {
           customerId: customerId,
@@ -1183,6 +1198,10 @@ async function stopChargingSession(params) {
           status: 'completed',
           transactionCategory: 'refund'
         });
+        
+        console.log(`✅ [Stop Charging] Refunded ₹${refundAmount.toFixed(2)} to customer ${customerId} wallet. New balance: ₹${newBalance.toFixed(2)}`);
+      } else {
+        console.log(`ℹ️ [Stop Charging] Refund already processed for session ${session.sessionId}`);
       }
     }
 

@@ -380,14 +380,32 @@ class OCPPMessageProcessor extends BaseConsumer {
           });
 
           if (session) {
+            // Check if this is a customer session (not CMS/system customer)
+            const { Customer } = require('../models');
+            const { isSystemCustomer } = require('../services/cmsCustomerService');
+            const isCMS = await isSystemCustomer(session.customerId);
+            
+            // Determine stop reason
+            // If session was already stopped by user (stopReason = 'Remote'), preserve it
+            // Otherwise, use reason from charger or default to 'Local'
+            let stopReasonValue = reason || 'Local';
+            if (!isCMS && session.stopReason === 'Remote') {
+              // Customer session already stopped by user - preserve 'Remote' (User stopped charging)
+              stopReasonValue = 'Remote';
+              console.log(`ℹ️ [StopTransaction] Preserving user stop reason 'Remote' for customer session ${session.sessionId}`);
+            } else if (isCMS) {
+              // CMS session - set to 'Remote (CMS)'
+              stopReasonValue = 'Remote (CMS)';
+            }
+            
             // Update session to stopped status
             await session.update({
               status: 'stopped',
               endTime: timestamp,
               meterEnd: meterStop ? parseInt(meterStop) : null,
-              stopReason: reason || 'Local'
+              stopReason: stopReasonValue
             });
-            console.log(`✅ [StopTransaction] Updated ChargingSession ${session.sessionId} to stopped status`);
+            console.log(`✅ [StopTransaction] Updated ChargingSession ${session.sessionId} to stopped status (stopReason: ${stopReasonValue})`);
 
             // Publish notification for customer (if customer session)
             if (session.customerId) {

@@ -921,9 +921,14 @@ export async function viewStation(stationId) {
     // Clear refresh interval when navigating to detail view
     clearStationsRefreshInterval();
     
-    // Push state to browser history for station detail view (default to details tab)
-    const url = `/cms?module=charging-stations&station=${stationId}&tab=details`;
+    // Use clean URL for station detail view (default to details tab)
+    const url = `/cms/charging-stations/${stationId}/details`;
     window.history.pushState({ module: 'charging-stations', stationId: stationId, view: 'detail', tab: 'details' }, '', url);
+    
+    // Update global CMS state
+    window.CMS_CURRENT_MODULE = 'charging-stations';
+    window.CMS_CURRENT_STATION_ID = stationId;
+    window.CMS_CURRENT_STATION_TAB = 'details';
     
     // Dynamically import and load station detail view
     try {

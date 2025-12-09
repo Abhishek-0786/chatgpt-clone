@@ -934,6 +934,17 @@ async function getAllChargingPoints(filters, pagination) {
  * Get single charging point by chargingPointId
  */
 async function getChargingPointByChargingPointId(chargingPointId) {
+  // Check cache first
+  const cacheKey = `charging-point:detail:${chargingPointId}`;
+  const cached = await cacheController.get(cacheKey);
+  
+  if (cached) {
+    console.log(`✅ [Cache] Charging point detail cache hit for ${chargingPointId}`);
+    return cached;
+  }
+
+  console.log(`❌ [Cache] Charging point detail cache miss for ${chargingPointId}, fetching from DB`);
+
   const chargingPoint = await ChargingPoint.findOne({
     where: {
       chargingPointId,
@@ -998,7 +1009,7 @@ async function getChargingPointByChargingPointId(chargingPointId) {
     return value;
   };
 
-  return {
+  const result = {
     success: true,
     point: {
       id: chargingPoint.id,
@@ -1035,6 +1046,13 @@ async function getChargingPointByChargingPointId(chargingPointId) {
       updatedAt: chargingPoint.updatedAt
     }
   };
+
+  // Cache the result for 5 minutes (300 seconds)
+  // Note: Status is real-time, so shorter TTL ensures status updates reasonably quickly
+  await cacheController.set(cacheKey, result, 300);
+  console.log(`✅ [Cache] Charging point detail cached for ${chargingPointId} (TTL: 300s)`);
+
+  return result;
 }
 
 /**
@@ -1051,6 +1069,21 @@ async function invalidateChargingPointsListCache() {
     }
   } catch (error) {
     console.warn('⚠️ [Cache] Failed to invalidate charging points list cache:', error.message);
+    // Don't fail the operation if cache invalidation fails
+  }
+}
+
+/**
+ * Helper function to invalidate charging point detail cache
+ * This ensures the detail view is refreshed immediately after update/delete operations
+ */
+async function invalidateChargingPointDetailCache(chargingPointId) {
+  try {
+    const cacheKey = `charging-point:detail:${chargingPointId}`;
+    await cacheController.del(cacheKey);
+    console.log(`✅ [Cache] Invalidated charging point detail cache for ${chargingPointId}`);
+  } catch (error) {
+    console.warn(`⚠️ [Cache] Failed to invalidate charging point detail cache for ${chargingPointId}:`, error.message);
     // Don't fail the operation if cache invalidation fails
   }
 }
@@ -1338,7 +1371,8 @@ async function updateChargingPoint(chargingPointId, updateData) {
     }
   }
 
-  // Invalidate charging points list cache so the updated charging point appears immediately
+  // Invalidate caches after update
+  await invalidateChargingPointDetailCache(chargingPoint.chargingPointId);
   await invalidateChargingPointsListCache();
 
   return {
@@ -1386,7 +1420,8 @@ async function deleteChargingPoint(chargingPointId) {
     }
   }
 
-  // Invalidate charging points list cache so the deleted charging point disappears immediately
+  // Invalidate caches after delete
+  await invalidateChargingPointDetailCache(chargingPoint.chargingPointId);
   await invalidateChargingPointsListCache();
 
   return {

@@ -8,6 +8,24 @@ import { loadChargingStationsModule } from './charging-stations.js';
 // Export function to load station detail view
 export async function loadStationDetailView(stationId, activeTab = 'details') {
     try {
+        // Normalize tab name: 'charging-points' from URL -> 'points' internally
+        const normalizedTab = activeTab === 'charging-points' ? 'points' : activeTab;
+        
+        // Update global CMS state
+        window.CMS_CURRENT_MODULE = 'charging-stations';
+        window.CMS_CURRENT_STATION_ID = stationId;
+        window.CMS_CURRENT_STATION_TAB = normalizedTab;
+        
+        // Ensure URL is clean (normalize if needed)
+        const urlTabName = normalizedTab === 'points' ? 'charging-points' : normalizedTab;
+        const expectedUrl = urlTabName === 'details'
+            ? `/cms/charging-stations/${stationId}`
+            : `/cms/charging-stations/${stationId}/${urlTabName}`;
+        
+        if (window.location.pathname !== expectedUrl) {
+            window.history.replaceState({ module: 'charging-stations', stationId, tab: normalizedTab }, '', expectedUrl);
+        }
+        
         // Fetch station details
         const stationResponse = await getChargingStation(stationId);
         
@@ -913,9 +931,19 @@ async function refreshChargingPointsTab(stationId) {
 
 // Switch Tab Function
 export function switchStationTab(tabName, stationId) {
-    // Update URL with tab parameter
-    const url = `/cms?module=charging-stations&station=${stationId}&tab=${tabName}`;
+    // Map internal tab names to URL tab names
+    // 'points' -> 'charging-points' for URL
+    const urlTabName = tabName === 'points' ? 'charging-points' : tabName;
+    
+    // Use clean URL format
+    const url = urlTabName === 'details' 
+        ? `/cms/charging-stations/${stationId}`
+        : `/cms/charging-stations/${stationId}/${urlTabName}`;
+    
     window.history.pushState({ module: 'charging-stations', stationId: stationId, tab: tabName }, '', url);
+    
+    // Update global CMS state
+    window.CMS_CURRENT_STATION_TAB = tabName;
     
     // Clear refresh interval when switching tabs
     if (stationPointsRefreshInterval) {
@@ -990,17 +1018,28 @@ export function goBackToStationsList() {
         stationPointsRefreshInterval = null;
     }
     
-    // Update URL and load stations list (this will restart the auto-refresh)
-    const url = `/cms?module=charging-stations`;
+    // Use clean URL for stations list (this will restart the auto-refresh)
+    const url = `/cms/charging-stations`;
     window.history.pushState({ module: 'charging-stations' }, '', url);
+    
+    // Update global CMS state
+    window.CMS_CURRENT_MODULE = 'charging-stations';
+    window.CMS_CURRENT_STATION_ID = null;
+    window.CMS_CURRENT_STATION_TAB = null;
+    
     loadChargingStationsModule();
 }
 
 // View charging point from station detail
 async function viewPointFromStation(chargingPointId) {
-    // Push state to browser history for point detail view (default to details tab)
-    const url = `/cms?module=charging-points&point=${chargingPointId}&tab=details`;
+    // Use clean URL for point detail view (default to details tab)
+    const url = `/cms/charging-points/${chargingPointId}/details`;
     window.history.pushState({ module: 'charging-points', chargingPointId: chargingPointId, view: 'detail', tab: 'details' }, '', url);
+    
+    // Update global CMS state
+    window.CMS_CURRENT_MODULE = 'charging-points';
+    window.CMS_CURRENT_POINT_ID = chargingPointId;
+    window.CMS_CURRENT_POINT_TAB = 'details';
     
     // Dynamically import and load charging point detail view (default to details tab)
     try {

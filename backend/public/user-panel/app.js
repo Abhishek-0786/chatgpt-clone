@@ -6,6 +6,91 @@ import { loadWalletModule } from './modules/wallet.js';
 import { loadSessionsModule } from './modules/sessions.js';
 import { loadProfileModule } from './modules/profile.js';
 import { showError } from '../utils/notifications.js';
+
+// Helper function to get tab from URL path
+function getTabFromPath() {
+    const path = window.location.pathname;
+    
+    // Handle /user/vehicles/add
+    if (path === '/user/vehicles/add') {
+        return 'vehicles-add';
+    }
+    
+    // Handle /user/vehicles
+    if (path === '/user/vehicles') {
+        return 'vehicles';
+    }
+    
+    // Match /user or /user/ or /user/{tab}
+    const match = path.match(/^\/user\/([^\/]+)$/);
+    if (match && match[1]) {
+        const tab = match[1];
+        // Treat "home" as "home" but we'll normalize to empty for URL
+        return tab === 'home' ? 'home' : tab;
+    }
+    
+    // /user or /user/ -> home
+    if (path === '/user' || path === '/user/') {
+        return 'home';
+    }
+    return null;
+}
+
+// Helper function to get tab from query string (backward compatibility)
+function getTabFromQuery() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const page = urlParams.get('page');
+    // Map old page names to new tab names
+    if (page === 'dashboard') return 'home';
+    if (page === 'add-vehicle') return 'vehicles-add';
+    return page;
+}
+
+// Helper function to convert tab name to page name (for internal use)
+function tabToPageName(tab) {
+    // Map tab names to page names used by modules
+    if (tab === 'home') return 'dashboard';
+    if (tab === 'vehicles-add') return 'add-vehicle';
+    return tab;
+}
+
+// Helper function to convert page name to tab name
+function pageToTabName(page) {
+    // Map page names to tab names for URLs
+    if (page === 'dashboard') return 'home';
+    if (page === 'add-vehicle') return 'vehicles-add';
+    return page;
+}
+
+// Navigate to a tab and update URL
+function navigateToTab(tabName, pushState = true) {
+    // Determine URL based on tab
+    let newUrl;
+    if (tabName === 'home') {
+        newUrl = '/user';
+    } else if (tabName === 'vehicles-add') {
+        newUrl = '/user/vehicles/add';
+    } else {
+        newUrl = `/user/${tabName}`;
+    }
+    
+    // Update URL using History API
+    if (pushState) {
+        window.history.pushState({ tab: tabName }, '', newUrl);
+    }
+    
+    // Convert tab name to page name for module loading
+    const pageName = tabToPageName(tabName);
+    
+    // Update active nav item
+    updateActiveNav(pageName);
+    
+    // Store in sessionStorage for backward compatibility
+    sessionStorage.setItem('lastPage', pageName);
+    
+    return pageName;
+}
+
 // Initialize app
 document.addEventListener('DOMContentLoaded', async () => {
     try {
@@ -38,9 +123,34 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const { loadActiveSession } = await import('./modules/active-session.js');
                 await loadActiveSession();
             } else {
-                // Check URL parameters or sessionStorage for which page to load
-                const urlParams = new URLSearchParams(window.location.search);
-                const page = urlParams.get('page') || sessionStorage.getItem('lastPage') || 'dashboard';
+                // Determine initial tab from various sources (priority order)
+                // 1. window.INITIAL_USER_TAB (set by server via EJS)
+                // 2. URL path (/user/stations)
+                // 3. Query string (?page=stations) - backward compatibility
+                // 4. sessionStorage (lastPage)
+                // 5. Default to 'home'
+                let initialTab = window.INITIAL_USER_TAB || getTabFromPath() || getTabFromQuery() || null;
+                
+                // If no tab found, check sessionStorage and convert page name to tab
+                if (!initialTab) {
+                    const lastPage = sessionStorage.getItem('lastPage');
+                    if (lastPage) {
+                        initialTab = pageToTabName(lastPage);
+                    } else {
+                        initialTab = 'home';
+                    }
+                }
+                
+                // Normalize /user/home to /user (optional, nice-to-have)
+                if (initialTab === 'home' && window.location.pathname === '/user/home') {
+                    window.history.replaceState({ tab: 'home' }, '', '/user');
+                }
+                
+                // Convert tab to page name for module loading
+                const page = tabToPageName(initialTab);
+                
+                // Navigate to the tab (without pushing state on initial load)
+                navigateToTab(initialTab, false);
                 
                 // Load the appropriate page
                 switch(page) {
@@ -57,9 +167,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                         await loadProfileModule();
                         break;
                     case 'vehicles':
+                        navigateToTab('vehicles', false);
                         await window.loadVehiclesModule();
                         break;
                     case 'add-vehicle':
+                        navigateToTab('vehicles-add', false);
                         const { loadAddVehiclePage } = await import('./modules/vehicles.js');
                         await loadAddVehiclePage();
                         break;
@@ -130,8 +242,24 @@ document.addEventListener('DOMContentLoaded', async () => {
             
             // Handle browser back/forward buttons
             window.addEventListener('popstate', async (event) => {
-                const urlParams = new URLSearchParams(window.location.search);
-                const page = urlParams.get('page') || sessionStorage.getItem('lastPage') || 'dashboard';
+                // Get tab from event.state or parse URL
+                let tab = null;
+                if (event.state && event.state.tab) {
+                    tab = event.state.tab;
+                } else {
+                    // Parse from URL path or query string
+                    tab = getTabFromPath() || getTabFromQuery();
+                    if (!tab) {
+                        const lastPage = sessionStorage.getItem('lastPage');
+                        tab = lastPage ? pageToTabName(lastPage) : 'home';
+                    }
+                }
+                
+                // Convert tab to page name
+                const page = tabToPageName(tab);
+                
+                // Update active nav without pushing state
+                navigateToTab(tab, false);
                 
                 // Load the appropriate page based on URL
                 switch(page) {
@@ -148,9 +276,11 @@ document.addEventListener('DOMContentLoaded', async () => {
                         await loadProfileModule();
                         break;
                     case 'vehicles':
+                        navigateToTab('vehicles', false);
                         await window.loadVehiclesModule();
                         break;
                     case 'add-vehicle':
+                        navigateToTab('vehicles-add', false);
                         const { loadAddVehiclePage } = await import('./modules/vehicles.js');
                         await loadAddVehiclePage();
                         break;
@@ -253,18 +383,38 @@ window.viewActiveSession = async function() {
 
 // Show wallet quick view
 window.showWalletQuickView = function() {
-    loadWalletModule();
+    window.loadWalletModule();
 };
 
-// Make navigation functions globally available
-window.loadDashboard = loadDashboard;
-window.loadStationsModule = loadStationsModule;
-window.loadWalletModule = loadWalletModule;
-window.loadSessionsModule = loadSessionsModule;
-window.loadProfileModule = loadProfileModule;
+// Wrapper functions that update URL when navigating
+window.loadDashboard = async function() {
+    navigateToTab('home');
+    await loadDashboard();
+};
+
+window.loadStationsModule = async function() {
+    navigateToTab('stations');
+    await loadStationsModule();
+};
+
+window.loadWalletModule = async function() {
+    navigateToTab('wallet');
+    await loadWalletModule();
+};
+
+window.loadSessionsModule = async function() {
+    navigateToTab('sessions');
+    await loadSessionsModule();
+};
+
+window.loadProfileModule = async function() {
+    navigateToTab('profile');
+    await loadProfileModule();
+};
 
 // Load vehicles module
 window.loadVehiclesModule = async function() {
+    navigateToTab('vehicles');
     const { loadVehiclesModule } = await import('./modules/vehicles.js');
     await loadVehiclesModule();
 };

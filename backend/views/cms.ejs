@@ -649,6 +649,10 @@
             });
         })();
     </script>
+    <script>
+        // Pass initial module from server to frontend
+        window.INITIAL_CMS_MODULE = "<%= initialModule %>";
+    </script>
     <script type="module" src="/cms.js"></script>
 </body>
 </html>

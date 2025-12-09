@@ -1194,8 +1194,15 @@ function loadRecentCustomers(customers) {
         return;
     }
     
-    container.innerHTML = customers.slice(0, 5).map(customer => `
-        <div class="activity-item" onclick="viewCustomerDetailFromDashboard('${customer.id}');" style="cursor: pointer; transition: background-color 0.2s ease;" onmouseover="this.style.backgroundColor='#f8fafc';" onmouseout="this.style.backgroundColor='transparent';">
+    container.innerHTML = customers.slice(0, 5).map(customer => {
+        // Use customerId from API response, fallback to id for backward compatibility
+        const customerId = customer.customerId || customer.id;
+        if (!customerId) {
+            console.warn('Customer missing ID:', customer);
+            return '';
+        }
+        return `
+        <div class="activity-item" onclick="viewCustomerDetailFromDashboard('${customerId}');" style="cursor: pointer; transition: background-color 0.2s ease;" onmouseover="this.style.backgroundColor='#f8fafc';" onmouseout="this.style.backgroundColor='transparent';">
             <div class="activity-icon customer">
                 <i class="fas fa-user"></i>
             </div>
@@ -1205,7 +1212,8 @@ function loadRecentCustomers(customers) {
             </div>
             <div class="activity-time">${formatDate(customer.createdAt)}</div>
         </div>
-    `).join('');
+    `;
+    }).filter(html => html !== '').join('');
 }
 
 // Load mock data for development
@@ -1392,9 +1400,14 @@ async function viewStationFromDashboard(stationId) {
         }
     });
     
-    // Push state to browser history for station detail view
-    const url = `/cms?module=charging-stations&station=${stationId}&tab=details`;
+    // Use clean URL for station detail view
+    const url = `/cms/charging-stations/${stationId}/details`;
     window.history.pushState({ module: 'charging-stations', stationId: stationId, view: 'detail', tab: 'details' }, '', url);
+    
+    // Update global CMS state
+    window.CMS_CURRENT_MODULE = 'charging-stations';
+    window.CMS_CURRENT_STATION_ID = stationId;
+    window.CMS_CURRENT_STATION_TAB = 'details';
     
     // Dynamically import and load station detail view
     try {
@@ -1501,6 +1514,13 @@ async function navigateToCompletedSessions() {
 
 // Function to view customer detail from dashboard
 async function viewCustomerDetailFromDashboard(customerId) {
+    // Validate customerId
+    if (!customerId || customerId === 'undefined' || customerId === 'null') {
+        console.error('Invalid customer ID:', customerId);
+        alert('Invalid customer ID. Please try again.');
+        return;
+    }
+    
     // Update sidebar to show Customers as active
     const menuItems = document.querySelectorAll('.menu-item');
     menuItems.forEach(item => {
@@ -1513,8 +1533,14 @@ async function viewCustomerDetailFromDashboard(customerId) {
     // Navigate to customers module and load customer detail view
     try {
         // Push state to browser history for customer detail view
-        const url = `/cms?module=customers&customer=${customerId}&tab=details`;
+        // Use clean URL for customer detail view (always include tab for consistency)
+        const url = `/cms/customers/${customerId}/details`;
         window.history.pushState({ module: 'customers', customerId: customerId, view: 'detail', tab: 'details' }, '', url);
+        
+        // Update global CMS state
+        window.CMS_CURRENT_MODULE = 'customers';
+        window.CMS_CURRENT_CUSTOMER_ID = customerId;
+        window.CMS_CURRENT_CUSTOMER_TAB = 'details';
         
         // Dynamically import and load customer detail view
         const detailModule = await import('./customer-detail-view.js');

@@ -976,9 +976,14 @@ export async function viewPoint(chargingPointId) {
     // Clear refresh interval when navigating to detail view
     clearPointsRefreshInterval();
     
-    // Push state to browser history for point detail view (default to details tab)
-    const url = `/cms?module=charging-points&point=${chargingPointId}&tab=details`;
+    // Use clean URL for point detail view (default to details tab)
+    const url = `/cms/charging-points/${chargingPointId}/details`;
     window.history.pushState({ module: 'charging-points', chargingPointId: chargingPointId, view: 'detail', tab: 'details' }, '', url);
+    
+    // Update global CMS state
+    window.CMS_CURRENT_MODULE = 'charging-points';
+    window.CMS_CURRENT_POINT_ID = chargingPointId;
+    window.CMS_CURRENT_POINT_TAB = 'details';
     
     // Dynamically import and load charging point detail view (default to details tab)
     try {

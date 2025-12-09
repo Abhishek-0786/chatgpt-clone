@@ -1847,6 +1847,19 @@ export function applyCustomerFilters() {
 
 // Export action functions
 export function viewCustomer(customerId, tab = 'details') {
+    // Use clean URL for customer detail view
+    // Map internal tab 'wallet' to URL tab 'wallet-ledger'
+    const urlTabName = tab === 'wallet' ? 'wallet-ledger' : tab;
+    // Always include tab in URL for consistency
+    const url = `/cms/customers/${customerId}/${urlTabName}`;
+    
+    window.history.pushState({ module: 'customers', customerId: customerId, tab: tab }, '', url);
+    
+    // Update global CMS state
+    window.CMS_CURRENT_MODULE = 'customers';
+    window.CMS_CURRENT_CUSTOMER_ID = customerId;
+    window.CMS_CURRENT_CUSTOMER_TAB = tab;
+    
     loadCustomerDetailView(customerId, tab);
 }
 
@@ -1856,7 +1869,7 @@ window.applyCustomerFilters = applyCustomerFilters;
 window.viewCustomer = viewCustomer;
 window.viewCustomerDetail = viewCustomer;
 window.viewCustomerLedger = function(customerId, customerName) {
-    // Redirect to customer detail with wallet tab
+    // Redirect to customer detail with wallet tab (will be mapped to wallet-ledger in URL)
     viewCustomer(customerId, 'wallet');
 };
 window.closeCustomerDetail = closeCustomerDetail;

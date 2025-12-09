@@ -279,6 +279,10 @@
     </div>
 
     <!-- Scripts -->
+    <script>
+        // Pass initial tab from server to frontend
+        window.INITIAL_USER_TAB = "<%= initialTab %>";
+    </script>
     <script type="module" src="/user-panel/app.js"></script>
 </body>
 </html>

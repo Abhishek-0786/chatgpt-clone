@@ -722,6 +722,17 @@ async function getStationsDropdown() {
  * Get single station by stationId
  */
 async function getStationById(stationId) {
+  // Check cache first
+  const cacheKey = `station:detail:${stationId}`;
+  const cached = await cacheController.get(cacheKey);
+  
+  if (cached) {
+    console.log(`✅ [Cache] Station detail cache hit for ${stationId}`);
+    return cached;
+  }
+
+  console.log(`❌ [Cache] Station detail cache miss for ${stationId}, fetching from DB`);
+
   const station = await Station.findOne({
     where: {
       stationId,
@@ -774,7 +785,7 @@ async function getStationById(stationId) {
   // Determine station status: Online if at least 1 CP is online, otherwise Offline
   const stationStatus = onlineCPs >= 1 ? 'Online' : 'Offline';
 
-  return {
+  const result = {
     success: true,
     station: {
       id: station.id,
@@ -808,6 +819,13 @@ async function getStationById(stationId) {
       updatedAt: station.updatedAt
     }
   };
+
+  // Cache the result for 5 minutes (300 seconds)
+  // Note: Status is real-time, so shorter TTL ensures status updates reasonably quickly
+  await cacheController.set(cacheKey, result, 300);
+  console.log(`✅ [Cache] Station detail cached for ${stationId} (TTL: 300s)`);
+
+  return result;
 }
 
 /**
@@ -824,6 +842,21 @@ async function invalidateStationsListCache() {
     }
   } catch (error) {
     console.warn('⚠️ [Cache] Failed to invalidate stations list cache:', error.message);
+    // Don't fail the operation if cache invalidation fails
+  }
+}
+
+/**
+ * Helper function to invalidate station detail cache
+ * This ensures the detail view is refreshed immediately after update/delete operations
+ */
+async function invalidateStationDetailCache(stationId) {
+  try {
+    const cacheKey = `station:detail:${stationId}`;
+    await cacheController.del(cacheKey);
+    console.log(`✅ [Cache] Invalidated station detail cache for ${stationId}`);
+  } catch (error) {
+    console.warn(`⚠️ [Cache] Failed to invalidate station detail cache for ${stationId}:`, error.message);
     // Don't fail the operation if cache invalidation fails
   }
 }
@@ -1014,7 +1047,8 @@ async function updateStation(stationId, updateData) {
     }
   }
 
-  // Invalidate stations list cache so the updated station appears immediately
+  // Invalidate caches after update
+  await invalidateStationDetailCache(station.stationId);
   await invalidateStationsListCache();
 
   return {
@@ -1051,7 +1085,8 @@ async function deleteStation(stationId) {
   // Soft delete
   await station.update({ deleted: true });
 
-  // Invalidate stations list cache so the deleted station disappears immediately
+  // Invalidate caches after delete
+  await invalidateStationDetailCache(station.stationId);
   await invalidateStationsListCache();
 
   return {

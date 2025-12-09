@@ -491,8 +491,9 @@ function formatDate(dateString) {
 
 // Navigate to add vehicle page
 window.navigateToAddVehicle = function() {
+    // Use clean URL
+    window.history.pushState({ tab: 'vehicles-add' }, '', '/user/vehicles/add');
     sessionStorage.setItem('lastPage', 'add-vehicle');
-    window.history.pushState({}, '', '?page=add-vehicle');
     loadAddVehiclePage();
 };
 
@@ -500,6 +501,10 @@ window.navigateToAddVehicle = function() {
 export async function loadAddVehiclePage() {
     // Store current page in sessionStorage for refresh persistence
     sessionStorage.setItem('lastPage', 'add-vehicle');
+    // Ensure URL is correct (in case called directly)
+    if (window.location.pathname !== '/user/vehicles/add') {
+        window.history.replaceState({ tab: 'vehicles-add' }, '', '/user/vehicles/add');
+    }
     
     updateActiveNav('vehicles');
     updatePageTitle('Add Vehicle');
@@ -752,9 +757,7 @@ export async function loadAddVehiclePage() {
 
 // Go back to vehicles page
 window.goBackToVehicles = function() {
-    sessionStorage.setItem('lastPage', 'vehicles');
-    window.history.pushState({}, '', '?page=vehicles');
-    loadVehiclesModule();
+    window.loadVehiclesModule();
 };
 
 // Show add vehicle modal (kept for edit functionality)

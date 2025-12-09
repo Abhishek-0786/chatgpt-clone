@@ -9,6 +9,83 @@ import { loadCustomersModule } from './modules/customers.js';
 // Export functions for global access
 export { loadDashboardModule, loadChargingStationsModule, loadChargingPointsModule, loadChargingSessionsModule, loadTariffManagementModule, loadCustomersModule };
 
+// Helper function to parse CMS URL path segments
+function parseCMSPath() {
+    const path = window.location.pathname;
+    // Match patterns like:
+    // /cms/charging-stations -> ['charging-stations']
+    // /cms/charging-stations/STN-123 -> ['charging-stations', 'STN-123']
+    // /cms/charging-stations/STN-123/details -> ['charging-stations', 'STN-123', 'details']
+    // /cms/charging-points -> ['charging-points']
+    // /cms/charging-points/CP-123 -> ['charging-points', 'CP-123']
+    // /cms/charging-points/CP-123/details -> ['charging-points', 'CP-123', 'details']
+    // /cms/customers -> ['customers']
+    // /cms/customers/1 -> ['customers', '1']
+    // /cms/customers/1/details -> ['customers', '1', 'details']
+    const match = path.match(/^\/cms\/([^\/]+)(?:\/([^\/]+))?(?:\/([^\/]+))?/);
+    if (match) {
+        const module = match[1] || null;
+        const secondSegment = match[2] || null;
+        const thirdSegment = match[3] || null;
+        
+        // Determine if second segment is an ID or a tab based on module
+        if (module === 'charging-stations' && secondSegment) {
+            return {
+                module: module,
+                stationId: secondSegment,
+                stationTab: thirdSegment || null,
+                pointId: null,
+                pointTab: null,
+                customerId: null,
+                customerTab: null
+            };
+        } else if (module === 'charging-points' && secondSegment) {
+            return {
+                module: module,
+                stationId: null,
+                stationTab: null,
+                pointId: secondSegment,
+                pointTab: thirdSegment || null,
+                customerId: null,
+                customerTab: null
+            };
+        } else if (module === 'customers' && secondSegment) {
+            return {
+                module: module,
+                stationId: null,
+                stationTab: null,
+                pointId: null,
+                pointTab: null,
+                customerId: secondSegment,
+                customerTab: thirdSegment || null
+            };
+        } else {
+            return {
+                module: module,
+                stationId: null,
+                stationTab: null,
+                pointId: null,
+                pointTab: null,
+                customerId: null,
+                customerTab: null
+            };
+        }
+    }
+    return { module: null, stationId: null, stationTab: null, pointId: null, pointTab: null, customerId: null, customerTab: null };
+}
+
+// Helper function to get module from URL path
+function getModuleFromPath() {
+    const parsed = parseCMSPath();
+    return parsed.module;
+}
+
+// Helper function to get module from query string (backward compatibility)
+function getModuleFromQuery() {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get('module');
+}
+
 // Define loadModule function first
 function loadModule(moduleName, pushState = true) {
     const moduleContent = document.getElementById('moduleContent');
@@ -35,9 +112,18 @@ function loadModule(moduleName, pushState = true) {
         });
     }
     
-    // Update URL without reloading page
+    // Update active menu item in sidebar
+    const menuItems = document.querySelectorAll('.menu-item');
+    menuItems.forEach(item => {
+        item.classList.remove('active');
+        if (item.getAttribute('data-module') === moduleName) {
+            item.classList.add('active');
+        }
+    });
+    
+    // Update URL without reloading page (use clean URL format)
     if (pushState) {
-        const url = `/cms?module=${moduleName}`;
+        const url = `/cms/${moduleName}`;
         window.history.pushState({ module: moduleName }, '', url);
     }
     
@@ -70,11 +156,30 @@ window.loadModule = loadModule;
 
 // Handle browser back/forward buttons
 window.addEventListener('popstate', function(event) {
+    // Parse URL path to get module, stationId, and tab
+    const pathParsed = parseCMSPath();
+    
+    // Get module from URL path (clean URL) or query string (backward compatibility)
+    let module = pathParsed.module || getModuleFromQuery();
     const urlParams = new URLSearchParams(window.location.search);
-    let module = urlParams.get('module');
-    const stationId = urlParams.get('station');
-    const pointId = urlParams.get('point');
-    const customerId = urlParams.get('customer');
+    
+    // For charging stations, prefer path segments over query params
+    let stationId = pathParsed.stationId || urlParams.get('station');
+    let stationTab = pathParsed.stationTab || urlParams.get('tab');
+    
+    // For charging points, prefer path segments over query params
+    let pointId = pathParsed.pointId || urlParams.get('point');
+    let pointTab = pathParsed.pointTab || urlParams.get('tab');
+    
+    // For customers, prefer path segments over query params
+    let customerId = pathParsed.customerId || urlParams.get('customer');
+    let customerTab = pathParsed.customerTab || urlParams.get('tab');
+    
+    // Normalize customer tab from URL to internal format
+    if (customerTab) {
+        customerTab = customerTab === 'wallet-ledger' ? 'wallet' : customerTab;
+    }
+    
     const action = urlParams.get('action');
     
     // If no module specified, default to dashboard
@@ -91,10 +196,45 @@ window.addEventListener('popstate', function(event) {
         }
     });
     
+    // Update global CMS state
+    if (module === 'charging-stations' && stationId) {
+        window.CMS_CURRENT_MODULE = 'charging-stations';
+        window.CMS_CURRENT_STATION_ID = stationId;
+        window.CMS_CURRENT_STATION_TAB = stationTab || 'details';
+        window.CMS_CURRENT_POINT_ID = null;
+        window.CMS_CURRENT_POINT_TAB = null;
+        window.CMS_CURRENT_CUSTOMER_ID = null;
+        window.CMS_CURRENT_CUSTOMER_TAB = null;
+    } else if (module === 'charging-points' && pointId) {
+        window.CMS_CURRENT_MODULE = 'charging-points';
+        window.CMS_CURRENT_STATION_ID = null;
+        window.CMS_CURRENT_STATION_TAB = null;
+        window.CMS_CURRENT_POINT_ID = pointId;
+        window.CMS_CURRENT_POINT_TAB = pointTab || 'details';
+        window.CMS_CURRENT_CUSTOMER_ID = null;
+        window.CMS_CURRENT_CUSTOMER_TAB = null;
+    } else if (module === 'customers' && customerId) {
+        window.CMS_CURRENT_MODULE = 'customers';
+        window.CMS_CURRENT_STATION_ID = null;
+        window.CMS_CURRENT_STATION_TAB = null;
+        window.CMS_CURRENT_POINT_ID = null;
+        window.CMS_CURRENT_POINT_TAB = null;
+        window.CMS_CURRENT_CUSTOMER_ID = customerId;
+        window.CMS_CURRENT_CUSTOMER_TAB = customerTab || 'details';
+    } else {
+        window.CMS_CURRENT_MODULE = module;
+        window.CMS_CURRENT_STATION_ID = null;
+        window.CMS_CURRENT_STATION_TAB = null;
+        window.CMS_CURRENT_POINT_ID = null;
+        window.CMS_CURRENT_POINT_TAB = null;
+        window.CMS_CURRENT_CUSTOMER_ID = null;
+        window.CMS_CURRENT_CUSTOMER_TAB = null;
+    }
+    
     // Handle station detail view
     if (stationId && module === 'charging-stations' && !action) {
-        // Get tab parameter from URL (default to 'details')
-        const tabFromUrl = urlParams.get('tab') || 'details';
+        // Get tab parameter from path or query (default to 'details')
+        const tabFromUrl = stationTab || 'details';
         // Load station detail view with active tab
         import('./modules/station-detail-view.js').then(detailModule => {
             detailModule.loadStationDetailView(stationId, tabFromUrl);
@@ -111,8 +251,8 @@ window.addEventListener('popstate', function(event) {
             loadModule(module, false);
         });
     } else if (pointId && module === 'charging-points' && !action) {
-        // Get tab parameter from URL (default to 'details')
-        const tabFromUrl = urlParams.get('tab') || 'details';
+        // Get tab parameter from path or query (default to 'details')
+        const tabFromUrl = pointTab || 'details';
         // Load charging point detail view with active tab
         import('./modules/charging-point-detail-view.js').then(detailModule => {
             window.currentChargingPointId = pointId;
@@ -130,8 +270,19 @@ window.addEventListener('popstate', function(event) {
             loadModule(module, false);
         });
     } else if (customerId && module === 'customers' && !action) {
-        // Get tab parameter from URL (default to 'details')
-        const tabFromUrl = urlParams.get('tab') || 'details';
+        // Get tab parameter from path or query (default to 'details')
+        // If no tab in path but customerId exists, redirect to details tab
+        if (!customerTab) {
+            const cleanUrl = `/cms/customers/${customerId}/details`;
+            window.history.replaceState({ module: 'customers', customerId, tab: 'details' }, '', cleanUrl);
+            customerTab = 'details';
+        }
+        
+        // Normalize tab from URL format to internal format
+        let tabFromUrl = customerTab;
+        if (tabFromUrl === 'wallet-ledger') {
+            tabFromUrl = 'wallet';
+        }
         // Load customer detail view with active tab
         import('./modules/customer-detail-view.js').then(detailModule => {
             detailModule.loadCustomerDetailView(customerId, tabFromUrl);
@@ -147,15 +298,133 @@ window.addEventListener('popstate', function(event) {
 
 // Handle initial page load - check URL for module
 function initializeCMS() {
-    // FIRST: Check URL and set active menu item BEFORE any module loads
-    const urlParams = new URLSearchParams(window.location.search);
-    let moduleFromUrl = urlParams.get('module');
+    // FIRST: Parse URL path to get module, stationId, and tab
+    const pathParsed = parseCMSPath();
     
-    // If no module specified, default to dashboard only on first visit
-    if (!moduleFromUrl) {
+    // Determine module from various sources (priority order)
+    // 1. window.INITIAL_CMS_MODULE (set by server via EJS)
+    // 2. URL path (/cms/dashboard)
+    // 3. Query string (?module=dashboard) - backward compatibility
+    // 4. Default to 'dashboard'
+    let moduleFromUrl = window.INITIAL_CMS_MODULE || pathParsed.module || getModuleFromQuery() || 'dashboard';
+    
+    // For charging stations, check for stationId and tab in path or query
+    let stationId = pathParsed.stationId;
+    let stationTab = pathParsed.stationTab;
+    
+    // For charging points, check for pointId and tab in path or query
+    let pointId = pathParsed.pointId;
+    let pointTab = pathParsed.pointTab;
+    
+    // For customers, check for customerId and tab in path or query
+    let customerId = pathParsed.customerId;
+    let customerTab = pathParsed.customerTab;
+    
+    const urlParams = new URLSearchParams(window.location.search);
+    const queryModule = urlParams.get('module');
+    const queryStationId = urlParams.get('station');
+    const queryPointId = urlParams.get('point');
+    const queryCustomerId = urlParams.get('customer');
+    const queryTab = urlParams.get('tab');
+    
+    // Helper function to normalize tab name: 'wallet-ledger' (URL) <-> 'wallet' (internal)
+    function normalizeCustomerTabFromUrl(urlTab) {
+        if (urlTab === 'wallet-ledger') return 'wallet';
+        return urlTab;
+    }
+    
+    function normalizeCustomerTabToUrl(internalTab) {
+        if (internalTab === 'wallet') return 'wallet-ledger';
+        return internalTab;
+    }
+    
+    // Backward compatibility: Normalize old query URLs for charging stations
+    if (moduleFromUrl === 'charging-stations' && queryStationId && !stationId) {
+        // Old format: /cms?module=charging-stations&station=STN-123&tab=details
+        stationId = queryStationId;
+        stationTab = queryTab || 'details';
+        
+        // Build clean URL
+        const cleanUrl = stationTab && stationTab !== 'details' 
+            ? `/cms/charging-stations/${stationId}/${stationTab}`
+            : `/cms/charging-stations/${stationId}`;
+        
+        // Normalize to clean URL
+        window.history.replaceState({ module: 'charging-stations', stationId, tab: stationTab }, '', cleanUrl);
+    } else if (moduleFromUrl === 'charging-points' && queryPointId && !pointId) {
+        // Old format: /cms?module=charging-points&point=CP-123&tab=details
+        pointId = queryPointId;
+        pointTab = queryTab || 'details';
+        
+        // Build clean URL
+        const cleanUrl = pointTab && pointTab !== 'details'
+            ? `/cms/charging-points/${pointId}/${pointTab}`
+            : `/cms/charging-points/${pointId}`;
+        
+        // Normalize to clean URL
+        window.history.replaceState({ module: 'charging-points', pointId, tab: pointTab }, '', cleanUrl);
+    } else if (moduleFromUrl === 'customers' && queryCustomerId && !customerId) {
+        // Old format: /cms?module=customers&customer=1&tab=vehicles
+        customerId = queryCustomerId;
+        customerTab = normalizeCustomerTabFromUrl(queryTab || 'details');
+        
+        // Build clean URL (always include tab for consistency)
+        const urlTabName = normalizeCustomerTabToUrl(customerTab);
+        const cleanUrl = `/cms/customers/${customerId}/${urlTabName}`;
+        
+        // Normalize to clean URL
+        window.history.replaceState({ module: 'customers', customerId, tab: customerTab }, '', cleanUrl);
+    } else if (queryModule && !pathParsed.module) {
+        // Redirect from old format to clean URL (for other modules), preserving other query parameters
+        urlParams.delete('module');
+        const remainingParams = urlParams.toString();
+        const cleanUrl = `/cms/${queryModule}${remainingParams ? '?' + remainingParams : ''}`;
+        window.history.replaceState({ module: queryModule }, '', cleanUrl);
+        moduleFromUrl = queryModule;
+    } else if (!pathParsed.module && !queryModule) {
+        // If no module in URL at all, redirect to clean URL with dashboard
+        window.history.replaceState({ module: 'dashboard' }, '', '/cms/dashboard');
         moduleFromUrl = 'dashboard';
-        // Update URL to include dashboard module
-        window.history.replaceState({ module: 'dashboard' }, '', '/cms?module=dashboard');
+    }
+    
+    // Normalize customer tab from URL to internal format
+    if (customerTab) {
+        customerTab = normalizeCustomerTabFromUrl(customerTab);
+    }
+    
+    // Expose parsed values globally for modules to use
+    if (moduleFromUrl === 'charging-stations' && stationId) {
+        window.CMS_CURRENT_MODULE = 'charging-stations';
+        window.CMS_CURRENT_STATION_ID = stationId;
+        window.CMS_CURRENT_STATION_TAB = stationTab || 'details';
+        window.CMS_CURRENT_POINT_ID = null;
+        window.CMS_CURRENT_POINT_TAB = null;
+        window.CMS_CURRENT_CUSTOMER_ID = null;
+        window.CMS_CURRENT_CUSTOMER_TAB = null;
+    } else if (moduleFromUrl === 'charging-points' && pointId) {
+        window.CMS_CURRENT_MODULE = 'charging-points';
+        window.CMS_CURRENT_STATION_ID = null;
+        window.CMS_CURRENT_STATION_TAB = null;
+        window.CMS_CURRENT_POINT_ID = pointId;
+        window.CMS_CURRENT_POINT_TAB = pointTab || 'details';
+        window.CMS_CURRENT_CUSTOMER_ID = null;
+        window.CMS_CURRENT_CUSTOMER_TAB = null;
+    } else if (moduleFromUrl === 'customers' && customerId) {
+        window.CMS_CURRENT_MODULE = 'customers';
+        window.CMS_CURRENT_STATION_ID = null;
+        window.CMS_CURRENT_STATION_TAB = null;
+        window.CMS_CURRENT_POINT_ID = null;
+        window.CMS_CURRENT_POINT_TAB = null;
+        window.CMS_CURRENT_CUSTOMER_ID = customerId;
+        window.CMS_CURRENT_CUSTOMER_TAB = customerTab || 'details';
+    } else {
+        window.CMS_CURRENT_MODULE = moduleFromUrl;
+        window.CMS_CURRENT_STATION_ID = null;
+        window.CMS_CURRENT_STATION_TAB = null;
+        window.CMS_CURRENT_POINT_ID = null;
+        window.CMS_CURRENT_POINT_TAB = null;
+        window.CMS_CURRENT_CUSTOMER_ID = null;
+        window.CMS_CURRENT_CUSTOMER_TAB = null;
     }
     
     // Update active menu item based on URL IMMEDIATELY
@@ -199,15 +468,13 @@ function initializeCMS() {
     }
     
     // Check for additional URL parameters (station, point, customer, action) on initial load
-    const stationId = urlParams.get('station');
-    const pointId = urlParams.get('point');
-    const customerId = urlParams.get('customer');
+    // For charging stations, points, and customers, use parsed values from path or query (already set above)
     const action = urlParams.get('action');
     
     // Handle station detail view on initial load
     if (stationId && moduleFromUrl === 'charging-stations' && !action) {
-        // Get tab parameter from URL (default to 'details')
-        const tabFromUrl = urlParams.get('tab') || 'details';
+        // Use tab from path or query (default to 'details')
+        const tabFromUrl = stationTab || urlParams.get('tab') || 'details';
         // Load station detail view with active tab
         import('./modules/station-detail-view.js').then(detailModule => {
             detailModule.loadStationDetailView(stationId, tabFromUrl);
@@ -224,8 +491,8 @@ function initializeCMS() {
             loadModule(moduleFromUrl, false);
         });
     } else if (pointId && moduleFromUrl === 'charging-points' && !action) {
-        // Get tab parameter from URL (default to 'details')
-        const tabFromUrl = urlParams.get('tab') || 'details';
+        // Use tab from path or query (default to 'details')
+        const tabFromUrl = pointTab || urlParams.get('tab') || 'details';
         // Load charging point detail view with active tab
         import('./modules/charging-point-detail-view.js').then(detailModule => {
             window.currentChargingPointId = pointId;
@@ -243,8 +510,19 @@ function initializeCMS() {
             loadModule(moduleFromUrl, false);
         });
     } else if (customerId && moduleFromUrl === 'customers' && !action) {
-        // Get tab parameter from URL (default to 'details')
-        const tabFromUrl = urlParams.get('tab') || 'details';
+        // Use tab from path or query (default to 'details')
+        // If no tab in path but customerId exists, redirect to details tab
+        if (!customerTab) {
+            const cleanUrl = `/cms/customers/${customerId}/details`;
+            window.history.replaceState({ module: 'customers', customerId, tab: 'details' }, '', cleanUrl);
+            customerTab = 'details';
+        }
+        
+        // Normalize tab from URL format to internal format
+        let tabFromUrl = customerTab;
+        if (tabFromUrl === 'wallet-ledger') {
+            tabFromUrl = 'wallet';
+        }
         // Load customer detail view with active tab
         import('./modules/customer-detail-view.js').then(detailModule => {
             detailModule.loadCustomerDetailView(customerId, tabFromUrl);
@@ -255,11 +533,6 @@ function initializeCMS() {
     } else {
         // Load regular module from URL (without pushing state on initial load)
         loadModule(moduleFromUrl, false);
-    }
-    
-    // Push initial state if not already in history
-    if (!window.location.search.includes('module=')) {
-        window.history.replaceState({ module: moduleFromUrl }, '', `/cms?module=${moduleFromUrl}`);
     }
 }
 

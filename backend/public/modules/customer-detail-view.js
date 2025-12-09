@@ -64,6 +64,21 @@ export async function loadCustomerDetailView(customerId, activeTab = 'details') 
         currentCustomerId = customerId;
         currentTab = activeTab;
         
+        // Update global CMS state
+        window.CMS_CURRENT_MODULE = 'customers';
+        window.CMS_CURRENT_CUSTOMER_ID = customerId;
+        window.CMS_CURRENT_CUSTOMER_TAB = activeTab;
+        
+        // Map internal tab to URL tab format
+        const urlTabName = activeTab === 'wallet' ? 'wallet-ledger' : activeTab;
+        // Always include tab in URL for consistency
+        const expectedUrl = `/cms/customers/${customerId}/${urlTabName}`;
+        
+        // Ensure URL is clean (normalize if needed)
+        if (window.location.pathname !== expectedUrl) {
+            window.history.replaceState({ module: 'customers', customerId, tab: activeTab }, '', expectedUrl);
+        }
+        
         // Fetch customer details
         const customerResponse = await getCustomerDetails(customerId);
         
@@ -1392,9 +1407,17 @@ window.goToWalletPage = function(customerId, page) {
 
 // Switch Tab Function
 export function switchCustomerTab(tabName, customerId) {
-    // Update URL with tab parameter
-    const url = `/cms?module=customers&customer=${customerId}&tab=${tabName}`;
+    // Map internal tab name to URL tab name
+    // 'wallet' -> 'wallet-ledger' for URL
+    const urlTabName = tabName === 'wallet' ? 'wallet-ledger' : tabName;
+    
+    // Always include tab in URL for consistency
+    const url = `/cms/customers/${customerId}/${urlTabName}`;
+    
     window.history.pushState({ module: 'customers', customerId: customerId, tab: tabName }, '', url);
+    
+    // Update global CMS state
+    window.CMS_CURRENT_CUSTOMER_TAB = tabName;
     
     // Update tab items
     const tabItems = document.querySelectorAll('.tab-item');
@@ -1439,6 +1462,14 @@ export function switchCustomerTab(tabName, customerId) {
 // Make functions globally available
 window.switchCustomerTab = switchCustomerTab;
 window.goBackToCustomersList = function() {
+    // Use clean URL for customers list
+    window.history.pushState({ module: 'customers' }, '', '/cms/customers');
+    
+    // Update global CMS state
+    window.CMS_CURRENT_MODULE = 'customers';
+    window.CMS_CURRENT_CUSTOMER_ID = null;
+    window.CMS_CURRENT_CUSTOMER_TAB = null;
+    
     loadCustomersModule();
 };
 

@@ -32,6 +32,20 @@ window.currentChargingPointId = window.currentChargingPointId || null;
 // Export function to load charging point detail view
 export async function loadChargingPointDetailView(chargingPointId, activeTab = 'details') {
     try {
+        // Update global CMS state
+        window.CMS_CURRENT_MODULE = 'charging-points';
+        window.CMS_CURRENT_POINT_ID = chargingPointId;
+        window.CMS_CURRENT_POINT_TAB = activeTab;
+        
+        // Ensure URL is clean (normalize if needed)
+        const expectedUrl = activeTab === 'details'
+            ? `/cms/charging-points/${chargingPointId}`
+            : `/cms/charging-points/${chargingPointId}/${activeTab}`;
+        
+        if (window.location.pathname !== expectedUrl) {
+            window.history.replaceState({ module: 'charging-points', pointId: chargingPointId, tab: activeTab }, '', expectedUrl);
+        }
+        
         // Fetch charging point details
         const pointResponse = await getChargingPoint(chargingPointId);
         
@@ -3650,9 +3664,15 @@ async function stopChargingFromDetail(deviceId, connectorId, transactionId, sess
 
 // Switch tab
 export function switchPointTab(tabName, chargingPointId) {
-    // Update URL with tab parameter
-    const url = `/cms?module=charging-points&point=${chargingPointId}&tab=${tabName}`;
+    // Use clean URL format
+    const url = tabName === 'details'
+        ? `/cms/charging-points/${chargingPointId}`
+        : `/cms/charging-points/${chargingPointId}/${tabName}`;
+    
     window.history.pushState({ module: 'charging-points', chargingPointId: chargingPointId, tab: tabName }, '', url);
+    
+    // Update global CMS state
+    window.CMS_CURRENT_POINT_TAB = tabName;
     
     // Clear logs refresh interval if switching away from logs tab
     if (tabName !== 'logs' && logsRefreshInterval) {
@@ -3746,9 +3766,15 @@ export function goBackToPointsList() {
         lastLogTimestamp = null;
     }
     
-    // Update URL and load points list
-    const url = `/cms?module=charging-points`;
+    // Use clean URL for points list
+    const url = `/cms/charging-points`;
     window.history.pushState({ module: 'charging-points' }, '', url);
+    
+    // Update global CMS state
+    window.CMS_CURRENT_MODULE = 'charging-points';
+    window.CMS_CURRENT_POINT_ID = null;
+    window.CMS_CURRENT_POINT_TAB = null;
+    
     loadChargingPointsModule();
 }
 

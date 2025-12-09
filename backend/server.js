@@ -50,6 +50,10 @@ io.on('connection', (socket) => {
   });
 });
 
+// Configure EJS view engine
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
+
 // Middleware
 app.use(cors());
 app.use(express.urlencoded({ extended: true }));
@@ -81,49 +85,70 @@ app.get('/api/config', (req, res) => {
   });
 });
 
-// Serve the home page first (before static middleware)
+// Serve the home page
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'home.html'));
+  res.render('home');
 });
 
-// Clean URLs - Serve pages without .html extension
+// Chat page - client-side auth handled in app.js
 app.get('/chat', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'chat.html'));
+  res.render('chat');
 });
 
-// Keep old route for backward compatibility
-app.get('/chat.html', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'chat.html'));
+// CMS charging stations detail routes - handle /cms/charging-stations/:stationId/:tab?
+// MUST come before /cms/:module? to avoid route conflicts
+app.get('/cms/charging-stations/:stationId/:tab?', (req, res) => {
+  const module = 'charging-stations';
+  res.render('cms', { initialModule: module });
 });
 
-// CMS page - clean URL
-app.get('/cms', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'cms.html'));
+// CMS charging points detail routes - handle /cms/charging-points/:pointId/:tab?
+// MUST come before /cms/:module? to avoid route conflicts
+app.get('/cms/charging-points/:pointId/:tab?', (req, res) => {
+  const module = 'charging-points';
+  res.render('cms', { initialModule: module });
 });
 
-// Keep old route for backward compatibility
-app.get('/cms.html', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'cms.html'));
+// CMS customers detail routes - handle /cms/customers/:customerId/:tab?
+// MUST come before /cms/:module? to avoid route conflicts
+app.get('/cms/customers/:customerId/:tab?', (req, res) => {
+  const module = 'customers';
+  res.render('cms', { initialModule: module });
 });
 
-// User Panel page - clean URL
+// CMS page with clean URLs - client-side auth handled in cms.js
+app.get('/cms/:module?', (req, res) => {
+  // Support both clean URLs (/cms/dashboard) and query params (/cms?module=dashboard)
+  const module = req.params.module || req.query.module || 'dashboard';
+  res.render('cms', { initialModule: module });
+});
+
+// User Panel vehicles routes - handle /user/vehicles and /user/vehicles/add
+// MUST come before /user/:tab? to avoid route conflicts
+app.get('/user/vehicles/:action?', (req, res) => {
+  const action = req.params.action;
+  // If action is "add", set tab to "vehicles" with action "add"
+  // Otherwise, set tab to "vehicles"
+  const tab = action === 'add' ? 'vehicles-add' : 'vehicles';
+  res.render('user', { initialTab: tab });
+});
+
+// User Panel page with clean URLs - client-side auth handled in user-panel/app.js
+app.get('/user/:tab?', (req, res) => {
+  // Support both clean URLs (/user/stations) and the base URL (/user)
+  // Also treat "home" as the Home tab
+  const tabParam = req.params.tab;
+  const tab = !tabParam || tabParam === 'home' ? 'home' : tabParam;
+  res.render('user', { initialTab: tab });
+});
+
 app.get('/user-panel', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'user-panel.html'));
+  res.render('user', { initialTab: 'home' });
 });
 
-// Keep old route for backward compatibility
-app.get('/user-panel.html', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'user-panel.html'));
-});
-
-// Customer Reset Password page - clean URL
+// Customer Reset Password page - public
 app.get('/user-panel/reset-password', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'user-panel', 'reset-password.html'));
-});
-
-// Keep old route for backward compatibility
-app.get('/user-panel/reset-password.html', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'user-panel', 'reset-password.html'));
+  res.render('user-panel-reset-password');
 });
 
 // Serve static files (after routes to avoid index.html interference)
@@ -131,14 +156,9 @@ app.use(express.static(path.join(__dirname, 'public'), {
   index: false // Disable automatic index.html serving
 }));
 
-// Reset password page - clean URL
+// Reset password page - public
 app.get('/reset-password', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'reset-password.html'));
-});
-
-// Keep old route for backward compatibility
-app.get('/reset-password.html', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'reset-password.html'));
+  res.render('reset-password');
 });
 
 // Error handling middleware

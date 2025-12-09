@@ -380,9 +380,29 @@ class OCPPMessageProcessor extends BaseConsumer {
           });
 
           if (session) {
+            // CRITICAL: Check if session is already stopped by stopChargingSession
+            // If stopReason is already 'Remote', it means user stopped it - preserve it!
+            if (session.status === 'stopped' && session.stopReason === 'Remote') {
+              console.log(`ℹ️ [StopTransaction] Session ${session.sessionId} already stopped with stopReason='Remote' (user stopped charging) - preserving it`);
+              // Still update meterEnd and endTime if needed, but preserve stopReason
+              await session.update({
+                meterEnd: meterStop ? parseInt(meterStop) : session.meterEnd,
+                endTime: session.endTime || timestamp
+              });
+              return; // Exit early - don't overwrite stopReason
+            }
+            
             // Check if this is a customer session (not CMS/system customer)
             const { isSystemCustomer } = require('../services/cmsCustomerService');
             const isCMS = await isSystemCustomer(session.customerId);
+            
+            // Additional check: CMS sessions typically have amountDeducted = 0 and no vehicleId
+            // Customer sessions have amountDeducted > 0 and/or vehicleId
+            const hasAmountDeducted = session.amountDeducted && parseFloat(session.amountDeducted) > 0;
+            const hasVehicleId = session.vehicleId && session.vehicleId !== null;
+            const isLikelyCustomerSession = hasAmountDeducted || hasVehicleId;
+            
+            console.log(`ℹ️ [StopTransaction] Processing session ${session.sessionId}: customerId=${session.customerId}, isCMS=${isCMS}, hasAmountDeducted=${hasAmountDeducted}, hasVehicleId=${hasVehicleId}, isLikelyCustomerSession=${isLikelyCustomerSession}, currentStatus=${session.status}, currentStopReason=${session.stopReason}`);
             
             // Determine stop reason
             // CRITICAL LOGIC:
@@ -390,17 +410,26 @@ class OCPPMessageProcessor extends BaseConsumer {
             //   This is because if StopTransaction arrives, it means the user initiated the stop
             //   (either via web app or the charger responded to a user-initiated RemoteStopTransaction)
             // - For CMS sessions: Set to 'Remote (CMS)'
-            // - Only preserve existing 'Remote' if it's already set (defensive check)
+            // - DEFENSIVE: Use multiple indicators to determine if it's a customer session
             let stopReasonValue;
-            if (!isCMS) {
-              // Customer session - always set to 'Remote' (User stopped charging)
-              // Even if stopReason is already 'Remote', we'll set it again to ensure it's correct
+            
+            // Priority: If session has customer indicators (amountDeducted or vehicleId), it's definitely a customer session
+            if (isLikelyCustomerSession && !isCMS) {
+              // Definitely a customer session - set to 'Remote'
               stopReasonValue = 'Remote';
-              console.log(`ℹ️ [StopTransaction] Setting stop reason to 'Remote' for customer session ${session.sessionId} (user stopped charging)`);
-            } else {
+              console.log(`ℹ️ [StopTransaction] Customer session confirmed (has amountDeducted or vehicleId) - Setting stop reason to 'Remote' for session ${session.sessionId} (user stopped charging)`);
+            } else if (session.customerId && session.customerId !== 0 && !isCMS) {
+              // Customer session based on customerId check
+              stopReasonValue = 'Remote';
+              console.log(`ℹ️ [StopTransaction] Customer session detected (customerId check) - Setting stop reason to 'Remote' for session ${session.sessionId} (user stopped charging)`);
+            } else if (isCMS || !session.customerId || session.customerId === 0) {
               // CMS session - set to 'Remote (CMS)'
               stopReasonValue = 'Remote (CMS)';
-              console.log(`ℹ️ [StopTransaction] Setting stop reason to 'Remote (CMS)' for CMS session ${session.sessionId}`);
+              console.log(`ℹ️ [StopTransaction] CMS session detected - Setting stop reason to 'Remote (CMS)' for session ${session.sessionId}`);
+            } else {
+              // Fallback: if we can't determine, default to 'Remote' (safer for customer sessions)
+              stopReasonValue = 'Remote';
+              console.log(`⚠️ [StopTransaction] Could not determine session type - defaulting to 'Remote' for session ${session.sessionId}`);
             }
             
             // Update session to stopped status

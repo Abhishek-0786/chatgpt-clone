@@ -378,20 +378,20 @@ function buildInvoicePDF(doc, invoice) {
   doc.text('INVOICE NO:', m, y);
   doc.font('Helvetica').text(invoiceNumber, m + 90, y);
 
-  y += 14;
+  y += 16;
   doc.font('Helvetica-Bold').text('DATE:', m, y);
   doc.font('Helvetica').text(safeText(invoice.startTime), m + 90, y);
 
-  y += 14;
+  y += 16;
   doc.font('Helvetica-Bold').text('GENERATED TIME:', m, y);
-  doc.font('Helvetica').text(new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }), m + 90, y);
+  doc.font('Helvetica').text(new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }), m + 100, y);
 
   // ===== TO / BILL TO (LEFT BLOCK) =====
-  y += 28;
+  y += 40;
   doc.font('Helvetica-Bold').fontSize(11).text('BILL TO:', m, y);
-  y += 14;
+  y += 16;
   doc.font('Helvetica').fontSize(10);
-  doc.text(clamp(doc, invoice.customerName, 220), m, y, { width: 220 });
+  doc.text(`Name: ${clamp(doc, invoice.customerName, 220)}`, m, y, { width: 220 });
   y += 14;
   doc.text(`Contact: ${safeText(invoice.customerContact)}`, m, y, { width: 220 });
   y += 14;
@@ -399,7 +399,7 @@ function buildInvoicePDF(doc, invoice) {
 
   // ===== STATION BLOCK (RIGHT) =====
   const rightX = W - m - 250;
-  let ry = 230;
+  let ry = 250;
 
   doc.roundedRect(rightX, ry, 250, 80, 8).fill(light);
   doc.fillColor(dark).font('Helvetica-Bold').fontSize(11);
@@ -412,7 +412,7 @@ function buildInvoicePDF(doc, invoice) {
   // ===== SESSION DETAILS (CENTER, TWO COLS) =====
   y = 350;
   doc.fillColor(dark).font('Helvetica-Bold').fontSize(12).text('SESSION DETAILS', m, y);
-  y += 18;
+  y += 20;
 
   const colGap = 30;
   const colW = (W - m * 2 - colGap) / 2;
@@ -436,7 +436,7 @@ function buildInvoicePDF(doc, invoice) {
   // ===== BILLING TABLE =====
   y += 100;
   doc.fillColor(dark).font('Helvetica-Bold').fontSize(12).text('BILLING BREAKDOWN', m, y);
-  y += 12;
+  y += 16;
 
   // header line
   doc.moveTo(m, y).lineTo(W - m, y).strokeColor('#D1D5DB').stroke();

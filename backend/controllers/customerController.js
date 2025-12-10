@@ -90,7 +90,9 @@ async function changePassword(req, res) {
 async function forgotPassword(req, res) {
   try {
     const { email } = req.body;
-    const result = await customerService.forgotPassword(email);
+    // Pass request host to service for proper URL detection
+    const host = req.get('host') || req.headers.host || '';
+    const result = await customerService.forgotPassword(email, host);
     res.json(result);
   } catch (error) {
     console.error('Forgot password error:', error);

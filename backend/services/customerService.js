@@ -176,7 +176,7 @@ async function changeCustomerPassword(customerId, currentPassword, newPassword) 
 /**
  * Forgot password - send reset email
  */
-async function forgotPassword(email) {
+async function forgotPassword(email, requestHost = '') {
   // Find customer
   const customer = await Customer.findOne({ where: { email } });
   
@@ -198,15 +198,24 @@ async function forgotPassword(email) {
     resetPasswordExpires: resetTokenExpires
   });
 
-  // Generate reset link - use production domain if FRONTEND_URL not set
+  // Generate reset link - detect production domain from request host or use FRONTEND_URL
   const getFrontendUrl = () => {
+    // First, check if FRONTEND_URL is explicitly set
     if (process.env.FRONTEND_URL) {
       return process.env.FRONTEND_URL;
     }
-    // Use production domain in production, localhost in development
+    
+    // Check request host header to detect production domain
+    if (requestHost && requestHost.includes('genx.1charging.com')) {
+      return 'https://genx.1charging.com';
+    }
+    
+    // Check NODE_ENV as fallback
     if (process.env.NODE_ENV === 'production') {
       return 'https://genx.1charging.com';
     }
+    
+    // Default to localhost only in development
     return 'http://localhost:3000';
   };
   const resetLink = `${getFrontendUrl()}/user-panel/reset-password.html?token=${resetToken}`;

@@ -938,9 +938,24 @@ async function getChargingPointByChargingPointId(chargingPointId) {
   const cacheKey = `charging-point:detail:${chargingPointId}`;
   const cached = await cacheController.get(cacheKey);
   
-  if (cached) {
-    console.log(`✅ [Cache] Charging point detail cache hit for ${chargingPointId}`);
-    return cached;
+  // If cached data exists, we still need to calculate real-time status
+  // Status changes frequently (Online/Offline), so we should always recalculate it
+  if (cached && cached.point && cached.point.deviceId) {
+    console.log(`✅ [Cache] Charging point detail cache hit for ${chargingPointId}, recalculating real-time status`);
+    
+    // Recalculate real-time status and C.STATUS (these change frequently)
+    const realTimeStatus = await calculateChargingPointRealTimeStatus(cached.point.deviceId);
+    const realTimeCStatus = await calculateChargingPointCStatus(cached.point.deviceId);
+    
+    // Return cached data with updated real-time status
+    return {
+      ...cached,
+      point: {
+        ...cached.point,
+        status: realTimeStatus,
+        cStatus: realTimeCStatus
+      }
+    };
   }
 
   console.log(`❌ [Cache] Charging point detail cache miss for ${chargingPointId}, fetching from DB`);

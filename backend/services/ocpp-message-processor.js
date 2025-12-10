@@ -380,8 +380,25 @@ class OCPPMessageProcessor extends BaseConsumer {
           });
 
           if (session) {
+            // CRITICAL: Reload session to get latest values (in case stopChargingSession updated it)
+            await session.reload();
+            
             // CRITICAL: Check if session is already stopped by stopChargingSession
             // If stopReason is already 'Remote', it means user stopped it - preserve it!
+            // Check both stopped status AND if stopReason is already 'Remote' (even if status is still 'active')
+            // This handles the case where stopChargingSession is in progress
+            if (session.stopReason === 'Remote') {
+              console.log(`ℹ️ [StopTransaction] Session ${session.sessionId} already has stopReason='Remote' (user stopped charging) - preserving it. Current status: ${session.status}`);
+              // Still update meterEnd, endTime, and status if needed, but preserve stopReason
+              await session.update({
+                status: 'stopped',
+                meterEnd: meterStop ? parseInt(meterStop) : session.meterEnd,
+                endTime: session.endTime || timestamp
+              });
+              return; // Exit early - don't overwrite stopReason
+            }
+            
+            // Also check if status is already stopped with 'Remote' stopReason
             if (session.status === 'stopped' && session.stopReason === 'Remote') {
               console.log(`ℹ️ [StopTransaction] Session ${session.sessionId} already stopped with stopReason='Remote' (user stopped charging) - preserving it`);
               // Still update meterEnd and endTime if needed, but preserve stopReason
@@ -411,25 +428,32 @@ class OCPPMessageProcessor extends BaseConsumer {
             //   (either via web app or the charger responded to a user-initiated RemoteStopTransaction)
             // - For CMS sessions: Set to 'Remote (CMS)'
             // - DEFENSIVE: Use multiple indicators to determine if it's a customer session
+            // - PRIORITY: If session has customer indicators, it's definitely a customer session
             let stopReasonValue;
             
-            // Priority: If session has customer indicators (amountDeducted or vehicleId), it's definitely a customer session
-            if (isLikelyCustomerSession && !isCMS) {
-              // Definitely a customer session - set to 'Remote'
+            // CRITICAL: Priority check - if session has customer indicators, it's definitely a customer session
+            // This check must come FIRST to prevent misidentification
+            // Customer sessions ALWAYS have amountDeducted > 0 OR vehicleId
+            if (isLikelyCustomerSession) {
+              // Session has amountDeducted > 0 or vehicleId - DEFINITELY a customer session
+              // Ignore isCMS check if we have customer indicators
               stopReasonValue = 'Remote';
-              console.log(`ℹ️ [StopTransaction] Customer session confirmed (has amountDeducted or vehicleId) - Setting stop reason to 'Remote' for session ${session.sessionId} (user stopped charging)`);
-            } else if (session.customerId && session.customerId !== 0 && !isCMS) {
-              // Customer session based on customerId check
-              stopReasonValue = 'Remote';
-              console.log(`ℹ️ [StopTransaction] Customer session detected (customerId check) - Setting stop reason to 'Remote' for session ${session.sessionId} (user stopped charging)`);
-            } else if (isCMS || !session.customerId || session.customerId === 0) {
-              // CMS session - set to 'Remote (CMS)'
-              stopReasonValue = 'Remote (CMS)';
-              console.log(`ℹ️ [StopTransaction] CMS session detected - Setting stop reason to 'Remote (CMS)' for session ${session.sessionId}`);
+              console.log(`ℹ️ [StopTransaction] ✅ Customer session CONFIRMED (has amountDeducted=${hasAmountDeducted} or vehicleId=${hasVehicleId}) - Setting stop reason to 'Remote' for session ${session.sessionId} (user stopped charging)`);
+            } else if (session.customerId && session.customerId !== 0) {
+              // Has customerId - check if it's system customer
+              if (isCMS) {
+                // Confirmed CMS session (system customer)
+                stopReasonValue = 'Remote (CMS)';
+                console.log(`ℹ️ [StopTransaction] CMS session confirmed (system customer) - Setting stop reason to 'Remote (CMS)' for session ${session.sessionId}`);
+              } else {
+                // Regular customer session
+                stopReasonValue = 'Remote';
+                console.log(`ℹ️ [StopTransaction] Customer session detected (customerId=${session.customerId}, not system) - Setting stop reason to 'Remote' for session ${session.sessionId} (user stopped charging)`);
+              }
             } else {
-              // Fallback: if we can't determine, default to 'Remote' (safer for customer sessions)
-              stopReasonValue = 'Remote';
-              console.log(`⚠️ [StopTransaction] Could not determine session type - defaulting to 'Remote' for session ${session.sessionId}`);
+              // No customerId and no customer indicators - likely CMS session
+              stopReasonValue = 'Remote (CMS)';
+              console.log(`ℹ️ [StopTransaction] CMS session (no customerId, no indicators) - Setting stop reason to 'Remote (CMS)' for session ${session.sessionId}`);
             }
             
             // Update session to stopped status
@@ -544,6 +568,25 @@ class OCPPMessageProcessor extends BaseConsumer {
         await updater(deviceId, updateData);
       } catch (redisErr) {
         console.error(`❌ [Redis] Error updating StatusNotification for ${deviceId}:`, redisErr.message);
+      }
+
+      // Invalidate charging point detail cache when status changes
+      // This ensures the detail view shows updated status immediately
+      try {
+        const ChargingPoint = require('../models/ChargingPoint');
+        const chargingPoint = await ChargingPoint.findOne({
+          where: { deviceId: deviceId, deleted: false },
+          attributes: ['chargingPointId']
+        });
+        
+        if (chargingPoint && chargingPoint.chargingPointId) {
+          const { invalidateChargingPointDetailCache } = require('./chargingPointService');
+          await invalidateChargingPointDetailCache(chargingPoint.chargingPointId);
+          console.log(`✅ [StatusNotification] Invalidated charging point detail cache for ${chargingPoint.chargingPointId} (deviceId: ${deviceId})`);
+        }
+      } catch (cacheErr) {
+        console.warn(`⚠️ [StatusNotification] Failed to invalidate charging point detail cache for ${deviceId}:`, cacheErr.message);
+        // Don't fail the operation if cache invalidation fails
       }
 
       // Publish notification

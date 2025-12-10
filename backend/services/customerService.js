@@ -198,8 +198,18 @@ async function forgotPassword(email) {
     resetPasswordExpires: resetTokenExpires
   });
 
-  // Generate reset link
-  const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/user-panel/reset-password.html?token=${resetToken}`;
+  // Generate reset link - use production domain if FRONTEND_URL not set
+  const getFrontendUrl = () => {
+    if (process.env.FRONTEND_URL) {
+      return process.env.FRONTEND_URL;
+    }
+    // Use production domain in production, localhost in development
+    if (process.env.NODE_ENV === 'production') {
+      return 'https://genx.1charging.com';
+    }
+    return 'http://localhost:3000';
+  };
+  const resetLink = `${getFrontendUrl()}/user-panel/reset-password.html?token=${resetToken}`;
   
   // Log the reset link for development
   console.log(`Password reset link for ${email}: ${resetLink}`);

@@ -383,8 +383,8 @@ function buildInvoicePDF(doc, invoice) {
   doc.font('Helvetica').text(safeText(invoice.startTime), m + 90, y);
 
   y += 14;
-  doc.font('Helvetica-Bold').text('TIME:', m, y);
-  doc.font('Helvetica').text(new Date().toLocaleTimeString(), m + 90, y);
+  doc.font('Helvetica-Bold').text('GENERATED TIME:', m, y);
+  doc.font('Helvetica').text(new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }), m + 90, y);
 
   // ===== TO / BILL TO (LEFT BLOCK) =====
   y += 28;

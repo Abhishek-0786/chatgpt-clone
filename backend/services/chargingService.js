@@ -873,7 +873,9 @@ async function stopChargingSession(params) {
   let meterStart = null;
   let meterEnd = null;
   let amountDeducted = 0; // Initialize for CMS sessions (will be updated for customer sessions)
-  let determinedStopReason = 'Remote (CMS)';
+  
+  // Will be determined based on who stops it and if amount exhausted
+  let determinedStopReason = 'Remote'; // Default, will be updated
 
   // For customer: Calculate energy, cost, and refund
   if (customerId && session) {
@@ -1041,13 +1043,13 @@ async function stopChargingSession(params) {
 
     // Determine stop reason for customer sessions
     // 'Remote' means user stopped charging (will be displayed as "User stopped charging" in CMS)
-    let determinedStopReason = 'Remote'; // Default: User stopped charging
+    // 'ChargingCompleted' means entered amount was exhausted
     if (refundAmount === 0 && finalAmount > 0 && Math.abs(finalAmount - amountDeducted) < 0.15) {
+      // Entered amount exhausted - show "Charging completed"
       determinedStopReason = 'ChargingCompleted';
-    } else if (refundAmount > 0) {
-      determinedStopReason = 'Remote'; // User stopped charging (with refund)
     } else {
-      determinedStopReason = 'Remote'; // User stopped charging
+      // User stopped charging (with or without refund)
+      determinedStopReason = 'Remote';
     }
   } else {
     // CMS: Use energy already calculated by MeterValues handler, or calculate from meterStart/meterEnd
@@ -1105,7 +1107,26 @@ async function stopChargingSession(params) {
     }
     
     refundAmount = 0; // CMS sessions don't have refunds
-    determinedStopReason = 'Remote (CMS)';
+    
+    // CRITICAL: Check WHO STOPS IT, not who started it
+    // If CMS is stopping (customerId is null), show "Stopped from CMS"
+    // If customer is stopping (customerId exists), show "User stopped charging"
+    // Exception: If amount exhausted, show "Charging completed" (for customer sessions)
+    if (!customerId) {
+      // CMS is stopping - show "Stopped from CMS"
+      determinedStopReason = 'Remote (CMS)';
+      console.log(`ℹ️ [Stop Charging] CMS is stopping the session - setting stopReason to 'Remote (CMS)'`);
+    } else {
+      // Customer is stopping - check if amount exhausted
+      // Note: For CMS sessions, amountDeducted is 0, so this won't trigger
+      if (refundAmount === 0 && finalAmount > 0 && Math.abs(finalAmount - amountDeducted) < 0.15) {
+        determinedStopReason = 'ChargingCompleted';
+        console.log(`ℹ️ [Stop Charging] Amount exhausted - setting stopReason to 'ChargingCompleted'`);
+      } else {
+        determinedStopReason = 'Remote'; // User stopped charging
+        console.log(`ℹ️ [Stop Charging] Customer is stopping - setting stopReason to 'Remote' (User stopped charging)`);
+      }
+    }
   }
 
   // Update session status to 'stopped' IMMEDIATELY (for both customer and CMS)

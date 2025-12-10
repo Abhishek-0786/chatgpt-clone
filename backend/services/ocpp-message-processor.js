@@ -409,51 +409,56 @@ class OCPPMessageProcessor extends BaseConsumer {
               return; // Exit early - don't overwrite stopReason
             }
             
-            // Check if this is a customer session (not CMS/system customer)
+            // CRITICAL: Determine if session was STARTED by customer (web app) or CMS
+            // This is based on session properties, NOT who is stopping it
+            // Rule: If session started from web app, stop reason should be "User stopped charging" 
+            //       regardless of who stops it (user or CMS)
             const { isSystemCustomer } = require('../services/cmsCustomerService');
             const isCMS = await isSystemCustomer(session.customerId);
             
-            // Additional check: CMS sessions typically have amountDeducted = 0 and no vehicleId
-            // Customer sessions have amountDeducted > 0 and/or vehicleId
+            // Check if session was started by customer (web app)
+            // Customer sessions have: amountDeducted > 0 OR vehicleId OR customerId is not system customer
             const hasAmountDeducted = session.amountDeducted && parseFloat(session.amountDeducted) > 0;
             const hasVehicleId = session.vehicleId && session.vehicleId !== null;
-            const isLikelyCustomerSession = hasAmountDeducted || hasVehicleId;
+            const sessionStartedByCustomer = hasAmountDeducted || hasVehicleId || (session.customerId && session.customerId !== 0 && !isCMS);
             
-            console.log(`ℹ️ [StopTransaction] Processing session ${session.sessionId}: customerId=${session.customerId}, isCMS=${isCMS}, hasAmountDeducted=${hasAmountDeducted}, hasVehicleId=${hasVehicleId}, isLikelyCustomerSession=${isLikelyCustomerSession}, currentStatus=${session.status}, currentStopReason=${session.stopReason}`);
+            console.log(`ℹ️ [StopTransaction] Processing session ${session.sessionId}: customerId=${session.customerId}, isCMS=${isCMS}, hasAmountDeducted=${hasAmountDeducted}, hasVehicleId=${hasVehicleId}, sessionStartedByCustomer=${sessionStartedByCustomer}, currentStatus=${session.status}, currentStopReason=${session.stopReason}`);
             
             // Determine stop reason
             // CRITICAL LOGIC:
-            // - For customer sessions: Always set to 'Remote' (User stopped charging)
-            //   This is because if StopTransaction arrives, it means the user initiated the stop
-            //   (either via web app or the charger responded to a user-initiated RemoteStopTransaction)
-            // - For CMS sessions: Set to 'Remote (CMS)'
-            // - DEFENSIVE: Use multiple indicators to determine if it's a customer session
-            // - PRIORITY: If session has customer indicators, it's definitely a customer session
+            // - If stopReason is already set by stopChargingSession, preserve it (it has correct "who stopped it" info)
+            // - Otherwise, determine based on session properties and amount exhausted
+            // - If amount exhausted, show 'ChargingCompleted' (for customer sessions)
             let stopReasonValue;
             
-            // CRITICAL: Priority check - if session has customer indicators, it's definitely a customer session
-            // This check must come FIRST to prevent misidentification
-            // Customer sessions ALWAYS have amountDeducted > 0 OR vehicleId
-            if (isLikelyCustomerSession) {
-              // Session has amountDeducted > 0 or vehicleId - DEFINITELY a customer session
-              // Ignore isCMS check if we have customer indicators
-              stopReasonValue = 'Remote';
-              console.log(`ℹ️ [StopTransaction] ✅ Customer session CONFIRMED (has amountDeducted=${hasAmountDeducted} or vehicleId=${hasVehicleId}) - Setting stop reason to 'Remote' for session ${session.sessionId} (user stopped charging)`);
-            } else if (session.customerId && session.customerId !== 0) {
-              // Has customerId - check if it's system customer
-              if (isCMS) {
-                // Confirmed CMS session (system customer)
-                stopReasonValue = 'Remote (CMS)';
-                console.log(`ℹ️ [StopTransaction] CMS session confirmed (system customer) - Setting stop reason to 'Remote (CMS)' for session ${session.sessionId}`);
+            // Check if session was already stopped by stopChargingSession
+            // If stopReason is already set, preserve it (it has the correct "who stopped it" info)
+            if (session.stopReason && (session.stopReason === 'Remote' || session.stopReason === 'Remote (CMS)' || session.stopReason === 'ChargingCompleted')) {
+              // Already set by stopChargingSession - preserve it
+              stopReasonValue = session.stopReason;
+              console.log(`ℹ️ [StopTransaction] Preserving stopReason from stopChargingSession: ${stopReasonValue} for session ${session.sessionId}`);
+            } else if (sessionStartedByCustomer) {
+              // Session started by customer - check if amount exhausted
+              // Note: Can't determine who stopped from StopTransaction alone, so default to 'Remote' for customer sessions
+              const amountDeducted = parseFloat(session.amountDeducted || 0);
+              const finalAmount = parseFloat(session.finalAmount || 0);
+              const refundAmount = parseFloat(session.refundAmount || 0);
+              
+              if (refundAmount === 0 && finalAmount > 0 && Math.abs(finalAmount - amountDeducted) < 0.15) {
+                // Entered amount exhausted - show "Charging completed"
+                stopReasonValue = 'ChargingCompleted';
+                console.log(`ℹ️ [StopTransaction] ✅ Customer session - Amount exhausted - Setting stop reason to 'ChargingCompleted' for session ${session.sessionId}`);
               } else {
-                // Regular customer session
+                // Can't determine who stopped from StopTransaction alone
+                // Default to 'Remote' (User stopped charging) for customer sessions
+                // This handles cases where StopTransaction arrives before stopChargingSession
                 stopReasonValue = 'Remote';
-                console.log(`ℹ️ [StopTransaction] Customer session detected (customerId=${session.customerId}, not system) - Setting stop reason to 'Remote' for session ${session.sessionId} (user stopped charging)`);
+                console.log(`ℹ️ [StopTransaction] ✅ Customer session - Defaulting to 'Remote' (User stopped charging) for session ${session.sessionId}`);
               }
             } else {
-              // No customerId and no customer indicators - likely CMS session
+              // Session started by CMS - show "Stopped from CMS"
               stopReasonValue = 'Remote (CMS)';
-              console.log(`ℹ️ [StopTransaction] CMS session (no customerId, no indicators) - Setting stop reason to 'Remote (CMS)' for session ${session.sessionId}`);
+              console.log(`ℹ️ [StopTransaction] CMS session - Setting stop reason to 'Remote (CMS)' for session ${session.sessionId}`);
             }
             
             // Update session to stopped status

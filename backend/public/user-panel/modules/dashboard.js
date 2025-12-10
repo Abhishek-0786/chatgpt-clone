@@ -351,6 +351,41 @@ window.requestUserLocation = async function() {
         return;
     }
     
+    // Check if we have a cached location that's still valid (less than 1 minute old)
+    const cachedLocation = sessionStorage.getItem('userLocation');
+    const cachedLocationTime = sessionStorage.getItem('userLocationTime');
+    if (cachedLocation && cachedLocationTime) {
+        const age = Date.now() - parseInt(cachedLocationTime);
+        if (age < 60000) { // Less than 1 minute old
+            try {
+                const location = JSON.parse(cachedLocation);
+                userLocation = location;
+                
+                // Update map center
+                if (map) {
+                    map.setCenter(userLocation);
+                    map.setZoom(12);
+                    addUserLocationMarker();
+                }
+                
+                // Update button state
+                if (btnContent) {
+                    btnContent.style.background = '#007bff';
+                    btnContent.style.boxShadow = '0 4px 12px rgba(0, 123, 255, 0.4)';
+                    btnContent.innerHTML = '<i class="fas fa-crosshairs" style="color: white; font-size: 20px;"></i>';
+                    btnContent.style.pointerEvents = 'auto';
+                }
+                
+                // Reload stations
+                await loadStations();
+                return; // Use cached location
+            } catch (e) {
+                console.warn('Error parsing cached location:', e);
+                // Continue to request new location
+            }
+        }
+    }
+    
     // Show loading state on floating button
     if (btnContent) {
         btnContent.innerHTML = '<i class="fas fa-spinner fa-spin" style="color: white; font-size: 20px;"></i>';
@@ -366,6 +401,7 @@ window.requestUserLocation = async function() {
             
             // Store in sessionStorage for persistence
             sessionStorage.setItem('userLocation', JSON.stringify(userLocation));
+            sessionStorage.setItem('userLocationTime', Date.now().toString());
             
             // Update button to show active state (blue with crosshairs icon)
             if (btnContent) {
@@ -393,13 +429,20 @@ window.requestUserLocation = async function() {
         (error) => {
             console.error('Error getting location:', error);
             let errorMessage = 'Unable to get your location';
-            if (error.code === error.PERMISSION_DENIED) {
+            
+            // Use numeric error codes (more reliable)
+            // 1 = PERMISSION_DENIED, 2 = POSITION_UNAVAILABLE, 3 = TIMEOUT
+            const errorCode = error.code;
+            if (errorCode === 1) {
                 errorMessage = 'Location permission denied. Please enable location access in your browser settings.';
-            } else if (error.code === error.POSITION_UNAVAILABLE) {
+            } else if (errorCode === 2) {
                 errorMessage = 'Location information unavailable.';
-            } else if (error.code === error.TIMEOUT) {
-                errorMessage = 'Location request timed out.';
+            } else if (errorCode === 3) {
+                errorMessage = 'Location request timed out. Please try again.';
+            } else {
+                errorMessage = `Unable to get your location (Error code: ${errorCode})`;
             }
+            
             showError(errorMessage);
             
             // Reset button state
@@ -415,8 +458,8 @@ window.requestUserLocation = async function() {
         },
         {
             enableHighAccuracy: true,
-            timeout: 10000,
-            maximumAge: 0
+            timeout: 15000, // Increased timeout to 15 seconds (was 10 seconds)
+            maximumAge: 60000 // Allow cached position up to 1 minute old (was 0)
         }
     );
 };
@@ -520,8 +563,8 @@ function checkPermissionWithGetCurrentPosition(resolve) {
     navigator.geolocation.getCurrentPosition(
         () => resolve(true), // Permission granted
         (error) => {
-            // Permission denied
-            if (error.code === error.PERMISSION_DENIED) {
+            // Permission denied (error code 1)
+            if (error.code === 1) {
                 resolve(false);
             } else {
                 // Other errors (timeout, unavailable) - assume permission might be granted
@@ -529,7 +572,7 @@ function checkPermissionWithGetCurrentPosition(resolve) {
                 resolve(true);
             }
         },
-        { timeout: 500, maximumAge: 0 }
+        { timeout: 5000, maximumAge: 0 } // Increased timeout for permission check
     );
 }
 

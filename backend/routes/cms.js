@@ -4036,6 +4036,13 @@ router.get('/sessions/completed', [
   }
 });
 
+/**
+ * GET /api/cms/charging-sessions/:sessionId/invoice/pdf
+ * Preview or download invoice PDF for a completed charging session
+ * Query param ?preview=1 opens PDF inline in browser, otherwise downloads as attachment
+ */
+router.get('/charging-sessions/:sessionId/invoice/pdf', chargingController.downloadInvoicePDF);
+
 // ============================================
 // CUSTOMERS ROUTES
 // ============================================

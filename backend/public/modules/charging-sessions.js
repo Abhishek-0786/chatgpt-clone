@@ -472,7 +472,7 @@ export function handleSessionsToDateChange() {
 function generateTableHeader() {
     const thead = document.getElementById('sessionsTableHead');
     const currentTab = window.currentSessionsTab || 'active';
-    const colspan = currentTab === 'active' ? 16 : 18;
+    const colspan = currentTab === 'active' ? 16 : 19;
     
     let headerHTML = '<tr>';
     headerHTML += '<th>S.NO</th>';
@@ -503,6 +503,12 @@ function generateTableHeader() {
     headerHTML += '<th>Connector ID</th>';
     headerHTML += '<th>Transaction ID</th>';
     headerHTML += '<th>Session ID</th>';
+    
+    // Only show Invoice column for completed sessions
+    if (currentTab === 'completed') {
+        headerHTML += '<th>Invoice</th>';
+    }
+    
     headerHTML += '</tr>';
     
     thead.innerHTML = headerHTML;
@@ -930,7 +936,7 @@ export function displaySessions(data) {
     const tbody = document.getElementById('sessionsTableBody');
     const showingPagination = document.getElementById('showingTextPagination');
     const currentTab = window.currentSessionsTab || 'active';
-    const colspan = currentTab === 'active' ? 16 : 18;
+    const colspan = currentTab === 'active' ? 16 : 19;
     
     if (!data.sessions || data.sessions.length === 0) {
         tbody.innerHTML = `
@@ -989,6 +995,23 @@ export function displaySessions(data) {
                 <td>${session.connectorId || 'N/A'}</td>
                 <td>${session.transactionId || 'N/A'}</td>
                 <td><a href="#" onclick="window.viewSession('${session.sessionId}'); return false;">${session.sessionId || 'N/A'}</a></td>
+        `;
+        
+        // Only show Invoice column for completed sessions
+        if (currentTab === 'completed') {
+            rowHTML += `
+                <td style="text-align: center;">
+                    <a href="/api/cms/charging-sessions/${session.sessionId}/invoice/pdf?preview=1"
+                       style="display: inline-block; padding: 6px; color: #667eea; text-decoration: none;"
+                       title="Preview Invoice"
+                       target="_blank">
+                        <i class="fas fa-file-pdf" style="font-size: 16px;"></i>
+                    </a>
+                </td>
+            `;
+        }
+        
+        rowHTML += `
             </tr>
         `;
         

@@ -1619,11 +1619,164 @@ async function getSessionById(customerId, sessionId) {
   };
 }
 
+/**
+ * Get completed session invoice data for PDF generation and preview
+ * @param {string} sessionId - Session ID
+ * @returns {Promise<Object|null>} - Invoice data or null if session not found
+ */
+async function getCompletedSessionInvoiceData(sessionId) {
+  const session = await ChargingSession.findOne({
+    where: {
+      sessionId: sessionId,
+      status: {
+        [Op.in]: ['stopped', 'completed']
+      },
+      endTime: {
+        [Op.ne]: null
+      }
+    },
+    include: [
+      {
+        model: ChargingPoint,
+        as: 'chargingPoint',
+        include: [
+          {
+            model: Station,
+            as: 'station',
+            attributes: ['id', 'stationId', 'stationName']
+          },
+          {
+            model: Tariff,
+            as: 'tariff',
+            attributes: ['id', 'tariffId', 'tariffName', 'baseCharges', 'tax', 'currency']
+          }
+        ],
+        required: false
+      },
+      {
+        model: Vehicle,
+        as: 'vehicle',
+        attributes: ['id', 'vehicleNumber', 'brand', 'modelName'],
+        required: false
+      },
+      {
+        model: Customer,
+        as: 'customer',
+        attributes: ['id', 'fullName', 'email', 'phone'],
+        required: false
+      }
+    ]
+  });
+
+  if (!session) {
+    return null;
+  }
+
+  const tariff = session.chargingPoint?.tariff;
+  const baseCharges = tariff ? parseFloat(tariff.baseCharges) : 0;
+  const taxPercent = tariff ? parseFloat(tariff.tax) : 0;
+  const currency = tariff ? tariff.currency : 'INR';
+  const currencySymbol = currency === 'USD' ? '$' : '₹';
+
+  // Calculate energy
+  let energyKwh = 0;
+  if (session.energyConsumed) {
+    energyKwh = parseFloat(session.energyConsumed);
+  } else if (session.meterStart !== null && session.meterEnd !== null && session.meterEnd >= session.meterStart) {
+    energyKwh = (session.meterEnd - session.meterStart) / 1000;
+  }
+
+  // Calculate billed amount
+  let billedAmount = 0;
+  if (session.finalAmount) {
+    billedAmount = parseFloat(session.finalAmount);
+  } else {
+    const baseAmount = energyKwh * baseCharges;
+    const taxMultiplier = 1 + (taxPercent / 100);
+    billedAmount = baseAmount * taxMultiplier;
+  }
+
+  const baseAmount = energyKwh * baseCharges;
+  const taxAmount = billedAmount - baseAmount;
+  const refundAmount = parseFloat(session.refundAmount || 0);
+  const enteredAmount = parseFloat(session.amountRequested || session.amountDeducted || 0);
+
+  // Calculate duration
+  const startTime = session.startTime || session.createdAt;
+  const endTime = session.endTime;
+  let duration = 'N/A';
+  if (startTime && endTime) {
+    const durationMs = new Date(endTime) - new Date(startTime);
+    const hours = Math.floor(durationMs / (1000 * 60 * 60));
+    const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
+    const seconds = Math.floor((durationMs % (1000 * 60)) / 1000);
+    duration = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }
+
+  // Format stop reason
+  let stopReason = 'Unknown';
+  if (session.stopReason === 'Remote (CMS)') {
+    stopReason = 'Stopped from CMS';
+  } else if (session.stopReason === 'Remote') {
+    stopReason = 'User stopped charging';
+  } else if (session.stopReason === 'ChargingCompleted') {
+    stopReason = 'Charging completed';
+  } else if (session.stopReason) {
+    stopReason = session.stopReason;
+  }
+
+  // Determine payment mode
+  const isCMS = !session.customerId || session.customerId === 0;
+  const paymentMode = isCMS ? 'CMS' : 'App';
+
+  // Get customer info
+  const customerName = session.customer ? session.customer.fullName : 'N/A';
+  const customerContact = session.customer 
+    ? (session.customer.phone || session.customer.email || 'N/A')
+    : 'N/A';
+  const customerEmail = session.customer ? (session.customer.email || 'N/A') : 'N/A';
+
+  // Get vehicle info
+  const vehicleNumber = session.vehicle ? session.vehicle.vehicleNumber : 'N/A';
+  const vehicleModel = session.vehicle 
+    ? `${session.vehicle.brand || ''} ${session.vehicle.modelName || ''}`.trim() || 'N/A'
+    : 'N/A';
+
+  // Get charger/device info
+  const chargerNameOrDeviceId = session.chargingPoint?.deviceName || session.deviceId || 'N/A';
+
+  return {
+    sessionId: session.sessionId,
+    transactionId: session.transactionId || 'N/A',
+    stationName: session.chargingPoint?.station?.stationName || 'N/A',
+    chargerNameOrDeviceId: chargerNameOrDeviceId,
+    customerName: customerName,
+    customerContact: customerContact,
+    customerEmail: customerEmail,
+    vehicleNumber: vehicleNumber,
+    vehicleModel: vehicleModel,
+    startTime: startTime ? new Date(startTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'N/A',
+    stopTime: endTime ? new Date(endTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : 'N/A',
+    duration: duration,
+    energyKwh: parseFloat(energyKwh.toFixed(3)),
+    baseCharge: parseFloat(baseCharges.toFixed(2)),
+    taxPercent: parseFloat(taxPercent.toFixed(2)),
+    taxAmount: parseFloat(taxAmount.toFixed(2)),
+    billedAmount: parseFloat(billedAmount.toFixed(2)),
+    refundAmount: parseFloat(refundAmount.toFixed(2)),
+    paymentMode: paymentMode,
+    stopReason: stopReason,
+    currencySymbol: currencySymbol,
+    enteredAmount: parseFloat(enteredAmount.toFixed(2))
+  };
+}
+
 module.exports = {
   startChargingSession,
   stopChargingSession,
   getActiveSession,
   getSessions,
-  getSessionById
+  getSessionById,
+  getCompletedSessionInvoiceData
 };
 

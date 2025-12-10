@@ -205,7 +205,14 @@ async function loadSessions(filter = 'completed', dateFilter = null, reset = fal
                                 </div>
                             </div>
                         </div>
-                        <div style="flex-shrink: 0; margin-left: 10px;">
+                        <div style="flex-shrink: 0; margin-left: 10px; display: flex; align-items: center; gap: 8px;">
+                            <button onclick="event.stopPropagation(); window.viewInvoice('${session.sessionId}')"
+                               style="display: inline-block; padding: 6px 8px; color: #dc2626; text-decoration: none; border-radius: 8px; background: #fee2e2; border: none; cursor: pointer; transition: all 0.2s;"
+                               title="View Invoice"
+                               onmouseover="this.style.background='#fecaca'; this.style.transform='scale(1.05)'"
+                               onmouseout="this.style.background='#fee2e2'; this.style.transform='scale(1)'">
+                                <i class="fas fa-file-invoice" style="font-size: 14px;"></i>
+                            </button>
                             <span style="display: inline-block; background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white; font-size: 9px; font-weight: 600; padding: 4px 10px; border-radius: 10px; text-transform: uppercase; letter-spacing: 0.5px; box-shadow: 0 1px 4px rgba(16, 185, 129, 0.25);">
                                 Completed
                             </span>
@@ -422,5 +429,57 @@ window.clearDateFilter = async function() {
 window.viewSessionDetail = function(sessionId) {
     // TODO: Navigate to session detail page
     console.log('View session detail:', sessionId);
+};
+
+// View invoice with authentication
+window.viewInvoice = async function(sessionId) {
+    try {
+        const token = localStorage.getItem('userToken') || sessionStorage.getItem('userToken');
+        if (!token) {
+            showError('Please login to view invoice');
+            return;
+        }
+        
+        // Show loading indicator
+        const loadingMsg = document.createElement('div');
+        loadingMsg.style.cssText = 'position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3); z-index: 10000;';
+        loadingMsg.innerHTML = '<div class="spinner"></div><p style="margin-top: 10px;">Loading invoice...</p>';
+        document.body.appendChild(loadingMsg);
+        
+        // Fetch invoice PDF with authentication
+        const response = await fetch(`/api/user/sessions/${sessionId}/invoice/pdf?preview=1`, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
+        
+        // Remove loading indicator
+        document.body.removeChild(loadingMsg);
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: 'Failed to load invoice' }));
+            showError(errorData.error || 'Failed to load invoice');
+            return;
+        }
+        
+        // Create blob from PDF response
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        
+        // Open PDF in new window
+        const newWindow = window.open(url, '_blank');
+        if (!newWindow) {
+            showError('Please allow popups to view invoice');
+        }
+        
+        // Clean up blob URL after a delay
+        setTimeout(() => {
+            window.URL.revokeObjectURL(url);
+        }, 1000);
+        
+    } catch (error) {
+        console.error('Error loading invoice:', error);
+        showError('Failed to load invoice. Please try again.');
+    }
 };
 

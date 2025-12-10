@@ -3359,6 +3359,59 @@ router.get('/sessions', authenticateCustomerToken, [
  */
 router.get('/sessions/:sessionId', authenticateCustomerToken, chargingController.getSessionById);
 
+/**
+ * GET /api/user/sessions/:sessionId/invoice/pdf
+ * Download invoice PDF for a completed charging session (customer access)
+ * Query param ?preview=1 opens PDF inline in browser, otherwise downloads as attachment
+ */
+router.get('/sessions/:sessionId/invoice/pdf', authenticateCustomerToken, async (req, res) => {
+  try {
+    const { sessionId } = req.params;
+    const customerId = req.customer.id;
+    
+    // Verify session belongs to this customer
+    const session = await ChargingSession.findOne({
+      where: {
+        sessionId: sessionId,
+        customerId: customerId
+      }
+    });
+    
+    if (!session) {
+      return res.status(404).json({
+        success: false,
+        error: 'Session not found or access denied'
+      });
+    }
+    
+    // Check if session is completed (has endTime) - allow both 'completed' and 'stopped' statuses
+    if (!session.endTime) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invoice can only be generated for completed sessions'
+      });
+    }
+    
+    // Also check if status is valid for invoice generation
+    if (!['completed', 'stopped'].includes(session.status)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invoice can only be generated for completed sessions'
+      });
+    }
+    
+    // Use the same invoice generation logic
+    await chargingController.downloadInvoicePDF(req, res);
+  } catch (error) {
+    console.error('Error generating customer invoice PDF:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to generate invoice',
+      message: error.message
+    });
+  }
+});
+
 module.exports = router;
 
 // Export webhook handler for use in server.js

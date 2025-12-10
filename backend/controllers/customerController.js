@@ -91,7 +91,10 @@ async function forgotPassword(req, res) {
   try {
     const { email } = req.body;
     // Pass request host to service for proper URL detection
-    const host = req.get('host') || req.headers.host || '';
+    // Check forwarded host first (for proxies/load balancers), then direct host
+    const forwardedHost = req.get('x-forwarded-host') || req.headers['x-forwarded-host'] || '';
+    const host = forwardedHost || req.get('host') || req.headers.host || '';
+    console.log(`[Customer Reset] Detected host: ${host}, Forwarded: ${forwardedHost}`);
     const result = await customerService.forgotPassword(email, host);
     res.json(result);
   } catch (error) {

@@ -200,23 +200,33 @@ async function forgotPassword(email, requestHost = '') {
 
   // Generate reset link - detect production domain from request host or use FRONTEND_URL
   const getFrontendUrl = () => {
-    // First, check if FRONTEND_URL is explicitly set
+    // First, check if FRONTEND_URL is explicitly set (highest priority)
     if (process.env.FRONTEND_URL) {
+      console.log(`[Reset Link] Using FRONTEND_URL: ${process.env.FRONTEND_URL}`);
       return process.env.FRONTEND_URL;
     }
     
-    // Check request host header to detect production domain
+    // Check if production domain is detected in request host
     if (requestHost && requestHost.includes('genx.1charging.com')) {
+      console.log(`[Reset Link] Detected production domain from request host: ${requestHost}`);
       return 'https://genx.1charging.com';
     }
     
-    // Check NODE_ENV as fallback
+    // If NODE_ENV is production, default to production domain
     if (process.env.NODE_ENV === 'production') {
+      console.log(`[Reset Link] NODE_ENV=production, using production domain`);
       return 'https://genx.1charging.com';
     }
     
-    // Default to localhost only in development
-    return 'http://localhost:3000';
+    // If host is localhost or 127.0.0.1, use localhost
+    if (requestHost && (requestHost.includes('localhost') || requestHost.includes('127.0.0.1'))) {
+      console.log(`[Reset Link] Detected localhost, using localhost`);
+      return 'http://localhost:3000';
+    }
+    
+    // Default to production domain if we can't determine (safer for production)
+    console.log(`[Reset Link] Unknown host, defaulting to production domain`);
+    return 'https://genx.1charging.com';
   };
   const resetLink = `${getFrontendUrl()}/user-panel/reset-password.html?token=${resetToken}`;
   

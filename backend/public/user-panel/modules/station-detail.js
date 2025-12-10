@@ -818,18 +818,52 @@ window.openChargingPopup = async function(chargingPointId, connectorId, deviceId
         if (modalContent) {
             modalContent.dataset.walletBalance = walletBalance;
         }
+        
+        // CRITICAL: Reset all form fields and button state when reopening modal
+        const vehicleSelect = document.getElementById(`popup-vehicle-select-${chargingPointId}-${connectorId}`);
+        const amountInput = document.getElementById(`popup-amount-input-${chargingPointId}-${connectorId}`);
+        const startBtn = document.getElementById(`popup-start-btn-${chargingPointId}-${connectorId}`);
+        const estimatedCost = document.getElementById(`estimated-cost-${modalId}`);
+        
+        // Reset vehicle selection
+        if (vehicleSelect) {
+            vehicleSelect.value = '';
+            vehicleSelect.style.borderColor = '#e0e0e0';
+        }
+        
+        // Reset amount input
+        if (amountInput) {
+            amountInput.value = '';
+            amountInput.max = walletBalance;
+            amountInput.style.borderColor = '#e0e0e0';
+        }
+        
+        // Reset start button to initial state
+        if (startBtn) {
+            startBtn.disabled = false;
+            startBtn.innerHTML = '<i class="fas fa-play me-2"></i>Start Charging';
+            startBtn.style.background = '';
+            startBtn.style.cursor = 'pointer';
+            startBtn.style.opacity = '1';
+        }
+        
+        // Hide estimated cost
+        if (estimatedCost) {
+            estimatedCost.style.display = 'none';
+        }
+        
         modal.style.display = 'flex';
         return;
     }
     
     // Create modal HTML
     const modalHTML = `
-        <div id="${modalId}" class="charging-popup-modal" 
+        <div id="${modalId}" class="charging-popup-modal" data-charging-point-id="${chargingPointId}" data-connector-id="${connectorId}" 
              style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.5); 
                     z-index: 10000; display: flex; align-items: center; justify-content: center; 
                     padding: 20px;"
              onclick="if(event.target.id === '${modalId}') window.closeChargingPopup('${modalId}')">
-            <div class="charging-popup-content" 
+            <div class="charging-popup-content" data-charging-point-id="${chargingPointId}" data-connector-id="${connectorId}" 
                  data-wallet-balance="${walletBalance}"
                  style="background: white; border-radius: 16px; padding: 24px; width: 100%; max-width: 400px; 
                         max-height: 90vh; overflow-y: auto; position: relative;"
@@ -960,6 +994,38 @@ window.openChargingPopup = async function(chargingPointId, connectorId, deviceId
 window.closeChargingPopup = function(modalId) {
     const modal = document.getElementById(modalId);
     if (modal) {
+        // Get chargingPointId and connectorId from data attributes on modal content (more reliable than parsing modalId)
+        const modalContent = modal.querySelector('.charging-popup-content');
+        const chargingPointId = modalContent?.dataset.chargingPointId;
+        const connectorId = modalContent?.dataset.connectorId;
+        
+        if (chargingPointId && connectorId) {
+            // Reset form fields when closing modal
+            const vehicleSelect = document.getElementById(`popup-vehicle-select-${chargingPointId}-${connectorId}`);
+            const amountInput = document.getElementById(`popup-amount-input-${chargingPointId}-${connectorId}`);
+            const startBtn = document.getElementById(`popup-start-btn-${chargingPointId}-${connectorId}`);
+            const estimatedCost = document.getElementById(`estimated-cost-${modalId}`);
+            
+            if (vehicleSelect) {
+                vehicleSelect.value = '';
+                vehicleSelect.style.borderColor = '#e0e0e0';
+            }
+            if (amountInput) {
+                amountInput.value = '';
+                amountInput.style.borderColor = '#e0e0e0';
+            }
+            if (startBtn) {
+                startBtn.disabled = false;
+                startBtn.innerHTML = '<i class="fas fa-play me-2"></i>Start Charging';
+                startBtn.style.background = '';
+                startBtn.style.cursor = 'pointer';
+                startBtn.style.opacity = '1';
+            }
+            if (estimatedCost) {
+                estimatedCost.style.display = 'none';
+            }
+        }
+        
         modal.style.display = 'none';
     }
 };
@@ -1162,6 +1228,12 @@ window.startChargingFromPopup = async function(modalId, chargingPointId, connect
         
         if (response.success) {
             showSuccess(`Charging started! Amount deducted: ₹${amount.toFixed(2)}`);
+            
+            // Reset form fields before closing
+            const vehicleSelect = document.getElementById(`popup-vehicle-select-${chargingPointId}-${connectorId}`);
+            const amountInput = document.getElementById(`popup-amount-input-${chargingPointId}-${connectorId}`);
+            if (vehicleSelect) vehicleSelect.value = '';
+            if (amountInput) amountInput.value = '';
             
             // Close popup
             window.closeChargingPopup(modalId);

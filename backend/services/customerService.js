@@ -228,7 +228,7 @@ async function forgotPassword(email, requestHost = '') {
     console.log(`[Reset Link] Unknown host, defaulting to production domain`);
     return 'https://genx.1charging.com';
   };
-  const resetLink = `${getFrontendUrl()}/user-panel/reset-password.html?token=${resetToken}`;
+  const resetLink = `${getFrontendUrl()}/user-panel/reset-password?token=${resetToken}`;
   
   // Log the reset link for development
   console.log(`Password reset link for ${email}: ${resetLink}`);

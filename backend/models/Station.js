@@ -25,11 +25,21 @@ const Station = sequelize.define('Station', {
   },
   organization: {
     type: DataTypes.STRING(100),
-    allowNull: false,
+    allowNull: true, // Changed to allowNull: true for backward compatibility
     validate: {
       isIn: [['massive_mobility', '1c_ev_charging', 'genx']]
     }
   },
+  // organizationId: Temporarily commented out until database migration adds the column
+  // {
+  //   type: DataTypes.INTEGER,
+  //   allowNull: true,
+  //   references: {
+  //     model: 'organizations',
+  //     key: 'id'
+  //   },
+  //   comment: 'Foreign key to Organization table'
+  // },
   status: {
     type: DataTypes.STRING(50),
     allowNull: false,
@@ -158,6 +168,7 @@ const Station = sequelize.define('Station', {
     {
       fields: ['organization']
     }
+    // Note: organizationId index removed temporarily until column is added via migration
   ]
 });
 

@@ -639,19 +639,19 @@ export async function loadSessionsData(page = 1, limit = 10, searchTerm = '', fr
             }
         } else {
             // Use normal pagination when no client-side filters
-            let data;
-            if (currentTab === 'active') {
-                // Load active sessions
-                data = await getActiveSessions({ page, limit, search: searchTerm });
-            } else {
-                // Load completed sessions
-                data = await getCompletedSessions({ page, limit, search: searchTerm, fromDate, toDate });
-            }
-            
-            if (!data.success) {
-                throw new Error(data.error || 'Failed to load sessions');
-            }
-            
+        let data;
+        if (currentTab === 'active') {
+            // Load active sessions
+            data = await getActiveSessions({ page, limit, search: searchTerm });
+        } else {
+            // Load completed sessions
+            data = await getCompletedSessions({ page, limit, search: searchTerm, fromDate, toDate });
+        }
+        
+        if (!data.success) {
+            throw new Error(data.error || 'Failed to load sessions');
+        }
+        
             allSessions = data.sessions || [];
             totalSessions = data.total || 0;
         }

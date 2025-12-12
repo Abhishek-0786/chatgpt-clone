@@ -868,6 +868,7 @@ async function createStation(stationData) {
   const {
     stationName,
     organization,
+    organizationId,
     status,
     powerCapacity,
     gridPhase,
@@ -895,11 +896,24 @@ async function createStation(stationData) {
   // Generate unique stationId
   const stationId = await generateUniqueStationId();
 
+  // Handle organizationId - if provided, fetch organization name; otherwise use organization string
+  let finalOrganization = organization;
+  
+  if (organizationId) {
+    // Fetch organization name and convert to format used in stations.organization
+    const Organization = require('../models/Organization');
+    const org = await Organization.findByPk(parseInt(organizationId));
+    if (org) {
+      finalOrganization = org.organizationName.toLowerCase().replace(/\s+/g, '_');
+    }
+  }
+
   // Create station
   const station = await Station.create({
     stationId,
     stationName,
-    organization,
+    organization: finalOrganization,
+    // organizationId: Will be added later via migration
     status: status || 'Active',
     powerCapacity: powerCapacity ? parseFloat(powerCapacity) : null,
     gridPhase,
@@ -985,6 +999,18 @@ async function updateStation(stationId, updateData) {
   const dataToUpdate = {};
   if (updateData.stationName !== undefined) dataToUpdate.stationName = updateData.stationName;
   if (updateData.organization !== undefined) dataToUpdate.organization = updateData.organization;
+  
+  // Handle organizationId - if provided, fetch organization name and update organization field
+  if (updateData.organizationId !== undefined) {
+    // Fetch organization name and convert to format used in stations.organization
+    const Organization = require('../models/Organization');
+    const org = await Organization.findByPk(parseInt(updateData.organizationId));
+    if (org) {
+      dataToUpdate.organization = org.organizationName.toLowerCase().replace(/\s+/g, '_');
+    }
+    // Note: organizationId column will be added later via migration
+  }
+  
   if (updateData.status !== undefined) dataToUpdate.status = updateData.status;
   if (updateData.powerCapacity !== undefined) {
     dataToUpdate.powerCapacity = (updateData.powerCapacity === '' || updateData.powerCapacity === null || updateData.powerCapacity === undefined) 

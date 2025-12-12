@@ -395,42 +395,42 @@ window.requestUserLocation = async function() {
     // Try with standard accuracy first (faster, more reliable)
     // If that fails, we'll try with high accuracy
     const tryGetLocation = (useHighAccuracy = false) => {
-        navigator.geolocation.getCurrentPosition(
-            async (position) => {
-                userLocation = {
-                    lat: position.coords.latitude,
-                    lng: position.coords.longitude
-                };
-                
-                // Store in sessionStorage for persistence
-                sessionStorage.setItem('userLocation', JSON.stringify(userLocation));
+    navigator.geolocation.getCurrentPosition(
+        async (position) => {
+            userLocation = {
+                lat: position.coords.latitude,
+                lng: position.coords.longitude
+            };
+            
+            // Store in sessionStorage for persistence
+            sessionStorage.setItem('userLocation', JSON.stringify(userLocation));
                 sessionStorage.setItem('userLocationTime', Date.now().toString());
+            
+            // Update button to show active state (blue with crosshairs icon)
+            if (btnContent) {
+                btnContent.style.background = '#007bff';
+                btnContent.style.boxShadow = '0 4px 12px rgba(0, 123, 255, 0.4)';
+                btnContent.innerHTML = '<i class="fas fa-crosshairs" style="color: white; font-size: 20px;"></i>';
+                btnContent.style.pointerEvents = 'auto';
+                // Update hover shadow
+                btnContent.setAttribute('onmouseover', "this.style.transform='scale(1.1)'; this.style.boxShadow='0 6px 16px rgba(0, 123, 255, 0.5)'");
+                btnContent.setAttribute('onmouseout', "this.style.transform='scale(1)'; this.style.boxShadow='0 4px 12px rgba(0, 123, 255, 0.4)'");
+            }
+            
+            // Update map center
+            if (map) {
+                map.setCenter(userLocation);
+                map.setZoom(12); // Zoom to city level
                 
-                // Update button to show active state (blue with crosshairs icon)
-                if (btnContent) {
-                    btnContent.style.background = '#007bff';
-                    btnContent.style.boxShadow = '0 4px 12px rgba(0, 123, 255, 0.4)';
-                    btnContent.innerHTML = '<i class="fas fa-crosshairs" style="color: white; font-size: 20px;"></i>';
-                    btnContent.style.pointerEvents = 'auto';
-                    // Update hover shadow
-                    btnContent.setAttribute('onmouseover', "this.style.transform='scale(1.1)'; this.style.boxShadow='0 6px 16px rgba(0, 123, 255, 0.5)'");
-                    btnContent.setAttribute('onmouseout', "this.style.transform='scale(1)'; this.style.boxShadow='0 4px 12px rgba(0, 123, 255, 0.4)'");
-                }
-                
-                // Update map center
-                if (map) {
-                    map.setCenter(userLocation);
-                    map.setZoom(12); // Zoom to city level
-                    
-                    // Add user location marker
-                    addUserLocationMarker();
-                }
-                
-                // Reload stations to sort by distance
-                await loadStations();
-            },
-            (error) => {
-                console.error('Error getting location:', error);
+                // Add user location marker
+                addUserLocationMarker();
+            }
+            
+            // Reload stations to sort by distance
+            await loadStations();
+        },
+        (error) => {
+            console.error('Error getting location:', error);
                 
                 // If standard accuracy failed and we haven't tried high accuracy yet, try that
                 if (!useHighAccuracy && error.code === 3) {
@@ -440,40 +440,40 @@ window.requestUserLocation = async function() {
                     return;
                 }
                 
-                let errorMessage = 'Unable to get your location';
+            let errorMessage = 'Unable to get your location';
                 
                 // Use numeric error codes (more reliable)
                 // 1 = PERMISSION_DENIED, 2 = POSITION_UNAVAILABLE, 3 = TIMEOUT
                 const errorCode = error.code;
                 if (errorCode === 1) {
-                    errorMessage = 'Location permission denied. Please enable location access in your browser settings.';
+                errorMessage = 'Location permission denied. Please enable location access in your browser settings.';
                 } else if (errorCode === 2) {
-                    errorMessage = 'Location information unavailable.';
+                errorMessage = 'Location information unavailable.';
                 } else if (errorCode === 3) {
                     errorMessage = 'Location request timed out. Please check your GPS signal and try again.';
                 } else {
                     errorMessage = `Unable to get your location (Error code: ${errorCode})`;
                 }
                 
-                showError(errorMessage);
-                
-                // Reset button state
-                if (btnContent) {
-                    btnContent.style.background = '#dc3545';
-                    btnContent.style.boxShadow = '0 4px 12px rgba(220, 53, 69, 0.4)';
-                    btnContent.innerHTML = '<i class="fas fa-map-marker-alt" style="color: white; font-size: 20px;"></i>';
-                    btnContent.style.pointerEvents = 'auto';
-                    // Reset hover shadow
-                    btnContent.setAttribute('onmouseover', "this.style.transform='scale(1.1)'; this.style.boxShadow='0 6px 16px rgba(220, 53, 69, 0.5)'");
-                    btnContent.setAttribute('onmouseout', "this.style.transform='scale(1)'; this.style.boxShadow='0 4px 12px rgba(220, 53, 69, 0.4)'");
-                }
-            },
-            {
+            showError(errorMessage);
+            
+            // Reset button state
+            if (btnContent) {
+                btnContent.style.background = '#dc3545';
+                btnContent.style.boxShadow = '0 4px 12px rgba(220, 53, 69, 0.4)';
+                btnContent.innerHTML = '<i class="fas fa-map-marker-alt" style="color: white; font-size: 20px;"></i>';
+                btnContent.style.pointerEvents = 'auto';
+                // Reset hover shadow
+                btnContent.setAttribute('onmouseover', "this.style.transform='scale(1.1)'; this.style.boxShadow='0 6px 16px rgba(220, 53, 69, 0.5)'");
+                btnContent.setAttribute('onmouseout', "this.style.transform='scale(1)'; this.style.boxShadow='0 4px 12px rgba(220, 53, 69, 0.4)'");
+            }
+        },
+        {
                 enableHighAccuracy: useHighAccuracy, // Only use high accuracy on retry
                 timeout: useHighAccuracy ? 20000 : 10000, // Longer timeout for high accuracy
                 maximumAge: 60000 // Allow cached position up to 1 minute old
-            }
-        );
+        }
+    );
     };
     
     // Start with standard accuracy (faster, more reliable)

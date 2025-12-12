@@ -779,3 +779,135 @@ export async function deleteTariff(tariffId) {
     }
 }
 
+// Organizations API
+export async function getOrganizations(params = {}) {
+    try {
+        const queryParams = {
+            page: params.page || 1,
+            limit: params.limit || 10
+        };
+        
+        if (params.search) {
+            queryParams.search = params.search;
+        }
+        
+        const queryString = new URLSearchParams(queryParams).toString();
+        const response = await fetch(`${API_BASE_URL}/organizations?${queryString}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || errorData.message || `HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Error fetching organizations:', error);
+        throw error;
+    }
+}
+
+export async function getOrganizationsDropdown() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/organizations/dropdown`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || errorData.message || `HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Error fetching organizations dropdown:', error);
+        throw error;
+    }
+}
+
+export async function createOrganization(formData) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/organizations`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(formData)
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            if (errorData.errors && errorData.errors.length > 0) {
+                const errorMessages = errorData.errors.map(err => err.msg || err.message).join(', ');
+                throw new Error(errorMessages);
+            }
+            throw new Error(errorData.error || errorData.message || `HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Error creating organization:', error);
+        throw error;
+    }
+}
+
+export async function updateOrganization(id, formData) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/organizations/${id}`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(formData)
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            if (errorData.errors && errorData.errors.length > 0) {
+                const errorMessages = errorData.errors.map(err => err.msg || err.message).join(', ');
+                throw new Error(errorMessages);
+            }
+            throw new Error(errorData.error || errorData.message || `HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Error updating organization:', error);
+        throw error;
+    }
+}
+
+export async function deleteOrganization(id) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/organizations/${id}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || errorData.message || `HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Error deleting organization:', error);
+        throw error;
+    }
+}
+
+

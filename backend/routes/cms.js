@@ -16,6 +16,7 @@ const chargingPointController = require('../controllers/chargingPointController'
 const cmsCustomerController = require('../controllers/cmsCustomerController');
 const cmsDashboardController = require('../controllers/cmsDashboardController');
 const cmsStationController = require('../controllers/cmsStationController');
+const organizationController = require('../controllers/organizationController');
 const { authenticateToken } = require('../middleware/auth');
 
 // RabbitMQ producer (optional - only if enabled)
@@ -375,6 +376,93 @@ router.put('/tariffs/:tariffId', [
  * Soft delete tariff (set deleted = true)
  */
 router.delete('/tariffs/:tariffId', tariffController.deleteTariff);
+
+// ============================================
+// ORGANIZATIONS ROUTES
+// ============================================
+
+/**
+ * GET /api/cms/organizations
+ * Get all organizations with pagination and filters
+ * Query params: page, limit, search
+ */
+router.get('/organizations', [
+  query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
+  query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
+  query('search').optional().isString()
+], (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ 
+      success: false,
+      message: errors.array()[0].msg,
+      errors: errors.array() 
+    });
+  }
+  next();
+}, organizationController.getAllOrganizations);
+
+/**
+ * GET /api/cms/organizations/dropdown
+ * Get all organizations for dropdown (no pagination)
+ */
+router.get('/organizations/dropdown', organizationController.getOrganizationsDropdown);
+
+/**
+ * GET /api/cms/organizations/:id
+ * Get single organization by id
+ */
+router.get('/organizations/:id', organizationController.getOrganizationById);
+
+/**
+ * POST /api/cms/organizations
+ * Create new organization
+ */
+router.post('/organizations', [
+  body('organizationName')
+    .notEmpty()
+    .withMessage('Organization name is required')
+    .isLength({ min: 1, max: 255 })
+    .withMessage('Organization name must be between 1 and 255 characters')
+], (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      success: false,
+      message: errors.array()[0].msg,
+      errors: errors.array()
+    });
+  }
+  next();
+}, organizationController.createOrganization);
+
+/**
+ * PUT /api/cms/organizations/:id
+ * Update organization
+ */
+router.put('/organizations/:id', [
+  body('organizationName')
+    .notEmpty()
+    .withMessage('Organization name is required')
+    .isLength({ min: 1, max: 255 })
+    .withMessage('Organization name must be between 1 and 255 characters')
+], (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      success: false,
+      message: errors.array()[0].msg,
+      errors: errors.array()
+    });
+  }
+  next();
+}, organizationController.updateOrganization);
+
+/**
+ * DELETE /api/cms/organizations/:id
+ * Soft delete organization (set deleted = true)
+ */
+router.delete('/organizations/:id', organizationController.deleteOrganization);
 
 // ============================================
 // CHARGING STATIONS ROUTES

@@ -13,6 +13,7 @@ const Vehicle = require('./Vehicle');
 const Wallet = require('./Wallet');
 const WalletTransaction = require('./WalletTransaction');
 const ChargingSession = require('./ChargingSession');
+const Organization = require('./Organization');
 
 // Define associations
 User.hasMany(Chat, { foreignKey: 'userId', as: 'chats' });
@@ -24,6 +25,10 @@ Message.belongsTo(Chat, { foreignKey: 'chatId', as: 'chat' });
 // Charger associations
 Charger.hasMany(ChargerData, { foreignKey: 'chargerId', as: 'data' });
 ChargerData.belongsTo(Charger, { foreignKey: 'chargerId', as: 'charger' });
+
+// Organization associations - Temporarily commented out until organizationId column is added via migration
+// Organization.hasMany(Station, { foreignKey: 'organizationId', as: 'stations' });
+// Station.belongsTo(Organization, { foreignKey: 'organizationId', as: 'organizationData' });
 
 // Station associations
 Station.hasMany(ChargingPoint, { foreignKey: 'stationId', as: 'chargingPoints' });
@@ -88,5 +93,6 @@ module.exports = {
   Wallet,
   WalletTransaction,
   ChargingSession,
+  Organization,
   syncDatabase
 };

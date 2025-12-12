@@ -1,5 +1,6 @@
 // Add Station Form Module
 import { createStation, getChargingStation, updateStation } from '../services/api.js';
+import { getOrganizationsDropdown } from '../services/api.js';
 import { loadChargingStationsModule } from './charging-stations.js';
 import { showSuccess, showError, showWarning } from '../utils/notifications.js';
 
@@ -371,11 +372,8 @@ export function openAddStationForm() {
                         </div>
                         <div class="form-group">
                             <label>Organization<span class="required">*</span></label>
-                            <select name="organization" required>
+                            <select name="organization" id="organizationSelect" required>
                                 <option value="" disabled selected hidden>Select Organization</option>
-                                <option value="massive_mobility">Massive Mobility</option>
-                                <option value="1c_ev_charging">1C EV Charging</option>
-                                <option value="genx">GenX</option>
                             </select>
                         </div>
                         <div class="form-group">
@@ -653,6 +651,34 @@ export function openAddStationForm() {
     setTimeout(() => {
         initializeClickOutsideHandler();
     }, 100);
+    
+    // Load organizations into dropdown
+    loadOrganizations();
+}
+
+// Load organizations into dropdown
+async function loadOrganizations() {
+    try {
+        const response = await getOrganizationsDropdown();
+        if (response.success && response.data && response.data.organizations) {
+            const select = document.getElementById('organizationSelect');
+            if (select) {
+                // Clear existing options except the first placeholder
+                select.innerHTML = '<option value="" disabled selected hidden>Select Organization</option>';
+                
+                // Add organizations
+                response.data.organizations.forEach(org => {
+                    const option = document.createElement('option');
+                    option.value = org.id;
+                    option.textContent = org.organizationName;
+                    select.appendChild(option);
+                });
+            }
+        }
+    } catch (error) {
+        console.error('Error loading organizations:', error);
+        showError('Failed to load organizations. Please refresh the page.');
+    }
 }
 
 // Cancel add station
@@ -721,7 +747,7 @@ export async function handleAddStationSubmit(event) {
     const stationData = {
         // Basic details
         stationName: formData.get('stationName'),
-        organization: organization, // Already validated above
+        organizationId: parseInt(organization), // Changed from organization to organizationId
         status: status, // Already validated above
         
         // Specifications
@@ -869,13 +895,30 @@ export async function openEditStationForm(stationId) {
         openAddStationForm();
         
         // Wait for DOM to be ready, then fill in the values
-        setTimeout(() => {
+        setTimeout(async () => {
+            // Wait for organizations to load
+            await waitForOrganizations();
             fillEditFormData(station, stationId);
-        }, 100);
+        }, 200);
         
     } catch (error) {
         console.error('Error opening edit station form:', error);
         showError(error.message || 'Failed to load station data');
+    }
+}
+
+// Wait for organizations to load
+async function waitForOrganizations() {
+    const maxAttempts = 10;
+    let attempts = 0;
+    
+    while (attempts < maxAttempts) {
+        const select = document.getElementById('organizationSelect');
+        if (select && select.options.length > 1) {
+            return; // Organizations loaded
+        }
+        await new Promise(resolve => setTimeout(resolve, 100));
+        attempts++;
     }
 }
 
@@ -907,14 +950,18 @@ function fillEditFormData(station, stationId) {
         if (input) input.value = station.stationName;
     }
     
-    if (station.organization) {
-        const select = document.querySelector('select[name="organization"]');
+    if (station.organizationId) {
+        const select = document.getElementById('organizationSelect');
         if (select) {
-            // Map backend values to frontend values
-            const orgValue = station.organization === 'massive_mobility' ? 'massive_mobility' : 
-                           station.organization === '1c_ev_charging' ? '1c_ev_charging' :
-                           station.organization === 'genx' ? 'genx' : station.organization;
-            select.value = orgValue;
+            select.value = station.organizationId;
+        }
+    } else if (station.organization) {
+        // Fallback for old data - try to find organization by name
+        const select = document.getElementById('organizationSelect');
+        if (select) {
+            // This is a fallback - ideally all stations should have organizationId
+            // For now, we'll just log a warning
+            console.warn('Station has organization string instead of organizationId:', station.organization);
         }
     }
     

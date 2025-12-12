@@ -5,9 +5,10 @@ import { loadChargingPointsModule } from './modules/charging-points.js';
 import { loadChargingSessionsModule } from './modules/charging-sessions.js';
 import { loadTariffManagementModule } from './modules/tariff-management.js';
 import { loadCustomersModule } from './modules/customers.js';
+import { loadOrganizationsModule } from './modules/organizations.js';
 
 // Export functions for global access
-export { loadDashboardModule, loadChargingStationsModule, loadChargingPointsModule, loadChargingSessionsModule, loadTariffManagementModule, loadCustomersModule };
+export { loadDashboardModule, loadChargingStationsModule, loadChargingPointsModule, loadChargingSessionsModule, loadTariffManagementModule, loadCustomersModule, loadOrganizationsModule };
 
 // Helper function to parse CMS URL path segments
 function parseCMSPath() {
@@ -145,6 +146,9 @@ function loadModule(moduleName, pushState = true) {
             break;
         case 'customers':
             loadCustomersModule();
+            break;
+        case 'organizations':
+            loadOrganizationsModule();
             break;
         default:
             loadDashboardModule();

@@ -206,6 +206,26 @@ export function openAddChargingPointForm(isEditMode = false) {
                 font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
             }
             
+            [data-theme="dark"] .connector-type-name {
+                color: #ffffff;
+            }
+            
+            [data-theme="dark"] .connector-icon img {
+                filter: brightness(0) invert(1);
+            }
+            
+            [data-theme="dark"] .icon-fallback {
+                background: var(--bg-tertiary) !important;
+            }
+            
+            [data-theme="dark"] .icon-fallback i {
+                color: #ffffff !important;
+            }
+            
+            [data-theme="dark"] .form-group select {
+                background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23e0e0e0' d='M6 9L1 4h10z'/%3E%3C/svg%3E");
+            }
+            
             .connector-input-group {
                 display: grid;
                 grid-template-columns: 1fr 1fr;

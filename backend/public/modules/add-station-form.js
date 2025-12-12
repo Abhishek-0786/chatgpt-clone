@@ -343,8 +343,25 @@ export function openAddStationForm() {
                 align-items: center;
             }
             
+            .time-input-group span {
+                color: var(--text-secondary);
+                font-size: 14px;
+                font-weight: 500;
+            }
+            
             .time-input {
                 flex: 1;
+            }
+            
+            .time-input::-webkit-calendar-picker-indicator {
+                filter: invert(0);
+                cursor: pointer;
+                opacity: 1;
+            }
+            
+            [data-theme="dark"] .time-input::-webkit-calendar-picker-indicator {
+                filter: invert(1);
+                opacity: 1;
             }
             
             .hidden {

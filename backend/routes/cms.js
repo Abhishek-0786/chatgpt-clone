@@ -420,7 +420,7 @@ router.get('/organizations/:id', organizationController.getOrganizationById);
  * Create new organization (with file uploads)
  */
 router.post('/organizations', 
-  uploadLogo.single('companyLogo'),
+  uploadLogo.single('organizationLogo'),
   uploadMultipleDocuments,
   [
     body('organizationName')
@@ -448,7 +448,7 @@ router.post('/organizations',
  * Update organization (with file uploads)
  */
 router.put('/organizations/:id', 
-  uploadLogo.single('companyLogo'),
+  uploadLogo.single('organizationLogo'),
   uploadMultipleDocuments,
   [
     body('organizationName')

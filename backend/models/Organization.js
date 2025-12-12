@@ -17,10 +17,6 @@ const Organization = sequelize.define('Organization', {
     }
   },
   // Basic Details
-  companyName: {
-    type: DataTypes.STRING(255),
-    allowNull: true
-  },
   gstin: {
     type: DataTypes.STRING(50),
     allowNull: true
@@ -29,7 +25,7 @@ const Organization = sequelize.define('Organization', {
     type: DataTypes.STRING(100),
     allowNull: true
   },
-  companyLogo: {
+  organizationLogo: {
     type: DataTypes.STRING(500),
     allowNull: true
   },

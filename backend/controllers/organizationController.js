@@ -119,7 +119,6 @@ exports.createOrganization = async (req, res) => {
   try {
     const {
       organizationName,
-      companyName,
       gstin,
       organizationType,
       contactNumber,
@@ -151,10 +150,10 @@ exports.createOrganization = async (req, res) => {
     }
 
     // Handle logo file
-    let companyLogo = null;
+    let organizationLogo = null;
     if (req.file) {
       // Logo file path relative to public folder
-      companyLogo = `/uploads/organizations/logos/${req.file.filename}`;
+      organizationLogo = `/uploads/organizations/logos/${req.file.filename}`;
     }
 
     // Handle documents
@@ -203,10 +202,9 @@ exports.createOrganization = async (req, res) => {
 
     const organizationData = {
       organizationName: organizationName.trim(),
-      companyName: companyName || organizationName.trim(),
       gstin: gstin || null,
       organizationType: organizationType || null,
-      companyLogo: companyLogo,
+      organizationLogo: organizationLogo,
       contactNumber: contactNumber || null,
       countryCode: countryCode || '+91',
       email: email || null,
@@ -264,7 +262,6 @@ exports.updateOrganization = async (req, res) => {
     const { id } = req.params;
     const {
       organizationName,
-      companyName,
       gstin,
       organizationType,
       contactNumber,
@@ -303,9 +300,9 @@ exports.updateOrganization = async (req, res) => {
     }
 
     // Handle logo file (only if new file uploaded)
-    let companyLogo = undefined;
+    let organizationLogo = undefined;
     if (req.file) {
-      companyLogo = `/uploads/organizations/logos/${req.file.filename}`;
+      organizationLogo = `/uploads/organizations/logos/${req.file.filename}`;
     }
 
     // Handle documents
@@ -370,10 +367,9 @@ exports.updateOrganization = async (req, res) => {
 
     const updateData = {
       organizationName: organizationName.trim(),
-      companyName: companyName,
       gstin: gstin,
       organizationType: organizationType,
-      companyLogo: companyLogo,
+      organizationLogo: organizationLogo,
       contactNumber: contactNumber,
       countryCode: countryCode,
       email: email,

@@ -548,8 +548,8 @@ export function openAddOrganizationForm() {
                     </div>
                     <div class="form-row">
                         <div class="form-group">
-                            <label>Company Name<span class="required">*</span></label>
-                            <input type="text" name="companyName" id="companyName" placeholder="Enter the name here" required>
+                            <label>Organization Name<span class="required">*</span></label>
+                            <input type="text" name="organizationName" id="organizationName" placeholder="Enter the name here" required>
                         </div>
                         <div class="form-group">
                             <label>GSTIN</label>
@@ -572,14 +572,14 @@ export function openAddOrganizationForm() {
                     </div>
                     <div class="form-row">
                         <div class="form-group">
-                            <label>Company logo (optional)</label>
+                            <label>Organization logo (optional)</label>
                             <div class="file-upload-area logo-upload-area" id="logoUploadArea" onclick="document.getElementById('logoFileInput').click()">
                                 <div class="logo-upload-content" id="logoUploadContent">
                                     <i class="fas fa-cloud-upload-alt file-upload-icon"></i>
                                     <div class="file-upload-text">Drop your images here or select</div>
                                     <a class="file-upload-link" onclick="event.stopPropagation(); document.getElementById('logoFileInput').click()">click to browse</a>
                                 </div>
-                                <input type="file" id="logoFileInput" name="companyLogo" class="file-upload-input" accept="image/*" onchange="window.handleLogoUpload(event)">
+                                <input type="file" id="logoFileInput" name="organizationLogo" class="file-upload-input" accept="image/*" onchange="window.handleLogoUpload(event)">
                             </div>
                             <div class="logo-preview-container" id="logoPreviewContainer">
                                 <img id="logoPreview" class="preview-image" alt="Logo preview">
@@ -1170,7 +1170,7 @@ async function handleAddOrganizationSubmit(event) {
         // Add logo file if exists
         const logoFile = document.getElementById('logoFileInput').files[0];
         if (logoFile) {
-            formData.append('companyLogo', logoFile);
+            formData.append('organizationLogo', logoFile);
         }
         
         // Add documents
@@ -1178,9 +1178,6 @@ async function handleAddOrganizationSubmit(event) {
             formData.append(`documents[${index}][file]`, doc.file);
             formData.append(`documents[${index}][name]`, doc.name);
         });
-        
-        // Add organizationName (using companyName)
-        formData.append('organizationName', formData.get('companyName'));
         
         const response = await createOrganization(formData);
         
@@ -1247,9 +1244,9 @@ function fillEditFormData(org, organizationId) {
     }
     
     // Fill in all form fields
-    if (org.companyName || org.organizationName) {
-        const input = document.getElementById('companyName');
-        if (input) input.value = org.companyName || org.organizationName;
+    if (org.organizationName) {
+        const input = document.getElementById('organizationName');
+        if (input) input.value = org.organizationName;
     }
     
     if (org.gstin) {
@@ -1262,14 +1259,14 @@ function fillEditFormData(org, organizationId) {
         if (select) select.value = org.organizationType;
     }
     
-    if (org.companyLogo) {
+    if (org.organizationLogo) {
         const preview = document.getElementById('logoPreview');
         const previewContainer = document.getElementById('logoPreviewContainer');
         const uploadContent = document.getElementById('logoUploadContent');
         const uploadArea = document.getElementById('logoUploadArea');
         
         if (preview && previewContainer) {
-            preview.src = org.companyLogo;
+            preview.src = org.organizationLogo;
             previewContainer.classList.add('show');
             uploadContent.classList.add('hidden');
             uploadArea.style.display = 'none';
@@ -1400,7 +1397,7 @@ async function handleUpdateOrganizationSubmit(event, organizationId) {
         // Add logo file if exists
         const logoFile = document.getElementById('logoFileInput').files[0];
         if (logoFile) {
-            formData.append('companyLogo', logoFile);
+            formData.append('organizationLogo', logoFile);
         }
         
         // Add documents
@@ -1413,9 +1410,6 @@ async function handleUpdateOrganizationSubmit(event, organizationId) {
                 formData.append(`documents[${index}][path]`, doc.path);
             }
         });
-        
-        // Add organizationName (using companyName)
-        formData.append('organizationName', formData.get('companyName'));
         
         const response = await updateOrganization(organizationId, formData);
         

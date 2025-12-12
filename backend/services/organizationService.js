@@ -197,10 +197,9 @@ async function getOrganizationById(id) {
   return {
     id: organization.id,
     organizationName: organization.organizationName,
-    companyName: organization.companyName,
     gstin: organization.gstin,
     organizationType: organization.organizationType,
-    companyLogo: organization.companyLogo,
+    organizationLogo: organization.organizationLogo,
     contactNumber: organization.contactNumber,
     countryCode: organization.countryCode,
     email: organization.email,
@@ -249,10 +248,9 @@ async function invalidateOrganizationsListCache() {
 async function createOrganization(organizationData) {
   const {
     organizationName,
-    companyName,
     gstin,
     organizationType,
-    companyLogo,
+    organizationLogo,
     contactNumber,
     countryCode,
     email,
@@ -290,10 +288,9 @@ async function createOrganization(organizationData) {
   // Create organization with all fields
   const organization = await Organization.create({
     organizationName,
-    companyName: companyName || organizationName,
     gstin: gstin || null,
     organizationType: organizationType || null,
-    companyLogo: companyLogo || null,
+    organizationLogo: organizationLogo || null,
     contactNumber: contactNumber || null,
     countryCode: countryCode || '+91',
     email: email || null,
@@ -351,10 +348,9 @@ async function createOrganization(organizationData) {
 async function updateOrganization(id, updateData) {
   const {
     organizationName,
-    companyName,
     gstin,
     organizationType,
-    companyLogo,
+    organizationLogo,
     contactNumber,
     countryCode,
     email,
@@ -413,10 +409,9 @@ async function updateOrganization(id, updateData) {
   // Build update object with only provided fields
   const updateFields = {};
   if (organizationName !== undefined) updateFields.organizationName = organizationName;
-  if (companyName !== undefined) updateFields.companyName = companyName;
   if (gstin !== undefined) updateFields.gstin = gstin;
   if (organizationType !== undefined) updateFields.organizationType = organizationType;
-  if (companyLogo !== undefined) updateFields.companyLogo = companyLogo;
+  if (organizationLogo !== undefined) updateFields.organizationLogo = organizationLogo;
   if (contactNumber !== undefined) updateFields.contactNumber = contactNumber;
   if (countryCode !== undefined) updateFields.countryCode = countryCode;
   if (email !== undefined) updateFields.email = email;

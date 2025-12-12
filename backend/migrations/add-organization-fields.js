@@ -20,12 +20,50 @@ async function addOrganizationFields() {
     await sequelize.authenticate();
     console.log('✅ Database connection established');
 
+    // First, check and remove companyName column if it exists (we're using organizationName instead)
+    const [companyNameCheck] = await sequelize.query(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_name = 'organizations'
+      AND column_name = 'companyName'
+    `);
+
+    if (companyNameCheck.length > 0) {
+      console.log('📝 Dropping column "companyName" from organizations table (replaced by organizationName)...');
+      await sequelize.query(`ALTER TABLE "organizations" DROP COLUMN "companyName"`);
+      console.log('✅ Column "companyName" dropped successfully!');
+    }
+
+    // Check and rename companyLogo to organizationLogo if it exists
+    const [companyLogoCheck] = await sequelize.query(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_name = 'organizations'
+      AND column_name = 'companyLogo'
+    `);
+
+    const [organizationLogoCheck] = await sequelize.query(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_name = 'organizations'
+      AND column_name = 'organizationLogo'
+    `);
+
+    if (companyLogoCheck.length > 0 && organizationLogoCheck.length === 0) {
+      console.log('📝 Renaming column "companyLogo" to "organizationLogo"...');
+      await sequelize.query(`ALTER TABLE "organizations" RENAME COLUMN "companyLogo" TO "organizationLogo"`);
+      console.log('✅ Column "companyLogo" renamed to "organizationLogo" successfully!');
+    } else if (companyLogoCheck.length > 0 && organizationLogoCheck.length > 0) {
+      console.log('📝 Both "companyLogo" and "organizationLogo" exist. Dropping "companyLogo"...');
+      await sequelize.query(`ALTER TABLE "organizations" DROP COLUMN "companyLogo"`);
+      console.log('✅ Column "companyLogo" dropped successfully!');
+    }
+
     // List of all new columns to add
     const columns = [
-      { name: 'companyName', type: 'VARCHAR(255)' },
       { name: 'gstin', type: 'VARCHAR(50)' },
       { name: 'organizationType', type: 'VARCHAR(100)' },
-      { name: 'companyLogo', type: 'VARCHAR(500)' },
+      { name: 'organizationLogo', type: 'VARCHAR(500)' },
       { name: 'contactNumber', type: 'VARCHAR(20)' },
       { name: 'countryCode', type: 'VARCHAR(10)', defaultValue: "'+91'" },
       { name: 'email', type: 'VARCHAR(255)' },

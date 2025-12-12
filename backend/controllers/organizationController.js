@@ -117,7 +117,31 @@ exports.getOrganizationById = async (req, res) => {
  */
 exports.createOrganization = async (req, res) => {
   try {
-    const { organizationName } = req.body;
+    const {
+      organizationName,
+      companyName,
+      gstin,
+      organizationType,
+      contactNumber,
+      countryCode,
+      email,
+      addressCountry,
+      addressPinCode,
+      addressCity,
+      addressState,
+      fullAddress,
+      bankAccountNumber,
+      ifscCode,
+      stripePublishableKey,
+      stripeSecretKey,
+      redirectUrl,
+      billingSameAsCompany,
+      billingCountry,
+      billingPinCode,
+      billingCity,
+      billingState,
+      billingFullAddress
+    } = req.body;
 
     if (!organizationName || organizationName.trim() === '') {
       return res.status(400).json({
@@ -126,8 +150,83 @@ exports.createOrganization = async (req, res) => {
       });
     }
 
+    // Handle logo file
+    let companyLogo = null;
+    if (req.file) {
+      // Logo file path relative to public folder
+      companyLogo = `/uploads/organizations/logos/${req.file.filename}`;
+    }
+
+    // Handle documents
+    const documents = [];
+    if (req.files && Array.isArray(req.files)) {
+      // Process document files
+      const documentFiles = req.files.filter(f => f.fieldname && f.fieldname.startsWith('documents'));
+      const documentData = {};
+      
+      // Group files by index
+      documentFiles.forEach(file => {
+        const match = file.fieldname.match(/documents\[(\d+)\]\[file\]/);
+        if (match) {
+          const index = match[1];
+          if (!documentData[index]) {
+            documentData[index] = {};
+          }
+          documentData[index].file = file;
+        }
+      });
+      
+      // Get document names from body
+      Object.keys(req.body).forEach(key => {
+        const match = key.match(/documents\[(\d+)\]\[name\]/);
+        if (match) {
+          const index = match[1];
+          if (!documentData[index]) {
+            documentData[index] = {};
+          }
+          documentData[index].name = req.body[key];
+        }
+      });
+      
+      // Build documents array
+      Object.keys(documentData).forEach(index => {
+        const doc = documentData[index];
+        if (doc.file && doc.name) {
+          documents.push({
+            name: doc.name,
+            path: `/uploads/organizations/documents/${doc.file.filename}`,
+            date: new Date().toLocaleDateString()
+          });
+        }
+      });
+    }
+
     const organizationData = {
-      organizationName: organizationName.trim()
+      organizationName: organizationName.trim(),
+      companyName: companyName || organizationName.trim(),
+      gstin: gstin || null,
+      organizationType: organizationType || null,
+      companyLogo: companyLogo,
+      contactNumber: contactNumber || null,
+      countryCode: countryCode || '+91',
+      email: email || null,
+      addressCountry: addressCountry || null,
+      addressPinCode: addressPinCode || null,
+      addressCity: addressCity || null,
+      addressState: addressState || null,
+      fullAddress: fullAddress || null,
+      bankAccountNumber: bankAccountNumber || null,
+      ifscCode: ifscCode || null,
+      stripePublishableKey: stripePublishableKey || null,
+      stripeSecretKey: stripeSecretKey || null,
+      redirectUrl: redirectUrl || null,
+      billingSameAsCompany: billingSameAsCompany === 'true' || billingSameAsCompany === true,
+      billingCountry: billingCountry || null,
+      billingPinCode: billingPinCode || null,
+      billingCity: billingCity || null,
+      billingState: billingState || null,
+      billingFullAddress: billingFullAddress || null,
+      documents: documents
     };
 
     const result = await organizationService.createOrganization(organizationData);
@@ -163,7 +262,31 @@ exports.createOrganization = async (req, res) => {
 exports.updateOrganization = async (req, res) => {
   try {
     const { id } = req.params;
-    const { organizationName } = req.body;
+    const {
+      organizationName,
+      companyName,
+      gstin,
+      organizationType,
+      contactNumber,
+      countryCode,
+      email,
+      addressCountry,
+      addressPinCode,
+      addressCity,
+      addressState,
+      fullAddress,
+      bankAccountNumber,
+      ifscCode,
+      stripePublishableKey,
+      stripeSecretKey,
+      redirectUrl,
+      billingSameAsCompany,
+      billingCountry,
+      billingPinCode,
+      billingCity,
+      billingState,
+      billingFullAddress
+    } = req.body;
 
     if (!id || id.trim() === '') {
       return res.status(400).json({
@@ -179,8 +302,98 @@ exports.updateOrganization = async (req, res) => {
       });
     }
 
+    // Handle logo file (only if new file uploaded)
+    let companyLogo = undefined;
+    if (req.file) {
+      companyLogo = `/uploads/organizations/logos/${req.file.filename}`;
+    }
+
+    // Handle documents
+    let documents = undefined;
+    if (req.files && Array.isArray(req.files)) {
+      // Process document files
+      const documentFiles = req.files.filter(f => f.fieldname && f.fieldname.startsWith('documents'));
+      const documentData = {};
+      
+      // Group files by index
+      documentFiles.forEach(file => {
+        const match = file.fieldname.match(/documents\[(\d+)\]\[file\]/);
+        if (match) {
+          const index = match[1];
+          if (!documentData[index]) {
+            documentData[index] = {};
+          }
+          documentData[index].file = file;
+        }
+      });
+      
+      // Get document names and paths from body
+      Object.keys(req.body).forEach(key => {
+        const nameMatch = key.match(/documents\[(\d+)\]\[name\]/);
+        const pathMatch = key.match(/documents\[(\d+)\]\[path\]/);
+        if (nameMatch) {
+          const index = nameMatch[1];
+          if (!documentData[index]) {
+            documentData[index] = {};
+          }
+          documentData[index].name = req.body[key];
+        } else if (pathMatch) {
+          const index = pathMatch[1];
+          if (!documentData[index]) {
+            documentData[index] = {};
+          }
+          documentData[index].path = req.body[key];
+        }
+      });
+      
+      // Build documents array
+      documents = [];
+      Object.keys(documentData).forEach(index => {
+        const doc = documentData[index];
+        if (doc.file && doc.name) {
+          // New file uploaded
+          documents.push({
+            name: doc.name,
+            path: `/uploads/organizations/documents/${doc.file.filename}`,
+            date: new Date().toLocaleDateString()
+          });
+        } else if (doc.path && doc.name) {
+          // Existing document (no new file)
+          documents.push({
+            name: doc.name,
+            path: doc.path,
+            date: new Date().toLocaleDateString()
+          });
+        }
+      });
+    }
+
     const updateData = {
-      organizationName: organizationName.trim()
+      organizationName: organizationName.trim(),
+      companyName: companyName,
+      gstin: gstin,
+      organizationType: organizationType,
+      companyLogo: companyLogo,
+      contactNumber: contactNumber,
+      countryCode: countryCode,
+      email: email,
+      addressCountry: addressCountry,
+      addressPinCode: addressPinCode,
+      addressCity: addressCity,
+      addressState: addressState,
+      fullAddress: fullAddress,
+      bankAccountNumber: bankAccountNumber,
+      ifscCode: ifscCode,
+      stripePublishableKey: stripePublishableKey,
+      stripeSecretKey: stripeSecretKey,
+      redirectUrl: redirectUrl,
+      billingSameAsCompany: billingSameAsCompany === 'true' || billingSameAsCompany === true,
+      billingCountry: billingCountry,
+      billingPinCode: billingPinCode,
+      billingCity: billingCity,
+      billingState: billingState,
+      billingFullAddress: billingFullAddress,
+      documents: documents
     };
 
     const result = await organizationService.updateOrganization(parseInt(id), updateData);
@@ -191,7 +404,7 @@ exports.updateOrganization = async (req, res) => {
         message: 'Organization not found'
       });
     }
-
+    
     if (result.success === false) {
       return res.status(400).json({
         success: false,

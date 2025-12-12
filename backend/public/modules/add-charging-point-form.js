@@ -521,19 +521,33 @@ export function openAddChargingPointForm(isEditMode = false) {
 // Load tariffs from tariff management
 async function loadTariffs() {
     try {
-        const tariffs = await getTariffs();
+        const response = await getTariffs();
         const select = document.getElementById('tariffSelect');
         
-        if (tariffs && tariffs.tariffs && tariffs.tariffs.length > 0) {
-            tariffs.tariffs.forEach(tariff => {
+        if (!select) {
+            console.error('Tariff select element not found');
+            return;
+        }
+        
+        // Check for the correct response structure: { success: true, data: { tariffs: [...] } }
+        if (response && response.success && response.data && response.data.tariffs && response.data.tariffs.length > 0) {
+            response.data.tariffs.forEach(tariff => {
                 const option = document.createElement('option');
                 option.value = tariff.id;
                 option.textContent = tariff.tariffName;
                 select.appendChild(option);
             });
+        } else {
+            // Show message if no tariffs available
+            const option = document.createElement('option');
+            option.value = '';
+            option.textContent = 'No tariffs available';
+            option.disabled = true;
+            select.appendChild(option);
         }
     } catch (error) {
         console.error('Error loading tariffs:', error);
+        showError('Failed to load tariffs. Please refresh the page.');
     }
 }
 

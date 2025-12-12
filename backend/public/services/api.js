@@ -834,14 +834,48 @@ export async function getOrganizationsDropdown() {
     }
 }
 
-export async function createOrganization(formData) {
+export async function getOrganization(id) {
     try {
-        const response = await fetch(`${API_BASE_URL}/organizations`, {
-            method: 'POST',
+        const response = await fetch(`${API_BASE_URL}/organizations/${id}`, {
+            method: 'GET',
             headers: {
                 'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(formData)
+            }
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || errorData.message || `HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Error fetching organization:', error);
+        throw error;
+    }
+}
+
+export async function createOrganization(formData) {
+    try {
+        // Check if formData is FormData instance
+        const isFormData = formData instanceof FormData;
+        
+        const headers = {};
+        if (!isFormData) {
+            headers['Content-Type'] = 'application/json';
+        }
+        
+        // Add auth token
+        const token = localStorage.getItem('token');
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+        }
+        
+        const response = await fetch(`${API_BASE_URL}/organizations`, {
+            method: 'POST',
+            headers: headers,
+            body: isFormData ? formData : JSON.stringify(formData)
         });
         
         if (!response.ok) {
@@ -863,12 +897,24 @@ export async function createOrganization(formData) {
 
 export async function updateOrganization(id, formData) {
     try {
+        // Check if formData is FormData instance
+        const isFormData = formData instanceof FormData;
+        
+        const headers = {};
+        if (!isFormData) {
+            headers['Content-Type'] = 'application/json';
+        }
+        
+        // Add auth token
+        const token = localStorage.getItem('token');
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+        }
+        
         const response = await fetch(`${API_BASE_URL}/organizations/${id}`, {
             method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(formData)
+            headers: headers,
+            body: isFormData ? formData : JSON.stringify(formData)
         });
         
         if (!response.ok) {

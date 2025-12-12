@@ -2,6 +2,7 @@
 import { getOrganizations, createOrganization, updateOrganization, deleteOrganization } from '../services/api.js';
 import { formatDate } from '../utils/helpers.js';
 import { showSuccess, showError, showConfirm } from '../utils/notifications.js';
+import { openAddOrganizationForm, openEditOrganizationForm } from './add-organization-form.js';
 
 // Global variables
 let currentPage = 1;
@@ -400,7 +401,7 @@ export function loadOrganizationsModule() {
         <div id="organizations-content">
             <div class="organizations-header">
                 <h2>Organizations</h2>
-                <button class="add-org-btn" onclick="window.openAddOrganizationModal()">
+                <button class="add-org-btn" onclick="window.openAddOrganizationForm()">
                     <i class="fas fa-plus"></i> Add Organization
                 </button>
             </div>
@@ -446,25 +447,6 @@ export function loadOrganizationsModule() {
             </div>
         </div>
         
-        <!-- Add/Edit Organization Modal -->
-        <div class="modal-overlay" id="organizationModal">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h3 id="modalTitle">Add Organization</h3>
-                    <button class="close-btn" onclick="window.closeOrganizationModal()">&times;</button>
-                </div>
-                <form id="organizationForm" onsubmit="window.handleOrganizationSubmit(event)">
-                    <div class="form-group">
-                        <label for="organizationName">Organization Name <span style="color: red;">*</span></label>
-                        <input type="text" id="organizationName" name="organizationName" required placeholder="Enter organization name">
-                    </div>
-                    <div class="modal-actions">
-                        <button type="button" class="modal-btn modal-btn-secondary" onclick="window.closeOrganizationModal()">Cancel</button>
-                        <button type="submit" class="modal-btn modal-btn-primary" id="submitBtn">Save</button>
-                    </div>
-                </form>
-            </div>
-        </div>
     `;
     
     // Load organizations data
@@ -477,9 +459,7 @@ export function loadOrganizationsModule() {
 // Setup global functions
 function setupGlobalFunctions() {
     window.applyOrganizationFilters = applyOrganizationFilters;
-    window.openAddOrganizationModal = openAddOrganizationModal;
-    window.closeOrganizationModal = closeOrganizationModal;
-    window.handleOrganizationSubmit = handleOrganizationSubmit;
+    window.openAddOrganizationForm = openAddOrganizationForm;
     window.editOrganization = editOrganization;
     window.deleteOrganizationHandler = deleteOrganizationHandler;
 }
@@ -618,79 +598,9 @@ window.goToOrganizationPage = function(page) {
     }
 };
 
-// Open add organization modal
-function openAddOrganizationModal() {
-    editingOrganizationId = null;
-    document.getElementById('modalTitle').textContent = 'Add Organization';
-    document.getElementById('organizationName').value = '';
-    document.getElementById('submitBtn').textContent = 'Save';
-    document.getElementById('organizationModal').classList.add('active');
-}
-
-// Close organization modal
-function closeOrganizationModal() {
-    document.getElementById('organizationModal').classList.remove('active');
-    editingOrganizationId = null;
-    document.getElementById('organizationForm').reset();
-}
-
 // Edit organization
 function editOrganization(id, name) {
-    editingOrganizationId = id;
-    document.getElementById('modalTitle').textContent = 'Edit Organization';
-    document.getElementById('organizationName').value = name;
-    document.getElementById('submitBtn').textContent = 'Update';
-    document.getElementById('organizationModal').classList.add('active');
-}
-
-// Handle organization submit
-async function handleOrganizationSubmit(event) {
-    event.preventDefault();
-    
-    const organizationName = document.getElementById('organizationName').value.trim();
-    
-    if (!organizationName) {
-        showError('Organization name is required');
-        return;
-    }
-    
-    const submitBtn = document.getElementById('submitBtn');
-    submitBtn.disabled = true;
-    submitBtn.textContent = editingOrganizationId ? 'Updating...' : 'Saving...';
-    
-    try {
-        if (editingOrganizationId) {
-            const response = await updateOrganization(editingOrganizationId, {
-                organizationName: organizationName
-            });
-            
-            if (response.success) {
-                showSuccess('Organization updated successfully');
-                closeOrganizationModal();
-                loadOrganizationsData();
-            } else {
-                showError(response.message || 'Failed to update organization');
-            }
-        } else {
-            const response = await createOrganization({
-                organizationName: organizationName
-            });
-            
-            if (response.success) {
-                showSuccess('Organization created successfully');
-                closeOrganizationModal();
-                loadOrganizationsData();
-            } else {
-                showError(response.message || 'Failed to create organization');
-            }
-        }
-    } catch (error) {
-        console.error('Error saving organization:', error);
-        showError(error.message || 'Failed to save organization');
-    } finally {
-        submitBtn.disabled = false;
-        submitBtn.textContent = editingOrganizationId ? 'Update' : 'Save';
-    }
+    openEditOrganizationForm(id);
 }
 
 // Delete organization handler

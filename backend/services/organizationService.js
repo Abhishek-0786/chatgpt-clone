@@ -193,9 +193,34 @@ async function getOrganizationById(id) {
     });
   }
 
+  // Return all organization fields
   return {
     id: organization.id,
     organizationName: organization.organizationName,
+    companyName: organization.companyName,
+    gstin: organization.gstin,
+    organizationType: organization.organizationType,
+    companyLogo: organization.companyLogo,
+    contactNumber: organization.contactNumber,
+    countryCode: organization.countryCode,
+    email: organization.email,
+    addressCountry: organization.addressCountry,
+    addressPinCode: organization.addressPinCode,
+    addressCity: organization.addressCity,
+    addressState: organization.addressState,
+    fullAddress: organization.fullAddress,
+    bankAccountNumber: organization.bankAccountNumber,
+    ifscCode: organization.ifscCode,
+    stripePublishableKey: organization.stripePublishableKey,
+    stripeSecretKey: organization.stripeSecretKey,
+    redirectUrl: organization.redirectUrl,
+    billingSameAsCompany: organization.billingSameAsCompany,
+    billingCountry: organization.billingCountry,
+    billingPinCode: organization.billingPinCode,
+    billingCity: organization.billingCity,
+    billingState: organization.billingState,
+    billingFullAddress: organization.billingFullAddress,
+    documents: organization.documents || [],
     stations: stationCount,
     chargers: chargerCount,
     createdAt: organization.createdAt,
@@ -222,7 +247,33 @@ async function invalidateOrganizationsListCache() {
  * Create new organization
  */
 async function createOrganization(organizationData) {
-  const { organizationName } = organizationData;
+  const {
+    organizationName,
+    companyName,
+    gstin,
+    organizationType,
+    companyLogo,
+    contactNumber,
+    countryCode,
+    email,
+    addressCountry,
+    addressPinCode,
+    addressCity,
+    addressState,
+    fullAddress,
+    bankAccountNumber,
+    ifscCode,
+    stripePublishableKey,
+    stripeSecretKey,
+    redirectUrl,
+    billingSameAsCompany,
+    billingCountry,
+    billingPinCode,
+    billingCity,
+    billingState,
+    billingFullAddress,
+    documents
+  } = organizationData;
 
   // Check if organization with same name already exists
   const existingOrg = await Organization.findOne({
@@ -236,9 +287,33 @@ async function createOrganization(organizationData) {
     throw new Error('Organization with this name already exists');
   }
 
-  // Create organization
+  // Create organization with all fields
   const organization = await Organization.create({
     organizationName,
+    companyName: companyName || organizationName,
+    gstin: gstin || null,
+    organizationType: organizationType || null,
+    companyLogo: companyLogo || null,
+    contactNumber: contactNumber || null,
+    countryCode: countryCode || '+91',
+    email: email || null,
+    addressCountry: addressCountry || null,
+    addressPinCode: addressPinCode || null,
+    addressCity: addressCity || null,
+    addressState: addressState || null,
+    fullAddress: fullAddress || null,
+    bankAccountNumber: bankAccountNumber || null,
+    ifscCode: ifscCode || null,
+    stripePublishableKey: stripePublishableKey || null,
+    stripeSecretKey: stripeSecretKey || null,
+    redirectUrl: redirectUrl || null,
+    billingSameAsCompany: billingSameAsCompany || false,
+    billingCountry: billingCountry || null,
+    billingPinCode: billingPinCode || null,
+    billingCity: billingCity || null,
+    billingState: billingState || null,
+    billingFullAddress: billingFullAddress || null,
+    documents: documents || [],
     deleted: false
   });
 
@@ -274,7 +349,33 @@ async function createOrganization(organizationData) {
  * Update organization
  */
 async function updateOrganization(id, updateData) {
-  const { organizationName } = updateData;
+  const {
+    organizationName,
+    companyName,
+    gstin,
+    organizationType,
+    companyLogo,
+    contactNumber,
+    countryCode,
+    email,
+    addressCountry,
+    addressPinCode,
+    addressCity,
+    addressState,
+    fullAddress,
+    bankAccountNumber,
+    ifscCode,
+    stripePublishableKey,
+    stripeSecretKey,
+    redirectUrl,
+    billingSameAsCompany,
+    billingCountry,
+    billingPinCode,
+    billingCity,
+    billingState,
+    billingFullAddress,
+    documents
+  } = updateData;
 
   // Find organization
   const organization = await Organization.findOne({
@@ -309,8 +410,36 @@ async function updateOrganization(id, updateData) {
     }
   }
 
+  // Build update object with only provided fields
+  const updateFields = {};
+  if (organizationName !== undefined) updateFields.organizationName = organizationName;
+  if (companyName !== undefined) updateFields.companyName = companyName;
+  if (gstin !== undefined) updateFields.gstin = gstin;
+  if (organizationType !== undefined) updateFields.organizationType = organizationType;
+  if (companyLogo !== undefined) updateFields.companyLogo = companyLogo;
+  if (contactNumber !== undefined) updateFields.contactNumber = contactNumber;
+  if (countryCode !== undefined) updateFields.countryCode = countryCode;
+  if (email !== undefined) updateFields.email = email;
+  if (addressCountry !== undefined) updateFields.addressCountry = addressCountry;
+  if (addressPinCode !== undefined) updateFields.addressPinCode = addressPinCode;
+  if (addressCity !== undefined) updateFields.addressCity = addressCity;
+  if (addressState !== undefined) updateFields.addressState = addressState;
+  if (fullAddress !== undefined) updateFields.fullAddress = fullAddress;
+  if (bankAccountNumber !== undefined) updateFields.bankAccountNumber = bankAccountNumber;
+  if (ifscCode !== undefined) updateFields.ifscCode = ifscCode;
+  if (stripePublishableKey !== undefined) updateFields.stripePublishableKey = stripePublishableKey;
+  if (stripeSecretKey !== undefined) updateFields.stripeSecretKey = stripeSecretKey;
+  if (redirectUrl !== undefined) updateFields.redirectUrl = redirectUrl;
+  if (billingSameAsCompany !== undefined) updateFields.billingSameAsCompany = billingSameAsCompany;
+  if (billingCountry !== undefined) updateFields.billingCountry = billingCountry;
+  if (billingPinCode !== undefined) updateFields.billingPinCode = billingPinCode;
+  if (billingCity !== undefined) updateFields.billingCity = billingCity;
+  if (billingState !== undefined) updateFields.billingState = billingState;
+  if (billingFullAddress !== undefined) updateFields.billingFullAddress = billingFullAddress;
+  if (documents !== undefined) updateFields.documents = documents;
+
   // Update organization
-  await organization.update(updateData);
+  await organization.update(updateFields);
 
   // Reload to get updated data
   await organization.reload();

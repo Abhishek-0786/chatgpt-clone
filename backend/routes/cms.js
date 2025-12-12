@@ -18,6 +18,7 @@ const cmsDashboardController = require('../controllers/cmsDashboardController');
 const cmsStationController = require('../controllers/cmsStationController');
 const organizationController = require('../controllers/organizationController');
 const { authenticateToken } = require('../middleware/auth');
+const { uploadLogo, uploadMultipleDocuments } = require('../config/multer');
 
 // RabbitMQ producer (optional - only if enabled)
 const ENABLE_RABBITMQ = process.env.ENABLE_RABBITMQ === 'true';
@@ -416,47 +417,59 @@ router.get('/organizations/:id', organizationController.getOrganizationById);
 
 /**
  * POST /api/cms/organizations
- * Create new organization
+ * Create new organization (with file uploads)
  */
-router.post('/organizations', [
-  body('organizationName')
-    .notEmpty()
-    .withMessage('Organization name is required')
-    .isLength({ min: 1, max: 255 })
-    .withMessage('Organization name must be between 1 and 255 characters')
-], (req, res, next) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({
-      success: false,
-      message: errors.array()[0].msg,
-      errors: errors.array()
-    });
-  }
-  next();
-}, organizationController.createOrganization);
+router.post('/organizations', 
+  uploadLogo.single('companyLogo'),
+  uploadMultipleDocuments,
+  [
+    body('organizationName')
+      .notEmpty()
+      .withMessage('Organization name is required')
+      .isLength({ min: 1, max: 255 })
+      .withMessage('Organization name must be between 1 and 255 characters')
+  ], 
+  (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ 
+        success: false,
+        message: errors.array()[0].msg,
+        errors: errors.array() 
+      });
+    }
+    next();
+  }, 
+  organizationController.createOrganization
+);
 
 /**
  * PUT /api/cms/organizations/:id
- * Update organization
+ * Update organization (with file uploads)
  */
-router.put('/organizations/:id', [
-  body('organizationName')
-    .notEmpty()
-    .withMessage('Organization name is required')
-    .isLength({ min: 1, max: 255 })
-    .withMessage('Organization name must be between 1 and 255 characters')
-], (req, res, next) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({
-      success: false,
-      message: errors.array()[0].msg,
-      errors: errors.array()
-    });
-  }
-  next();
-}, organizationController.updateOrganization);
+router.put('/organizations/:id', 
+  uploadLogo.single('companyLogo'),
+  uploadMultipleDocuments,
+  [
+    body('organizationName')
+      .notEmpty()
+      .withMessage('Organization name is required')
+      .isLength({ min: 1, max: 255 })
+      .withMessage('Organization name must be between 1 and 255 characters')
+  ], 
+  (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: errors.array()[0].msg,
+        errors: errors.array()
+      });
+    }
+    next();
+  }, 
+  organizationController.updateOrganization
+);
 
 /**
  * DELETE /api/cms/organizations/:id

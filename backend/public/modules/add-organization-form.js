@@ -682,20 +682,6 @@ export function openAddOrganizationForm() {
                             <label>IFSC code</label>
                             <input type="text" name="ifscCode" placeholder="Enter the name here">
                         </div>
-                        <div class="form-group">
-                            <label>Stripe Publishable Key</label>
-                            <input type="text" name="stripePublishableKey" placeholder="Enter the stripe publishable key">
-                        </div>
-                        <div class="form-group">
-                            <label>Stripe Secret Key</label>
-                            <input type="text" name="stripeSecretKey" placeholder="Enter the stripe secret key">
-                        </div>
-                    </div>
-                    <div class="form-row">
-                        <div class="form-group full-width">
-                            <label>Redirect URL</label>
-                            <input type="url" name="redirectUrl" placeholder="Enter the redirect URL">
-                        </div>
                     </div>
                 </div>
                 
@@ -1323,20 +1309,6 @@ function fillEditFormData(org, organizationId) {
         if (input) input.value = org.ifscCode;
     }
     
-    if (org.stripePublishableKey) {
-        const input = document.querySelector('input[name="stripePublishableKey"]');
-        if (input) input.value = org.stripePublishableKey;
-    }
-    
-    if (org.stripeSecretKey) {
-        const input = document.querySelector('input[name="stripeSecretKey"]');
-        if (input) input.value = org.stripeSecretKey;
-    }
-    
-    if (org.redirectUrl) {
-        const input = document.querySelector('input[name="redirectUrl"]');
-        if (input) input.value = org.redirectUrl;
-    }
     
     if (org.billingSameAsCompany) {
         const checkbox = document.getElementById('billingSameAsCompany');

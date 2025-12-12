@@ -210,9 +210,6 @@ async function getOrganizationById(id) {
     fullAddress: organization.fullAddress,
     bankAccountNumber: organization.bankAccountNumber,
     ifscCode: organization.ifscCode,
-    stripePublishableKey: organization.stripePublishableKey,
-    stripeSecretKey: organization.stripeSecretKey,
-    redirectUrl: organization.redirectUrl,
     billingSameAsCompany: organization.billingSameAsCompany,
     billingCountry: organization.billingCountry,
     billingPinCode: organization.billingPinCode,
@@ -261,9 +258,6 @@ async function createOrganization(organizationData) {
     fullAddress,
     bankAccountNumber,
     ifscCode,
-    stripePublishableKey,
-    stripeSecretKey,
-    redirectUrl,
     billingSameAsCompany,
     billingCountry,
     billingPinCode,
@@ -301,9 +295,6 @@ async function createOrganization(organizationData) {
     fullAddress: fullAddress || null,
     bankAccountNumber: bankAccountNumber || null,
     ifscCode: ifscCode || null,
-    stripePublishableKey: stripePublishableKey || null,
-    stripeSecretKey: stripeSecretKey || null,
-    redirectUrl: redirectUrl || null,
     billingSameAsCompany: billingSameAsCompany || false,
     billingCountry: billingCountry || null,
     billingPinCode: billingPinCode || null,
@@ -361,9 +352,6 @@ async function updateOrganization(id, updateData) {
     fullAddress,
     bankAccountNumber,
     ifscCode,
-    stripePublishableKey,
-    stripeSecretKey,
-    redirectUrl,
     billingSameAsCompany,
     billingCountry,
     billingPinCode,
@@ -422,9 +410,6 @@ async function updateOrganization(id, updateData) {
   if (fullAddress !== undefined) updateFields.fullAddress = fullAddress;
   if (bankAccountNumber !== undefined) updateFields.bankAccountNumber = bankAccountNumber;
   if (ifscCode !== undefined) updateFields.ifscCode = ifscCode;
-  if (stripePublishableKey !== undefined) updateFields.stripePublishableKey = stripePublishableKey;
-  if (stripeSecretKey !== undefined) updateFields.stripeSecretKey = stripeSecretKey;
-  if (redirectUrl !== undefined) updateFields.redirectUrl = redirectUrl;
   if (billingSameAsCompany !== undefined) updateFields.billingSameAsCompany = billingSameAsCompany;
   if (billingCountry !== undefined) updateFields.billingCountry = billingCountry;
   if (billingPinCode !== undefined) updateFields.billingPinCode = billingPinCode;

@@ -76,18 +76,6 @@ const Organization = sequelize.define('Organization', {
     type: DataTypes.STRING(20),
     allowNull: true
   },
-  stripePublishableKey: {
-    type: DataTypes.STRING(255),
-    allowNull: true
-  },
-  stripeSecretKey: {
-    type: DataTypes.STRING(255),
-    allowNull: true
-  },
-  redirectUrl: {
-    type: DataTypes.STRING(500),
-    allowNull: true
-  },
   // Billing Address
   billingSameAsCompany: {
     type: DataTypes.BOOLEAN,

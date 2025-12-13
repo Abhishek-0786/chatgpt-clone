@@ -713,17 +713,26 @@ async function initializeMap() {
 
 // Get organization logo/icon based on organization value
 function getOrganizationIcon(organization) {
-    // Map formatted names back to original values if needed
-    const orgNameMap = {
-        'Massive Mobility': 'massive_mobility',
-        '1C EV Charging': '1c_ev_charging',
-        'Statiq': 'statiq',
-        'Chargetrip': 'chargetrip',
-        'GenX': 'genx'
-    };
+    if (!organization) return { type: 'icon', value: 'fas fa-robot' };
     
-    // Normalize organization value (handle both original and formatted)
-    const normalizedOrg = orgNameMap[organization] || organization || 'genx';
+    // Normalize organization value to lowercase for comparison
+    const orgLower = organization.toLowerCase().trim();
+    
+    // Map various formats to normalized keys
+    // Handle both display names and database values
+    let normalizedOrg = 'genx'; // Default
+    
+    if (orgLower.includes('massive') || orgLower === 'massive_mobility') {
+        normalizedOrg = 'massive_mobility';
+    } else if (orgLower.includes('1c') || orgLower === '1c_ev_charging' || orgLower.includes('1charging')) {
+        normalizedOrg = '1c_ev_charging';
+    } else if (orgLower.includes('statiq')) {
+        normalizedOrg = 'statiq';
+    } else if (orgLower.includes('chargetrip')) {
+        normalizedOrg = 'chargetrip';
+    } else if (orgLower.includes('genx') || orgLower === 'genx') {
+        normalizedOrg = 'genx';
+    }
     
     const orgLogos = {
         'genx': {
@@ -768,6 +777,7 @@ function createMarkerIconFromStation(station) {
     const shadowId = 'shadow_' + Math.random().toString(36).substr(2, 9);
     
     // Determine center content to match GenXMarkerOverlay exactly
+    const orgLower = (orgValue || '').toLowerCase();
     let centerContent = '';
     if (orgIcon.type === 'icon' && orgIcon.value.includes('robot')) {
         // GenX - robot icon
@@ -775,13 +785,13 @@ function createMarkerIconFromStation(station) {
     } else if (orgIcon.type === 'image') {
         // Organization logos - use text representation
         let orgText = 'III'; // Default
-        if (orgValue.includes('1c') || orgValue.includes('1C')) {
+        if (orgLower.includes('1c') || orgLower.includes('1charging')) {
             orgText = '1C';
-        } else if (orgValue.includes('massive') || orgValue.includes('1S')) {
+        } else if (orgLower.includes('massive')) {
             orgText = '1S';
-        } else if (orgValue.includes('statiq') || orgValue.includes('Statiq')) {
+        } else if (orgLower.includes('statiq')) {
             orgText = 'ST';
-        } else if (orgValue.includes('chargetrip') || orgValue.includes('Chargetrip')) {
+        } else if (orgLower.includes('chargetrip')) {
             orgText = 'CT';
         }
         centerContent = `<text x="22.5" y="28" font-size="14" font-weight="700" fill="white" text-anchor="middle" font-family="Arial, sans-serif" style="text-shadow: 0 1px 2px rgba(0,0,0,0.3);">${orgText}</text>`;
@@ -855,14 +865,20 @@ class GenXMarkerOverlay extends google.maps.OverlayView {
         const orgIcon = getOrganizationIcon(orgValue);
         
         // Normalize organization value to check if it needs white filter
-        const orgNameMap = {
-            'Massive Mobility': 'massive_mobility',
-            '1C EV Charging': '1c_ev_charging',
-            'Statiq': 'statiq',
-            'Chargetrip': 'chargetrip',
-            'GenX': 'genx'
-        };
-        const normalizedOrg = orgNameMap[orgValue] || orgValue || 'genx';
+        const orgLower = (orgValue || '').toLowerCase().trim();
+        let normalizedOrg = 'genx'; // Default
+        
+        if (orgLower.includes('massive') || orgLower === 'massive_mobility') {
+            normalizedOrg = 'massive_mobility';
+        } else if (orgLower.includes('1c') || orgLower === '1c_ev_charging' || orgLower.includes('1charging')) {
+            normalizedOrg = '1c_ev_charging';
+        } else if (orgLower.includes('statiq')) {
+            normalizedOrg = 'statiq';
+        } else if (orgLower.includes('chargetrip')) {
+            normalizedOrg = 'chargetrip';
+        } else if (orgLower.includes('genx') || orgLower === 'genx') {
+            normalizedOrg = 'genx';
+        }
         
         // Create icon HTML based on type
         let iconHTML = '';
@@ -870,10 +886,16 @@ class GenXMarkerOverlay extends google.maps.OverlayView {
             // Use image logo - try first extension (.png)
             const imagePath = orgIcon.value + (orgIcon.extensions ? orgIcon.extensions[0] : '.png');
             const extensions = orgIcon.extensions || ['.png', '.jpg', '.jpeg'];
+            
+            // Apply white filter for Statiq and Chargetrip logos (they are black, need to be white)
+            const needsWhiteFilter = (normalizedOrg === 'statiq' || normalizedOrg === 'chargetrip');
+            const filterStyle = needsWhiteFilter ? 'filter: brightness(0) invert(1);' : '';
+            const styleAttr = filterStyle ? ` style="${filterStyle}"` : '';
+            
             iconHTML = `<img src="${imagePath}" 
                              alt="${this.station.organization || orgValue}" 
-                             class="${logoClass}"
-                             ${combinedStyle}
+                             class="genx-marker-logo"
+                             ${styleAttr}
                              onerror="(function(img,exts){var s=img.src,b=s.substring(0,s.lastIndexOf('.'));var t=exts.findIndex(function(e){return s.endsWith(e)});if(t<exts.length-1){img.src=b+exts[t+1]}else{img.style.display='none';img.parentElement.innerHTML='<i class=\\'fas fa-robot genx-marker-icon\\'></i>'}})(this,${JSON.stringify(extensions)})">
                         `;
         } else {

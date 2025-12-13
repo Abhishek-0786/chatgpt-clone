@@ -116,6 +116,13 @@ app.get('/cms/customers/:customerId/:tab?', (req, res) => {
   res.render('cms', { initialModule: module });
 });
 
+// CMS organizations detail routes - handle /cms/organizations/:organizationId/:tab?
+// MUST come before /cms/:module? to avoid route conflicts
+app.get('/cms/organizations/:organizationId/:tab?', (req, res) => {
+  const module = 'organizations';
+  res.render('cms', { initialModule: module });
+});
+
 // CMS page with clean URLs - client-side auth handled in cms.js
 app.get('/cms/:module?', (req, res) => {
   // Support both clean URLs (/cms/dashboard) and query params (/cms?module=dashboard)

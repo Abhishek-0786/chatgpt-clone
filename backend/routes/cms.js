@@ -18,7 +18,9 @@ const cmsDashboardController = require('../controllers/cmsDashboardController');
 const cmsStationController = require('../controllers/cmsStationController');
 const organizationController = require('../controllers/organizationController');
 const { authenticateToken } = require('../middleware/auth');
-const { uploadLogo, uploadMultipleDocuments } = require('../config/multer');
+const { uploadLogo, uploadMultipleDocuments, logosDir, documentsDir } = require('../config/multer');
+const multer = require('multer');
+const path = require('path');
 
 // RabbitMQ producer (optional - only if enabled)
 const ENABLE_RABBITMQ = process.env.ENABLE_RABBITMQ === 'true';
@@ -448,8 +450,71 @@ router.post('/organizations',
  * Update organization (with file uploads)
  */
 router.put('/organizations/:id', 
-  uploadLogo.single('organizationLogo'),
-  uploadMultipleDocuments,
+  (req, res, next) => {
+    // Use .any() to handle both logo and documents flexibly
+    const upload = multer({
+      storage: multer.diskStorage({
+        destination: (req, file, cb) => {
+          if (file.fieldname === 'organizationLogo') {
+            cb(null, logosDir);
+          } else if (file.fieldname && file.fieldname.includes('documents')) {
+            cb(null, documentsDir);
+          } else {
+            cb(new Error('Invalid field name'), null);
+          }
+        },
+        filename: (req, file, cb) => {
+          const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+          const ext = path.extname(file.originalname);
+          if (file.fieldname === 'organizationLogo') {
+            cb(null, `logo-${uniqueSuffix}${ext}`);
+          } else {
+            cb(null, `doc-${uniqueSuffix}${ext}`);
+          }
+        }
+      }),
+      fileFilter: (req, file, cb) => {
+        if (file.fieldname === 'organizationLogo') {
+          // Only images for logo
+          if (file.mimetype.startsWith('image/')) {
+            cb(null, true);
+          } else {
+            cb(new Error('Only image files are allowed for logos'), false);
+          }
+        } else if (file.fieldname && file.fieldname.includes('documents')) {
+          // Documents can be images, PDF, or Word docs
+          const allowedTypes = [
+            'image/jpeg',
+            'image/png',
+            'image/gif',
+            'application/pdf',
+            'application/msword',
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+          ];
+          if (allowedTypes.includes(file.mimetype)) {
+            cb(null, true);
+          } else {
+            cb(new Error('Invalid file type. Allowed: images, PDF, Word documents'), false);
+          }
+        } else {
+          cb(new Error('Invalid field name'), false);
+        }
+      },
+      limits: {
+        fileSize: 10 * 1024 * 1024 // 10MB limit
+      }
+    }).any();
+    
+    upload(req, res, (err) => {
+      if (err) {
+        return res.status(400).json({
+          success: false,
+          message: err.message || 'File upload error'
+        });
+      }
+      next();
+    });
+  },
   [
     body('organizationName')
       .notEmpty()
@@ -476,6 +541,51 @@ router.put('/organizations/:id',
  * Soft delete organization (set deleted = true)
  */
 router.delete('/organizations/:id', organizationController.deleteOrganization);
+
+/**
+ * GET /api/cms/organizations/:id/stations
+ * Get all stations for an organization
+ */
+router.get('/organizations/:id/stations', [
+  query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
+  query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
+  query('search').optional().isString(),
+  query('status').optional().isString(),
+  query('sort').optional().isString(),
+  query('fromDate').optional().isISO8601().toDate().withMessage('From Date must be a valid date'),
+  query('toDate').optional().isISO8601().toDate().withMessage('To Date must be a valid date')
+], (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ 
+      success: false,
+      message: errors.array()[0].msg,
+      errors: errors.array() 
+    });
+  }
+  next();
+}, organizationController.getOrganizationStations);
+
+/**
+ * GET /api/cms/organizations/:id/sessions
+ * Get all sessions for an organization (active or completed)
+ */
+router.get('/organizations/:id/sessions', [
+  query('type').optional().isIn(['active', 'completed']).withMessage('Type must be active or completed'),
+  query('page').optional().isInt({ min: 1 }).withMessage('Page must be a positive integer'),
+  query('limit').optional().isInt({ min: 1, max: 100 }).withMessage('Limit must be between 1 and 100'),
+  query('search').optional().isString()
+], (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ 
+      success: false,
+      message: errors.array()[0].msg,
+      errors: errors.array() 
+    });
+  }
+  next();
+}, organizationController.getOrganizationSessions);
 
 // ============================================
 // CHARGING STATIONS ROUTES

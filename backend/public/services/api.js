@@ -791,6 +791,18 @@ export async function getOrganizations(params = {}) {
             queryParams.search = params.search;
         }
         
+        if (params.sort) {
+            queryParams.sort = params.sort;
+        }
+        
+        if (params.fromDate) {
+            queryParams.fromDate = params.fromDate;
+        }
+        
+        if (params.toDate) {
+            queryParams.toDate = params.toDate;
+        }
+        
         const queryString = new URLSearchParams(queryParams).toString();
         const response = await fetch(`${API_BASE_URL}/organizations?${queryString}`, {
             method: 'GET',
@@ -830,6 +842,113 @@ export async function getOrganizationsDropdown() {
         return data;
     } catch (error) {
         console.error('Error fetching organizations dropdown:', error);
+        throw error;
+    }
+}
+
+export async function getOrganizationById(organizationId) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/organizations/${organizationId}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || errorData.message || `HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Error fetching organization:', error);
+        throw error;
+    }
+}
+
+export async function getOrganizationStations(organizationId, params = {}) {
+    try {
+        const queryParams = {
+            page: params.page || 1,
+            limit: params.limit || 10
+        };
+        
+        if (params.search) {
+            queryParams.search = params.search;
+        }
+        if (params.status) {
+            queryParams.status = params.status;
+        }
+        if (params.sort) {
+            queryParams.sort = params.sort;
+        }
+        if (params.fromDate) {
+            queryParams.fromDate = params.fromDate;
+        }
+        if (params.toDate) {
+            queryParams.toDate = params.toDate;
+        }
+        
+        const queryString = new URLSearchParams(queryParams).toString();
+        const response = await fetch(`${API_BASE_URL}/organizations/${organizationId}/stations?${queryString}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || errorData.message || `HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Error fetching organization stations:', error);
+        throw error;
+    }
+}
+
+export async function getOrganizationSessions(organizationId, type = 'completed', params = {}) {
+    try {
+        const queryParams = {
+            type: type,
+            page: params.page || 1,
+            limit: params.limit || 10
+        };
+        
+        if (params.search) {
+            queryParams.search = params.search;
+        }
+        
+        if (params.fromDate) {
+            queryParams.fromDate = params.fromDate;
+        }
+        
+        if (params.toDate) {
+            queryParams.toDate = params.toDate;
+        }
+        
+        const queryString = new URLSearchParams(queryParams).toString();
+        const response = await fetch(`${API_BASE_URL}/organizations/${organizationId}/sessions?${queryString}`, {
+            method: 'GET',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({}));
+            throw new Error(errorData.error || errorData.message || `HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        return data;
+    } catch (error) {
+        console.error('Error fetching organization sessions:', error);
         throw error;
     }
 }

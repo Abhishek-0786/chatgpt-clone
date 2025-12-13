@@ -8,6 +8,9 @@ import { openAddOrganizationForm, openEditOrganizationForm } from './add-organiz
 let currentPage = 1;
 let currentLimit = 10;
 let currentSearch = '';
+let currentSort = '';
+let currentFromDate = '';
+let currentToDate = '';
 let currentTotal = 0;
 let currentTotalPages = 0;
 let editingOrganizationId = null;
@@ -87,6 +90,99 @@ export function loadOrganizationsModule() {
                 box-shadow: 0 0 0 3px rgba(0,123,255,0.1);
             }
             
+            .date-input-group {
+                display: flex;
+                gap: 10px;
+                align-items: center;
+            }
+            
+            .date-input-group span {
+                color: var(--text-secondary);
+                font-size: 14px;
+                font-weight: 500;
+            }
+            
+            .date-input {
+                padding: 10px 15px;
+                border: 1px solid var(--input-border);
+                border-radius: 4px;
+                font-size: 14px;
+                background-color: var(--input-bg);
+                color: var(--text-primary);
+                font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+                transition: border-color 0.2s, background-color 0.2s, color 0.2s;
+            }
+            
+            .date-input:focus {
+                outline: none;
+                border-color: #007bff;
+                box-shadow: 0 0 0 3px rgba(0,123,255,0.1);
+            }
+            
+            .date-input::-webkit-calendar-picker-indicator {
+                filter: invert(0);
+                cursor: pointer;
+            }
+            
+            [data-theme="dark"] .date-input::-webkit-calendar-picker-indicator {
+                filter: invert(1);
+            }
+            
+            .sort-select {
+                padding: 10px 40px 10px 15px;
+                border: 1px solid var(--input-border);
+                border-radius: 4px;
+                font-size: 14px;
+                font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+                background-color: var(--input-bg);
+                color: var(--text-primary);
+                cursor: pointer;
+                transition: border-color 0.2s, background-color 0.2s, color 0.2s;
+                appearance: none;
+                -webkit-appearance: none;
+                -moz-appearance: none;
+                background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23333' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+                background-repeat: no-repeat;
+                background-position: right 12px center;
+                background-size: 16px;
+                min-width: 200px;
+            }
+            
+            [data-theme="dark"] .sort-select {
+                background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23e0e0e0' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+            }
+            
+            .sort-select:focus {
+                outline: none;
+                border-color: var(--input-border);
+                box-shadow: none;
+            }
+            
+            .sort-select:hover {
+                border-color: var(--input-border);
+            }
+            
+            .apply-btn {
+                padding: 10px 24px;
+                background-color: #343a40;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-weight: 600;
+                font-size: 14px;
+                transition: background-color 0.2s;
+                font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+            }
+            
+            .apply-btn:hover {
+                background-color: #23272b;
+            }
+            
+            .apply-btn:active {
+                transform: translateY(1px);
+            }
+            
             .table-wrapper {
                 background-color: var(--card-bg);
                 border: 1px solid var(--border-color);
@@ -120,7 +216,7 @@ export function loadOrganizationsModule() {
             
             #organizationsTable {
                 width: 100%;
-                min-width: 1000px;
+                min-width: 1400px;
                 border-collapse: separate;
                 border-spacing: 0;
                 font-size: 14px;
@@ -164,12 +260,24 @@ export function loadOrganizationsModule() {
                 background-color: var(--card-bg);
             }
             
+            #organizationsTable tbody tr.clickable-row {
+                cursor: pointer;
+            }
+            
             #organizationsTable tbody tr:nth-child(even) {
                 background-color: var(--bg-tertiary);
             }
             
-            #organizationsTable tbody tr:hover {
+            #organizationsTable tbody tr.clickable-row:hover {
                 background-color: var(--hover-bg);
+            }
+            
+            #organizationsTable tbody tr.clickable-row:nth-child(even):hover {
+                background-color: var(--hover-bg);
+            }
+            
+            #organizationsTable tbody tr .action-column {
+                cursor: default;
             }
             
             #organizationsTable tbody td {
@@ -192,37 +300,44 @@ export function loadOrganizationsModule() {
                 align-items: center;
             }
             
-            .edit-btn, .delete-btn {
+            .action-btn {
                 padding: 6px 12px;
-                border: none;
                 border-radius: 4px;
-                cursor: pointer;
-                font-size: 13px;
-                font-weight: 600;
                 transition: all 0.2s;
+                cursor: pointer;
+                border: 1px solid;
+                background-color: transparent;
                 display: inline-flex;
                 align-items: center;
-                gap: 6px;
-                white-space: nowrap;
-                font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+                justify-content: center;
+                font-size: 14px;
+                width: 32px;
+                height: 32px;
             }
             
-            .edit-btn {
+            .action-btn:hover {
+                transform: translateY(-1px);
+                box-shadow: 0 2px 4px var(--shadow);
+            }
+            
+            .btn-outline-primary {
+                color: #007bff;
+                border-color: #007bff;
+            }
+            
+            .btn-outline-primary:hover {
                 background-color: #007bff;
                 color: white;
             }
             
-            .edit-btn:hover {
-                background-color: #0056b3;
+            .btn-outline-danger {
+                color: #dc3545;
+                border-color: #dc3545;
             }
             
-            .delete-btn {
+            .btn-outline-danger:hover {
                 background-color: #dc3545;
                 color: white;
-            }
-            
-            .delete-btn:hover {
-                background-color: #c82333;
             }
             
             .table-footer {
@@ -408,7 +523,23 @@ export function loadOrganizationsModule() {
             
             <!-- Filters Section -->
             <div class="filters-section">
-                <input type="text" class="search-input" id="organizationSearch" placeholder="Search by organization name" onkeyup="window.applyOrganizationFilters()">
+                <input type="text" class="search-input" id="organizationSearch" placeholder="Search by organization name" onkeyup="if(event.key === 'Enter') window.applyOrganizationFilters()">
+                <div class="date-input-group">
+                    <input type="date" class="date-input" id="organizationFromDate" onchange="window.handleOrganizationFromDateChange()">
+                    <span>From</span>
+                    <input type="date" class="date-input" id="organizationToDate" onchange="window.handleOrganizationToDateChange()">
+                    <span>To</span>
+                </div>
+                <select class="sort-select" id="organizationSort">
+                    <option value="">Sort By</option>
+                    <option value="sessions-asc">Sessions (Low to High)</option>
+                    <option value="sessions-desc">Sessions (High to Low)</option>
+                    <option value="energy-asc">Energy (Low to High)</option>
+                    <option value="energy-desc">Energy (High to Low)</option>
+                    <option value="billedAmount-asc">Billed Amount (Low to High)</option>
+                    <option value="billedAmount-desc">Billed Amount (High to Low)</option>
+                </select>
+                <button class="apply-btn" onclick="window.applyOrganizationFilters()">APPLY</button>
             </div>
             
             <!-- Main Organizations Table -->
@@ -421,13 +552,16 @@ export function loadOrganizationsModule() {
                             <th>ORGANIZATION NAME</th>
                             <th>STATIONS</th>
                             <th>CHARGERS</th>
+                            <th>SESSIONS</th>
+                            <th>ENERGY (kWh)</th>
+                            <th>BILLED AMOUNT (₹)</th>
                             <th>CREATED AT</th>
                             <th>ACTION</th>
                         </tr>
                     </thead>
                     <tbody id="organizationsTableBody">
                         <tr>
-                            <td colspan="6" class="text-center" style="padding: 40px;">
+                            <td colspan="9" class="text-center" style="padding: 40px;">
                                 <div class="spinner-border text-primary" role="status">
                                     <span class="visually-hidden">Loading...</span>
                                 </div>
@@ -459,9 +593,23 @@ export function loadOrganizationsModule() {
 // Setup global functions
 function setupGlobalFunctions() {
     window.applyOrganizationFilters = applyOrganizationFilters;
+    window.handleOrganizationFromDateChange = handleOrganizationFromDateChange;
+    window.handleOrganizationToDateChange = handleOrganizationToDateChange;
     window.openAddOrganizationForm = openAddOrganizationForm;
     window.editOrganization = editOrganization;
     window.deleteOrganizationHandler = deleteOrganizationHandler;
+    window.viewOrganizationDetail = viewOrganizationDetail;
+}
+
+// View organization detail
+async function viewOrganizationDetail(organizationId) {
+    try {
+        const detailModule = await import('./organization-detail-view.js');
+        detailModule.loadOrganizationDetailView(organizationId, 'details');
+    } catch (error) {
+        console.error('Error loading organization detail view:', error);
+        showError('Failed to load organization details');
+    }
 }
 
 // Load organizations data
@@ -470,7 +618,10 @@ async function loadOrganizationsData() {
         const response = await getOrganizations({
             page: currentPage,
             limit: currentLimit,
-            search: currentSearch
+            search: currentSearch,
+            sort: currentSort,
+            fromDate: currentFromDate,
+            toDate: currentToDate
         });
         
         if (response.success) {
@@ -494,33 +645,41 @@ function renderOrganizationsTable(organizations) {
     if (!organizations || organizations.length === 0) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="6" class="text-center" style="padding: 40px; color: var(--text-secondary);">
+                <td colspan="9" class="text-center" style="padding: 40px; color: var(--text-secondary);">
                     No organizations found
                 </td>
             </tr>
         `;
-        document.getElementById('organizationsPagination').style.display = 'none';
+        const paginationContainer = document.getElementById('organizationsPagination');
+        if (paginationContainer) {
+            paginationContainer.style.display = 'none';
+        }
         return;
     }
     
-    document.getElementById('organizationsPagination').style.display = 'flex';
+    // Pagination visibility is handled in renderPagination function
     
     tbody.innerHTML = organizations.map((org, index) => {
         const serialNo = (currentPage - 1) * currentLimit + index + 1;
         return `
-            <tr>
+            <tr class="clickable-row" onclick="window.viewOrganizationDetail(${org.id});">
                 <td>${serialNo}</td>
-                <td>${org.organizationName || '-'}</td>
+                <td>
+                    ${org.organizationName || '-'}
+                </td>
                 <td>${org.stations || 0}</td>
                 <td>${org.chargers || 0}</td>
+                <td>${org.sessions || 0}</td>
+                <td>${(org.energy || 0).toFixed(2)}</td>
+                <td>₹${(org.billedAmount || 0).toFixed(2)}</td>
                 <td>${formatDate(org.createdAt)}</td>
-                <td>
+                <td class="action-column" onclick="event.stopPropagation();">
                     <div class="action-buttons">
-                        <button class="edit-btn" onclick="window.editOrganization(${org.id}, '${org.organizationName.replace(/'/g, "\\'")}')">
-                            <i class="fas fa-edit"></i> Edit
+                        <button class="action-btn btn-outline-primary" onclick="window.editOrganization(${org.id}, '${org.organizationName.replace(/'/g, "\\'")}'); return false;" title="Edit">
+                            <i class="fas fa-edit"></i>
                         </button>
-                        <button class="delete-btn" onclick="window.deleteOrganizationHandler(${org.id}, '${org.organizationName.replace(/'/g, "\\'")}')">
-                            <i class="fas fa-trash"></i> Delete
+                        <button class="action-btn btn-outline-danger" onclick="window.deleteOrganizationHandler(${org.id}, '${org.organizationName.replace(/'/g, "\\'")}'); return false;" title="Delete">
+                            <i class="fas fa-trash"></i>
                         </button>
                     </div>
                 </td>
@@ -535,6 +694,19 @@ function renderPagination() {
     const paginationStart = document.getElementById('paginationStart');
     const paginationEnd = document.getElementById('paginationEnd');
     const paginationTotal = document.getElementById('paginationTotal');
+    const paginationContainer = document.getElementById('organizationsPagination');
+    
+    // Only show pagination if there are more than 10 items
+    if (currentTotal <= currentLimit) {
+        if (paginationContainer) {
+            paginationContainer.style.display = 'none';
+        }
+        return;
+    }
+    
+    if (paginationContainer) {
+        paginationContainer.style.display = 'flex';
+    }
     
     const start = (currentPage - 1) * currentLimit + 1;
     const end = Math.min(currentPage * currentLimit, currentTotal);
@@ -586,8 +758,33 @@ function renderPagination() {
 // Apply filters
 function applyOrganizationFilters() {
     currentSearch = document.getElementById('organizationSearch').value.trim();
+    currentSort = document.getElementById('organizationSort').value;
+    currentFromDate = document.getElementById('organizationFromDate').value || '';
+    currentToDate = document.getElementById('organizationToDate').value || '';
     currentPage = 1;
     loadOrganizationsData();
+}
+
+// Handle from date change
+function handleOrganizationFromDateChange() {
+    const fromDate = document.getElementById('organizationFromDate').value || '';
+    const toDate = document.getElementById('organizationToDate').value || '';
+    
+    // If fromDate is after toDate, clear toDate
+    if (fromDate && toDate && new Date(fromDate) > new Date(toDate)) {
+        document.getElementById('organizationToDate').value = '';
+    }
+}
+
+// Handle to date change
+function handleOrganizationToDateChange() {
+    const fromDate = document.getElementById('organizationFromDate').value || '';
+    const toDate = document.getElementById('organizationToDate').value || '';
+    
+    // If toDate is before fromDate, clear fromDate
+    if (fromDate && toDate && new Date(toDate) < new Date(fromDate)) {
+        document.getElementById('organizationFromDate').value = '';
+    }
 }
 
 // Go to page

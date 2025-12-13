@@ -1,5 +1,8 @@
-const { Organization, Station, ChargingPoint } = require('../models');
+const { Organization, Station, ChargingPoint, ChargingSession, Vehicle, Tariff } = require('../models');
+const Charger = require('../models/Charger');
+const ChargerData = require('../models/ChargerData');
 const { Op } = require('sequelize');
+const { Sequelize } = require('sequelize');
 const cacheController = require('../libs/redis/cacheController');
 const redisClient = require('../libs/redis/redisClient');
 
@@ -16,16 +19,100 @@ if (ENABLE_RABBITMQ) {
 }
 
 /**
+ * Calculate session statistics for an organization
+ */
+async function calculateOrganizationSessionStats(orgNameForStation) {
+  try {
+    // Get all stations for this organization
+    const stations = await Station.findAll({
+      where: {
+        organization: orgNameForStation,
+        deleted: false
+      },
+      attributes: ['id']
+    });
+
+    const stationIds = stations.map(s => s.id);
+    
+    if (stationIds.length === 0) {
+      return {
+        sessions: 0,
+        energy: 0,
+        billedAmount: 0
+      };
+    }
+
+    // Get all charging points for these stations
+    const chargingPoints = await ChargingPoint.findAll({
+      where: {
+        stationId: { [Op.in]: stationIds },
+        deleted: false
+      },
+      attributes: ['id', 'deviceId']
+    });
+
+    const deviceIds = chargingPoints
+      .map(cp => cp.deviceId)
+      .filter(deviceId => deviceId !== null && deviceId !== undefined);
+
+    if (deviceIds.length === 0) {
+      return {
+        sessions: 0,
+        energy: 0,
+        billedAmount: 0
+      };
+    }
+
+    // Get system customer ID to exclude system sessions
+    const systemCustomerId = 3; // Default system customer ID
+
+    // Calculate totals from ChargingSession records
+    const sessionStats = await ChargingSession.findAll({
+      where: {
+        deviceId: { [Op.in]: deviceIds },
+        status: { [Op.in]: ['stopped', 'completed'] },
+        endTime: { [Op.ne]: null },
+        customerId: { [Op.ne]: systemCustomerId }
+      },
+      attributes: [
+        [Sequelize.fn('COUNT', Sequelize.col('ChargingSession.id')), 'sessions'],
+        [Sequelize.fn('SUM', Sequelize.col('ChargingSession.energyConsumed')), 'totalEnergy'],
+        [Sequelize.fn('SUM', Sequelize.col('ChargingSession.finalAmount')), 'totalBilledAmount']
+      ],
+      raw: true
+    });
+
+    const stats = sessionStats[0] || {};
+    const sessions = parseInt(stats.sessions) || 0;
+    const energy = parseFloat(stats.totalEnergy) || 0;
+    const billedAmount = parseFloat(stats.totalBilledAmount) || 0;
+
+    return {
+      sessions,
+      energy: parseFloat(energy.toFixed(2)),
+      billedAmount: parseFloat(billedAmount.toFixed(2))
+    };
+  } catch (error) {
+    console.error(`Error calculating session stats for organization ${orgNameForStation}:`, error);
+    return {
+      sessions: 0,
+      energy: 0,
+      billedAmount: 0
+    };
+  }
+}
+
+/**
  * Get all organizations with pagination and filters
  */
 async function getAllOrganizations(filters, pagination) {
   const page = pagination.page || 1;
   const limit = pagination.limit || 10;
   const offset = (page - 1) * limit;
-  const { search } = filters;
+  const { search, sort, fromDate, toDate } = filters;
 
   // Build cache key with query params
-  const cacheKey = `organizations:list:page:${page}:limit:${limit}:search:${search || 'none'}`;
+  const cacheKey = `organizations:list:page:${page}:limit:${limit}:search:${search || 'none'}:sort:${sort || 'none'}:fromDate:${fromDate || 'none'}:toDate:${toDate || 'none'}`;
 
   // Try to get from cache
   const cached = await cacheController.get(cacheKey);
@@ -45,15 +132,33 @@ async function getAllOrganizations(filters, pagination) {
     ];
   }
 
-  // Get organizations with pagination
+  // Add date filters
+  if (fromDate || toDate) {
+    where.createdAt = {};
+    if (fromDate) {
+      const from = new Date(fromDate);
+      from.setHours(0, 0, 0, 0);
+      where.createdAt[Op.gte] = from;
+    }
+    if (toDate) {
+      const to = new Date(toDate);
+      to.setHours(23, 59, 59, 999);
+      where.createdAt[Op.lte] = to;
+    }
+  }
+
+  // Default order
+  let order = [['createdAt', 'DESC']];
+
+  // Get organizations with pagination (without sorting by stats yet - we'll sort after calculating stats)
   const { count, rows: organizations } = await Organization.findAndCountAll({
     where,
     limit,
     offset,
-    order: [['createdAt', 'DESC']]
+    order
   });
 
-  // Get station and charger counts for each organization
+  // Get station, charger counts, and session stats for each organization
   const organizationsWithCounts = await Promise.all(
     organizations.map(async (org) => {
       // Convert organization name to the format used in stations.organization field
@@ -95,15 +200,50 @@ async function getAllOrganizations(filters, pagination) {
         });
       }
 
+      // Calculate session statistics
+      const sessionStats = await calculateOrganizationSessionStats(orgNameForStation);
+
       return {
         id: org.id,
         organizationName: org.organizationName,
         stations: stationCount,
         chargers: chargerCount,
+        sessions: sessionStats.sessions,
+        energy: sessionStats.energy,
+        billedAmount: sessionStats.billedAmount,
         createdAt: org.createdAt
       };
     })
   );
+
+  // Apply sorting if specified
+  if (sort) {
+    const [sortField, sortDirection] = sort.split('-');
+    const direction = sortDirection === 'asc' ? 1 : -1;
+    
+    organizationsWithCounts.sort((a, b) => {
+      let aVal, bVal;
+      
+      switch (sortField) {
+        case 'sessions':
+          aVal = a.sessions || 0;
+          bVal = b.sessions || 0;
+          break;
+        case 'energy':
+          aVal = a.energy || 0;
+          bVal = b.energy || 0;
+          break;
+        case 'billedAmount':
+          aVal = a.billedAmount || 0;
+          bVal = b.billedAmount || 0;
+          break;
+        default:
+          return 0;
+      }
+      
+      return (aVal - bVal) * direction;
+    });
+  }
 
   const totalPages = Math.ceil(count / limit);
 
@@ -399,7 +539,10 @@ async function updateOrganization(id, updateData) {
   if (organizationName !== undefined) updateFields.organizationName = organizationName;
   if (gstin !== undefined) updateFields.gstin = gstin;
   if (organizationType !== undefined) updateFields.organizationType = organizationType;
-  if (organizationLogo !== undefined) updateFields.organizationLogo = organizationLogo;
+  // Handle logo: null means remove, undefined means don't update, string means update
+  if (organizationLogo !== undefined) {
+    updateFields.organizationLogo = organizationLogo; // Can be null to remove, or a path string
+  }
   if (contactNumber !== undefined) updateFields.contactNumber = contactNumber;
   if (countryCode !== undefined) updateFields.countryCode = countryCode;
   if (email !== undefined) updateFields.email = email;
@@ -480,9 +623,30 @@ async function updateOrganization(id, updateData) {
   // Invalidate organizations list cache
   await invalidateOrganizationsListCache();
 
+  // Return all organization fields (similar to getOrganizationById)
   return {
     id: organization.id,
     organizationName: organization.organizationName,
+    gstin: organization.gstin,
+    organizationType: organization.organizationType,
+    organizationLogo: organization.organizationLogo,
+    contactNumber: organization.contactNumber,
+    countryCode: organization.countryCode,
+    email: organization.email,
+    addressCountry: organization.addressCountry,
+    addressPinCode: organization.addressPinCode,
+    addressCity: organization.addressCity,
+    addressState: organization.addressState,
+    fullAddress: organization.fullAddress,
+    bankAccountNumber: organization.bankAccountNumber,
+    ifscCode: organization.ifscCode,
+    billingSameAsCompany: organization.billingSameAsCompany,
+    billingCountry: organization.billingCountry,
+    billingPinCode: organization.billingPinCode,
+    billingCity: organization.billingCity,
+    billingState: organization.billingState,
+    billingFullAddress: organization.billingFullAddress,
+    documents: organization.documents || [],
     stations: stationCount,
     chargers: chargerCount,
     createdAt: organization.createdAt,
@@ -531,12 +695,483 @@ async function deleteOrganization(id) {
   };
 }
 
+/**
+ * Calculate session stats for a charging point
+ */
+async function calculateStationSessionStats(deviceId) {
+  try {
+    const systemCustomerId = 3; // Default system customer ID
+    const chargingSessionsWhere = {
+      deviceId: deviceId,
+      status: {
+        [Op.in]: ['stopped', 'completed']
+      },
+      endTime: {
+        [Op.ne]: null
+      },
+      customerId: { [Op.ne]: systemCustomerId }
+    };
+
+    const chargingSessions = await ChargingSession.findAll({
+      where: chargingSessionsWhere,
+      attributes: ['id', 'transactionId', 'energyConsumed', 'finalAmount']
+    });
+
+    let totalSessions = chargingSessions.length;
+    let totalEnergy = 0;
+    let totalBilledAmount = 0;
+
+    for (const session of chargingSessions) {
+      if (session.energyConsumed) {
+        totalEnergy += parseFloat(session.energyConsumed);
+      }
+      if (session.finalAmount) {
+        totalBilledAmount += parseFloat(session.finalAmount);
+      }
+    }
+
+    return {
+      sessions: totalSessions,
+      energy: parseFloat(totalEnergy.toFixed(2)),
+      billedAmount: parseFloat(totalBilledAmount.toFixed(2))
+    };
+  } catch (error) {
+    console.error(`Error calculating session stats for deviceId ${deviceId}:`, error);
+    return {
+      sessions: 0,
+      energy: 0,
+      billedAmount: 0
+    };
+  }
+}
+
+/**
+ * Get all stations for an organization
+ */
+async function getOrganizationStations(organizationId, filters, pagination) {
+  const page = pagination.page || 1;
+  const limit = pagination.limit || 10;
+  const offset = (page - 1) * limit;
+  const { search, status, fromDate, toDate, sort } = filters;
+
+  // Get organization
+  const organization = await Organization.findOne({
+    where: {
+      id: organizationId,
+      deleted: false
+    }
+  });
+
+  if (!organization) {
+    return null;
+  }
+
+  // Convert organization name to the format used in stations.organization field
+  const orgNameForStation = organization.organizationName.toLowerCase().replace(/\s+/g, '_');
+
+  // Build where clause
+  const where = {
+    organization: orgNameForStation,
+    deleted: false
+  };
+
+  // Add search filter
+  if (search) {
+    where[Op.or] = [
+      { stationId: { [Op.iLike]: `%${search}%` } },
+      { stationName: { [Op.iLike]: `%${search}%` } },
+      { city: { [Op.iLike]: `%${search}%` } },
+      { state: { [Op.iLike]: `%${search}%` } }
+    ];
+  }
+
+  // Add date filters
+  if (fromDate || toDate) {
+    where.createdAt = {};
+    if (fromDate) {
+      const from = new Date(fromDate);
+      from.setHours(0, 0, 0, 0);
+      where.createdAt[Op.gte] = from;
+    }
+    if (toDate) {
+      const to = new Date(toDate);
+      to.setHours(23, 59, 59, 999);
+      where.createdAt[Op.lte] = to;
+    }
+  }
+
+  // Get all stations (we'll calculate stats and filter by status after)
+  const allStations = await Station.findAll({
+    where,
+    order: [['createdAt', 'DESC']]
+  });
+
+  // Calculate stats for each station
+  const stationsWithStats = await Promise.all(allStations.map(async (station) => {
+    // Get all charging points for this station
+    const chargingPoints = await ChargingPoint.findAll({
+      where: {
+        stationId: station.id,
+        deleted: false
+      },
+      include: [
+        {
+          model: Tariff,
+          as: 'tariff',
+          attributes: ['id', 'tariffId', 'tariffName', 'baseCharges', 'tax', 'currency']
+        }
+      ],
+      attributes: ['id', 'deviceId']
+    });
+
+    const totalCPs = chargingPoints.length;
+    let onlineCPs = 0;
+    let offlineCPs = 0;
+    let totalSessions = 0;
+    let totalEnergy = 0;
+    let totalBilledAmount = 0;
+
+    if (totalCPs > 0) {
+      // Check each charging point's online status and calculate session stats
+      for (const cp of chargingPoints) {
+        if (cp.deviceId) {
+          const charger = await Charger.findOne({
+            where: { deviceId: cp.deviceId },
+            attributes: ['lastSeen']
+          });
+
+          if (charger && charger.lastSeen) {
+            const OFFLINE_THRESHOLD = 5 * 60 * 1000; // 5 minutes
+            const lastActiveTime = new Date(charger.lastSeen);
+            const now = new Date();
+            const timeDiff = now - lastActiveTime;
+            const isOnline = timeDiff <= OFFLINE_THRESHOLD;
+            
+            if (isOnline) {
+              onlineCPs++;
+            } else {
+              offlineCPs++;
+            }
+          } else {
+            offlineCPs++;
+          }
+
+          // Calculate session statistics for this charging point
+          const sessionStats = await calculateStationSessionStats(cp.deviceId);
+          totalSessions += sessionStats.sessions;
+          totalEnergy += sessionStats.energy;
+          totalBilledAmount += sessionStats.billedAmount;
+        } else {
+          offlineCPs++;
+        }
+      }
+    }
+
+    // Calculate percentages
+    const onlineCPsPercent = totalCPs > 0 ? Math.round((onlineCPs / totalCPs) * 100) : 0;
+    const offlineCPsPercent = totalCPs > 0 ? Math.round((offlineCPs / totalCPs) * 100) : 0;
+
+    // Determine station status: Online if at least 1 CP is online, otherwise Offline
+    const stationStatus = onlineCPs >= 1 ? 'Online' : 'Offline';
+
+    return {
+      id: station.id,
+      stationId: station.stationId,
+      stationName: station.stationName,
+      status: stationStatus,
+      city: station.city,
+      state: station.state,
+      chargers: totalCPs,
+      sessions: totalSessions,
+      billedAmount: parseFloat(totalBilledAmount.toFixed(2)),
+      energy: parseFloat(totalEnergy.toFixed(2)),
+      onlineCPsPercent: onlineCPsPercent,
+      onlineCPs: onlineCPs,
+      offlineCPsPercent: offlineCPsPercent,
+      offlineCPs: offlineCPs,
+      createdAt: station.createdAt
+    };
+  }));
+
+  // Filter by status if provided
+  let filteredStations = stationsWithStats;
+  if (status && status.trim() !== '') {
+    filteredStations = stationsWithStats.filter(s => s.status === status);
+  }
+
+  // Apply sorting
+  if (sort) {
+    const [sortField, sortDirection] = sort.split('-'); // e.g., 'sessions-asc'
+    filteredStations.sort((a, b) => {
+      let valA = a[sortField];
+      let valB = b[sortField];
+
+      // Handle numeric sorting
+      if (typeof valA === 'number' && typeof valB === 'number') {
+        return sortDirection === 'asc' ? valA - valB : valB - valA;
+      }
+      // Handle string sorting (case-insensitive)
+      if (typeof valA === 'string' && typeof valB === 'string') {
+        return sortDirection === 'asc' ? valA.localeCompare(valB) : valB.localeCompare(valA);
+      }
+      return 0;
+    });
+  } else {
+    // Default: Online first, then Offline, then by createdAt DESC
+    filteredStations.sort((a, b) => {
+      if (a.status === 'Online' && b.status !== 'Online') return -1;
+      if (a.status !== 'Online' && b.status === 'Online') return 1;
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    });
+  }
+
+  const total = filteredStations.length;
+  const totalPages = Math.ceil(total / limit);
+
+  // Apply pagination
+  const paginatedStations = filteredStations.slice(offset, offset + limit);
+
+  return {
+    stations: paginatedStations,
+    total,
+    page,
+    limit,
+    totalPages
+  };
+}
+
+/**
+ * Get all sessions for an organization
+ */
+async function getOrganizationSessions(organizationId, type, filters, pagination) {
+    const page = pagination.page || 1;
+    const limit = pagination.limit || 10;
+    const offset = (page - 1) * limit;
+    const { search, fromDate, toDate } = filters;
+
+  // Get organization
+  const organization = await Organization.findOne({
+    where: {
+      id: organizationId,
+      deleted: false
+    }
+  });
+
+  if (!organization) {
+    return null;
+  }
+
+  // Convert organization name to the format used in stations.organization field
+  const orgNameForStation = organization.organizationName.toLowerCase().replace(/\s+/g, '_');
+
+  // Get all stations for this organization
+  const stations = await Station.findAll({
+    where: {
+      organization: orgNameForStation,
+      deleted: false
+    },
+    attributes: ['id']
+  });
+
+  const stationIds = stations.map(s => s.id);
+
+  if (stationIds.length === 0) {
+    return {
+      sessions: [],
+      total: 0,
+      page,
+      limit,
+      totalPages: 0
+    };
+  }
+
+  // Get all charging points for these stations
+  const chargingPoints = await ChargingPoint.findAll({
+    where: {
+      stationId: { [Op.in]: stationIds },
+      deleted: false
+    },
+    attributes: ['id', 'deviceId']
+  });
+
+  const deviceIds = chargingPoints
+    .map(cp => cp.deviceId)
+    .filter(deviceId => deviceId !== null && deviceId !== undefined);
+
+  if (deviceIds.length === 0) {
+    return {
+      sessions: [],
+      total: 0,
+      page,
+      limit,
+      totalPages: 0
+    };
+  }
+
+  // Build where clause for sessions
+  const systemCustomerId = 3; // Default system customer ID
+  const where = {
+    deviceId: { [Op.in]: deviceIds },
+    customerId: { [Op.ne]: systemCustomerId }
+  };
+
+  if (type === 'active') {
+    where.status = { [Op.in]: ['pending', 'active'] };
+  } else {
+    where.status = { [Op.in]: ['stopped', 'completed'] };
+    
+    // Build endTime condition
+    const endTimeCondition = { [Op.ne]: null };
+    
+    // Add date filters for completed sessions
+    if (fromDate || toDate) {
+      if (fromDate) {
+        const from = new Date(fromDate);
+        from.setHours(0, 0, 0, 0);
+        endTimeCondition[Op.gte] = from;
+      }
+      if (toDate) {
+        const to = new Date(toDate);
+        to.setHours(23, 59, 59, 999);
+        endTimeCondition[Op.lte] = to;
+      }
+    }
+    
+    where.endTime = endTimeCondition;
+  }
+
+  // Add search filter
+  if (search) {
+    where[Op.or] = [
+      { sessionId: { [Op.iLike]: `%${search}%` } },
+      { transactionId: { [Op.iLike]: `%${search}%` } },
+      { deviceId: { [Op.iLike]: `%${search}%` } }
+    ];
+  }
+
+  // Get total count
+  const total = await ChargingSession.count({ where });
+
+  // Get sessions with pagination
+  const sessions = await ChargingSession.findAll({
+    where,
+    include: [
+      {
+        model: ChargingPoint,
+        as: 'chargingPoint',
+        include: [
+          {
+            model: Station,
+            as: 'station',
+            attributes: ['id', 'stationId', 'stationName']
+          },
+          {
+            model: Tariff,
+            as: 'tariff',
+            attributes: ['id', 'tariffId', 'tariffName', 'baseCharges', 'tax', 'currency']
+          }
+        ],
+        attributes: ['id', 'deviceId', 'deviceName']
+      },
+      {
+        model: Vehicle,
+        as: 'vehicle',
+        attributes: ['id', 'vehicleNumber', 'vehicleType', 'brand', 'modelName'],
+        required: false
+      }
+    ],
+    limit,
+    offset,
+    order: type === 'active' 
+      ? [['startTime', 'DESC']]
+      : [['endTime', 'DESC'], ['createdAt', 'DESC']]
+  });
+
+  const totalPages = Math.ceil(total / limit);
+
+  return {
+    sessions: sessions.map(session => {
+      const tariff = session.chargingPoint?.tariff;
+      const baseCharges = tariff ? parseFloat(tariff.baseCharges) : 0;
+      const tax = tariff ? parseFloat(tariff.tax) : 0;
+      const currency = tariff ? tariff.currency : 'INR';
+      
+      // Calculate session duration
+      let sessionDuration = 'N/A';
+      if (session.startTime && session.endTime) {
+        const durationMs = new Date(session.endTime) - new Date(session.startTime);
+        const hours = Math.floor(durationMs / (1000 * 60 * 60));
+        const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((durationMs % (1000 * 60)) / 1000);
+        sessionDuration = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+      } else if (session.startTime && type === 'active') {
+        // For active sessions, calculate duration from start to now
+        const durationMs = new Date() - new Date(session.startTime);
+        const hours = Math.floor(durationMs / (1000 * 60 * 60));
+        const minutes = Math.floor((durationMs % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((durationMs % (1000 * 60)) / 1000);
+        sessionDuration = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+      }
+      
+      // Determine vehicle display
+      let vehicleDisplay = 'N/A';
+      if (session.vehicle) {
+        vehicleDisplay = session.vehicle.vehicleNumber || 'N/A';
+      }
+      
+      // Determine mode (CMS if customerId is 0 or null, otherwise APP/OCPI)
+      let mode = 'N/A';
+      if (!session.customerId || session.customerId === 0 || session.customerId === 3) {
+        mode = 'CMS';
+      } else {
+        // Could be APP or OCPI - for now default to APP, can be enhanced later
+        mode = 'APP';
+      }
+      
+      // Calculate entered amount (amountRequested or amountDeducted)
+      const enteredAmount = parseFloat(session.amountRequested || session.amountDeducted || 0);
+      
+      return {
+        id: session.id,
+        sessionId: session.sessionId,
+        transactionId: session.transactionId,
+        deviceId: session.deviceId,
+        deviceName: session.chargingPoint?.deviceName || session.deviceId,
+        stationName: session.chargingPoint?.station?.stationName || 'N/A',
+        stationId: session.chargingPoint?.station?.stationId || null,
+        startTime: session.startTime,
+        endTime: session.endTime,
+        energy: parseFloat(session.energyConsumed || 0),
+        enteredAmount: enteredAmount,
+        billedAmount: parseFloat(session.finalAmount || 0),
+        baseCharges: baseCharges,
+        tax: tax,
+        refund: parseFloat(session.refundAmount || 0),
+        mode: mode,
+        vehicle: vehicleDisplay,
+        sessionDuration: sessionDuration,
+        connectorId: session.connectorId,
+        status: session.status,
+        stopReason: session.stopReason,
+        currency: currency,
+        createdAt: session.createdAt
+      };
+    }),
+    total,
+    page,
+    limit,
+    totalPages
+  };
+}
+
 module.exports = {
   getAllOrganizations,
   getOrganizationsDropdown,
   getOrganizationById,
   createOrganization,
   updateOrganization,
-  deleteOrganization
+  deleteOrganization,
+  getOrganizationStations,
+  getOrganizationSessions
 };
 

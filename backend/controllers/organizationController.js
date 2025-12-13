@@ -6,7 +6,10 @@ const organizationService = require('../services/organizationService');
 exports.getAllOrganizations = async (req, res) => {
   try {
     const filters = {
-      search: req.query.search || ''
+      search: req.query.search || '',
+      sort: req.query.sort || '',
+      fromDate: req.query.fromDate || '',
+      toDate: req.query.toDate || ''
     };
 
     const pagination = {
@@ -290,17 +293,53 @@ exports.updateOrganization = async (req, res) => {
       });
     }
 
-    // Handle logo file (only if new file uploaded)
+    // Handle logo file (only if new file uploaded) or removal
+    // Check both req.file (single) and req.files (array) for logo
     let organizationLogo = undefined;
-    if (req.file) {
-      organizationLogo = `/uploads/organizations/logos/${req.file.filename}`;
+    
+    // Check if logo should be removed
+    if (req.body.removeLogo === 'true') {
+      organizationLogo = null; // Set to null to remove logo
+      console.log('Logo removal requested');
+    } else {
+      let logoFile = req.file;
+      if (!logoFile && req.files && Array.isArray(req.files)) {
+        logoFile = req.files.find(f => f.fieldname === 'organizationLogo');
+      }
+      if (logoFile) {
+        organizationLogo = `/uploads/organizations/logos/${logoFile.filename}`;
+        console.log('Logo file uploaded:', logoFile.filename, 'Path:', organizationLogo);
+      } else {
+        console.log('No logo file in request. req.file:', req.file, 'req.files:', req.files);
+        // If no logo file and not explicitly removed, don't update logo field (keep existing)
+        organizationLogo = undefined;
+      }
     }
 
-    // Handle documents
+    // Handle documents - process all documents sent from frontend
     let documents = undefined;
-    if (req.files && Array.isArray(req.files)) {
-      // Process document files
-      const documentFiles = req.files.filter(f => f.fieldname && f.fieldname.startsWith('documents'));
+    
+    // Check if documents should be cleared
+    if (req.body && req.body.clearDocuments === 'true') {
+      documents = []; // Set to empty array to clear all documents
+      console.log('Documents clearance requested');
+    } else {
+      // Check if any document fields are present in the request
+      const documentFiles = req.files && Array.isArray(req.files) 
+        ? req.files.filter(f => 
+            f.fieldname && 
+            f.fieldname.startsWith('documents') && 
+            f.fieldname !== 'organizationLogo'
+          )
+        : [];
+      
+      const hasDocumentFields = documentFiles.length > 0 || 
+                                (req.body && Object.keys(req.body).some(key => key.startsWith('documents')));
+      
+      console.log('Document files found:', documentFiles.length);
+      console.log('Request body keys:', req.body ? Object.keys(req.body) : 'no body');
+      
+      if (hasDocumentFields) {
       const documentData = {};
       
       // Group files by index
@@ -312,48 +351,58 @@ exports.updateOrganization = async (req, res) => {
             documentData[index] = {};
           }
           documentData[index].file = file;
+          console.log(`Found document file at index ${index}:`, file.filename);
         }
       });
       
       // Get document names and paths from body
-      Object.keys(req.body).forEach(key => {
-        const nameMatch = key.match(/documents\[(\d+)\]\[name\]/);
-        const pathMatch = key.match(/documents\[(\d+)\]\[path\]/);
-        if (nameMatch) {
-          const index = nameMatch[1];
-          if (!documentData[index]) {
-            documentData[index] = {};
+      if (req.body) {
+        Object.keys(req.body).forEach(key => {
+          const nameMatch = key.match(/documents\[(\d+)\]\[name\]/);
+          const pathMatch = key.match(/documents\[(\d+)\]\[path\]/);
+          if (nameMatch) {
+            const index = nameMatch[1];
+            if (!documentData[index]) {
+              documentData[index] = {};
+            }
+            documentData[index].name = req.body[key];
+            console.log(`Found document name at index ${index}:`, req.body[key]);
+          } else if (pathMatch) {
+            const index = pathMatch[1];
+            if (!documentData[index]) {
+              documentData[index] = {};
+            }
+            documentData[index].path = req.body[key];
+            console.log(`Found document path at index ${index}:`, req.body[key]);
           }
-          documentData[index].name = req.body[key];
-        } else if (pathMatch) {
-          const index = pathMatch[1];
-          if (!documentData[index]) {
-            documentData[index] = {};
-          }
-          documentData[index].path = req.body[key];
-        }
-      });
+        });
+      }
       
-      // Build documents array
+      // Build documents array from all document data
       documents = [];
-      Object.keys(documentData).forEach(index => {
+      Object.keys(documentData).sort((a, b) => parseInt(a) - parseInt(b)).forEach(index => {
         const doc = documentData[index];
-        if (doc.file && doc.name) {
-          // New file uploaded
+        console.log(`Processing document at index ${index}:`, doc);
+        if (doc.file) {
+          // New file uploaded - use file name as document name if name not provided
+          const docName = doc.name || doc.file.originalname || `Document ${index}`;
           documents.push({
-            name: doc.name,
+            name: docName,
             path: `/uploads/organizations/documents/${doc.file.filename}`,
             date: new Date().toLocaleDateString()
           });
         } else if (doc.path && doc.name) {
-          // Existing document (no new file)
+          // Existing document (no new file, just keeping it)
           documents.push({
             name: doc.name,
             path: doc.path,
-            date: new Date().toLocaleDateString()
+            date: doc.date || new Date().toLocaleDateString()
           });
         }
       });
+      
+      console.log('Final documents array:', documents.length, documents);
+      }
     }
 
     const updateData = {
@@ -448,6 +497,95 @@ exports.deleteOrganization = async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message || 'Failed to delete organization',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get all stations for an organization
+ */
+exports.getOrganizationStations = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const filters = {
+      search: req.query.search || '',
+      status: req.query.status || '',
+      fromDate: req.query.fromDate || '',
+      toDate: req.query.toDate || '',
+      sort: req.query.sort || ''
+    };
+    const pagination = {
+      page: parseInt(req.query.page) || 1,
+      limit: parseInt(req.query.limit) || 10
+    };
+
+    const result = await organizationService.getOrganizationStations(parseInt(id), filters, pagination);
+    
+    if (!result) {
+      return res.status(404).json({
+        success: false,
+        message: 'Organization not found'
+      });
+    }
+    
+    res.status(200).json({
+      success: true,
+      stations: result.stations,
+      total: result.total,
+      page: result.page,
+      limit: result.limit,
+      totalPages: result.totalPages
+    });
+  } catch (error) {
+    console.error('Error fetching organization stations:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch organization stations',
+      error: error.message
+    });
+  }
+};
+
+/**
+ * Get all sessions for an organization
+ */
+exports.getOrganizationSessions = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const type = req.query.type || 'completed'; // 'active' or 'completed'
+    const filters = {
+      search: req.query.search || '',
+      fromDate: req.query.fromDate || '',
+      toDate: req.query.toDate || ''
+    };
+    const pagination = {
+      page: parseInt(req.query.page) || 1,
+      limit: parseInt(req.query.limit) || 10
+    };
+
+    const result = await organizationService.getOrganizationSessions(parseInt(id), type, filters, pagination);
+    
+    if (!result) {
+      return res.status(404).json({
+        success: false,
+        message: 'Organization not found'
+      });
+    }
+    
+    res.status(200).json({
+      success: true,
+      sessions: result.sessions,
+      total: result.total,
+      page: result.page,
+      limit: result.limit,
+      totalPages: result.totalPages
+    });
+  } catch (error) {
+    console.error('Error fetching organization sessions:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch organization sessions',
       error: error.message
     });
   }

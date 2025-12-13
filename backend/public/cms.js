@@ -20,59 +20,82 @@ function parseCMSPath() {
     // /cms/charging-points -> ['charging-points']
     // /cms/charging-points/CP-123 -> ['charging-points', 'CP-123']
     // /cms/charging-points/CP-123/details -> ['charging-points', 'CP-123', 'details']
-    // /cms/customers -> ['customers']
-    // /cms/customers/1 -> ['customers', '1']
-    // /cms/customers/1/details -> ['customers', '1', 'details']
-    const match = path.match(/^\/cms\/([^\/]+)(?:\/([^\/]+))?(?:\/([^\/]+))?/);
-    if (match) {
-        const module = match[1] || null;
-        const secondSegment = match[2] || null;
-        const thirdSegment = match[3] || null;
-        
-        // Determine if second segment is an ID or a tab based on module
-        if (module === 'charging-stations' && secondSegment) {
-            return {
-                module: module,
-                stationId: secondSegment,
-                stationTab: thirdSegment || null,
-                pointId: null,
-                pointTab: null,
-                customerId: null,
-                customerTab: null
-            };
-        } else if (module === 'charging-points' && secondSegment) {
-            return {
-                module: module,
-                stationId: null,
-                stationTab: null,
-                pointId: secondSegment,
-                pointTab: thirdSegment || null,
-                customerId: null,
-                customerTab: null
-            };
-        } else if (module === 'customers' && secondSegment) {
-            return {
-                module: module,
-                stationId: null,
-                stationTab: null,
-                pointId: null,
-                pointTab: null,
-                customerId: secondSegment,
-                customerTab: thirdSegment || null
-            };
-        } else {
-            return {
-                module: module,
-                stationId: null,
-                stationTab: null,
-                pointId: null,
-                pointTab: null,
-                customerId: null,
-                customerTab: null
-            };
+        // /cms/customers -> ['customers']
+        // /cms/customers/1 -> ['customers', '1']
+        // /cms/customers/1/details -> ['customers', '1', 'details']
+        // /cms/organizations -> ['organizations']
+        // /cms/organizations/1 -> ['organizations', '1']
+        // /cms/organizations/1/stations -> ['organizations', '1', 'stations']
+        const match = path.match(/^\/cms\/([^\/]+)(?:\/([^\/]+))?(?:\/([^\/]+))?/);
+        if (match) {
+            const module = match[1] || null;
+            const secondSegment = match[2] || null;
+            const thirdSegment = match[3] || null;
+            
+            // Determine if second segment is an ID or a tab based on module
+            if (module === 'charging-stations' && secondSegment) {
+                return {
+                    module: module,
+                    stationId: secondSegment,
+                    stationTab: thirdSegment || null,
+                    pointId: null,
+                    pointTab: null,
+                    customerId: null,
+                    customerTab: null,
+                    organizationId: null,
+                    organizationTab: null
+                };
+            } else if (module === 'charging-points' && secondSegment) {
+                return {
+                    module: module,
+                    stationId: null,
+                    stationTab: null,
+                    pointId: secondSegment,
+                    pointTab: thirdSegment || null,
+                    customerId: null,
+                    customerTab: null,
+                    organizationId: null,
+                    organizationTab: null
+                };
+            } else if (module === 'customers' && secondSegment) {
+                return {
+                    module: module,
+                    stationId: null,
+                    stationTab: null,
+                    pointId: null,
+                    pointTab: null,
+                    customerId: secondSegment,
+                    customerTab: thirdSegment || null,
+                    organizationId: null,
+                    organizationTab: null
+                };
+            } else if (module === 'organizations' && secondSegment) {
+                return {
+                    module: module,
+                    stationId: null,
+                    stationTab: null,
+                    pointId: null,
+                    pointTab: null,
+                    customerId: null,
+                    customerTab: null,
+                    organizationId: secondSegment,
+                    organizationTab: thirdSegment || null
+                };
+            } else {
+                return {
+                    module: module,
+                    stationId: null,
+                    stationTab: null,
+                    pointId: null,
+                    pointTab: null,
+                    customerId: null,
+                    customerTab: null,
+                    organizationId: null,
+                    organizationTab: null
+                };
+            }
         }
-    }
-    return { module: null, stationId: null, stationTab: null, pointId: null, pointTab: null, customerId: null, customerTab: null };
+        return { module: null, stationId: null, stationTab: null, pointId: null, pointTab: null, customerId: null, customerTab: null, organizationId: null, organizationTab: null };
 }
 
 // Helper function to get module from URL path
@@ -179,6 +202,10 @@ window.addEventListener('popstate', function(event) {
     let customerId = pathParsed.customerId || urlParams.get('customer');
     let customerTab = pathParsed.customerTab || urlParams.get('tab');
     
+    // For organizations, prefer path segments over query params
+    let organizationId = pathParsed.organizationId || urlParams.get('organization');
+    let organizationTab = pathParsed.organizationTab || urlParams.get('tab');
+    
     // Normalize customer tab from URL to internal format
     if (customerTab) {
         customerTab = customerTab === 'wallet-ledger' ? 'wallet' : customerTab;
@@ -209,6 +236,8 @@ window.addEventListener('popstate', function(event) {
         window.CMS_CURRENT_POINT_TAB = null;
         window.CMS_CURRENT_CUSTOMER_ID = null;
         window.CMS_CURRENT_CUSTOMER_TAB = null;
+        window.CMS_CURRENT_ORGANIZATION_ID = null;
+        window.CMS_CURRENT_ORGANIZATION_TAB = null;
     } else if (module === 'charging-points' && pointId) {
         window.CMS_CURRENT_MODULE = 'charging-points';
         window.CMS_CURRENT_STATION_ID = null;
@@ -217,6 +246,8 @@ window.addEventListener('popstate', function(event) {
         window.CMS_CURRENT_POINT_TAB = pointTab || 'details';
         window.CMS_CURRENT_CUSTOMER_ID = null;
         window.CMS_CURRENT_CUSTOMER_TAB = null;
+        window.CMS_CURRENT_ORGANIZATION_ID = null;
+        window.CMS_CURRENT_ORGANIZATION_TAB = null;
     } else if (module === 'customers' && customerId) {
         window.CMS_CURRENT_MODULE = 'customers';
         window.CMS_CURRENT_STATION_ID = null;
@@ -225,6 +256,18 @@ window.addEventListener('popstate', function(event) {
         window.CMS_CURRENT_POINT_TAB = null;
         window.CMS_CURRENT_CUSTOMER_ID = customerId;
         window.CMS_CURRENT_CUSTOMER_TAB = customerTab || 'details';
+        window.CMS_CURRENT_ORGANIZATION_ID = null;
+        window.CMS_CURRENT_ORGANIZATION_TAB = null;
+    } else if (module === 'organizations' && organizationId) {
+        window.CMS_CURRENT_MODULE = 'organizations';
+        window.CMS_CURRENT_STATION_ID = null;
+        window.CMS_CURRENT_STATION_TAB = null;
+        window.CMS_CURRENT_POINT_ID = null;
+        window.CMS_CURRENT_POINT_TAB = null;
+        window.CMS_CURRENT_CUSTOMER_ID = null;
+        window.CMS_CURRENT_CUSTOMER_TAB = null;
+        window.CMS_CURRENT_ORGANIZATION_ID = organizationId;
+        window.CMS_CURRENT_ORGANIZATION_TAB = organizationTab || 'details';
     } else {
         window.CMS_CURRENT_MODULE = module;
         window.CMS_CURRENT_STATION_ID = null;
@@ -233,6 +276,8 @@ window.addEventListener('popstate', function(event) {
         window.CMS_CURRENT_POINT_TAB = null;
         window.CMS_CURRENT_CUSTOMER_ID = null;
         window.CMS_CURRENT_CUSTOMER_TAB = null;
+        window.CMS_CURRENT_ORGANIZATION_ID = null;
+        window.CMS_CURRENT_ORGANIZATION_TAB = null;
     }
     
     // Handle station detail view
@@ -294,6 +339,22 @@ window.addEventListener('popstate', function(event) {
             console.error('Error loading customer detail:', error);
             loadModule(module, false);
         });
+    } else if (organizationId && module === 'organizations' && !action) {
+        // Get tab parameter from path or query (default to 'details')
+        // If no tab in path but organizationId exists, redirect to details tab
+        if (!organizationTab) {
+            const cleanUrl = `/cms/organizations/${organizationId}`;
+            window.history.replaceState({ module: 'organizations', organizationId, tab: 'details' }, '', cleanUrl);
+            organizationTab = 'details';
+        }
+        
+        // Load organization detail view with active tab
+        import('./modules/organization-detail-view.js').then(detailModule => {
+            detailModule.loadOrganizationDetailView(organizationId, organizationTab || 'details');
+        }).catch(error => {
+            console.error('Error loading organization detail:', error);
+            loadModule(module, false);
+        });
     } else {
         // Load regular module without pushing new state (to avoid infinite loop)
         loadModule(module, false);
@@ -324,11 +385,16 @@ function initializeCMS() {
     let customerId = pathParsed.customerId;
     let customerTab = pathParsed.customerTab;
     
+    // For organizations, check for organizationId and tab in path or query
+    let organizationId = pathParsed.organizationId;
+    let organizationTab = pathParsed.organizationTab;
+    
     const urlParams = new URLSearchParams(window.location.search);
     const queryModule = urlParams.get('module');
     const queryStationId = urlParams.get('station');
     const queryPointId = urlParams.get('point');
     const queryCustomerId = urlParams.get('customer');
+    const queryOrganizationId = urlParams.get('organization');
     const queryTab = urlParams.get('tab');
     
     // Helper function to normalize tab name: 'wallet-ledger' (URL) <-> 'wallet' (internal)
@@ -378,6 +444,18 @@ function initializeCMS() {
         
         // Normalize to clean URL
         window.history.replaceState({ module: 'customers', customerId, tab: customerTab }, '', cleanUrl);
+    } else if (moduleFromUrl === 'organizations' && queryOrganizationId && !organizationId) {
+        // Old format: /cms?module=organizations&organization=1&tab=stations
+        organizationId = queryOrganizationId;
+        organizationTab = queryTab || 'details';
+        
+        // Build clean URL
+        const cleanUrl = organizationTab && organizationTab !== 'details'
+            ? `/cms/organizations/${organizationId}/${organizationTab}`
+            : `/cms/organizations/${organizationId}`;
+        
+        // Normalize to clean URL
+        window.history.replaceState({ module: 'organizations', organizationId, tab: organizationTab }, '', cleanUrl);
     } else if (queryModule && !pathParsed.module) {
         // Redirect from old format to clean URL (for other modules), preserving other query parameters
         urlParams.delete('module');
@@ -421,6 +499,18 @@ function initializeCMS() {
         window.CMS_CURRENT_POINT_TAB = null;
         window.CMS_CURRENT_CUSTOMER_ID = customerId;
         window.CMS_CURRENT_CUSTOMER_TAB = customerTab || 'details';
+        window.CMS_CURRENT_ORGANIZATION_ID = null;
+        window.CMS_CURRENT_ORGANIZATION_TAB = null;
+    } else if (moduleFromUrl === 'organizations' && organizationId) {
+        window.CMS_CURRENT_MODULE = 'organizations';
+        window.CMS_CURRENT_STATION_ID = null;
+        window.CMS_CURRENT_STATION_TAB = null;
+        window.CMS_CURRENT_POINT_ID = null;
+        window.CMS_CURRENT_POINT_TAB = null;
+        window.CMS_CURRENT_CUSTOMER_ID = null;
+        window.CMS_CURRENT_CUSTOMER_TAB = null;
+        window.CMS_CURRENT_ORGANIZATION_ID = organizationId;
+        window.CMS_CURRENT_ORGANIZATION_TAB = organizationTab || 'details';
     } else {
         window.CMS_CURRENT_MODULE = moduleFromUrl;
         window.CMS_CURRENT_STATION_ID = null;
@@ -429,6 +519,8 @@ function initializeCMS() {
         window.CMS_CURRENT_POINT_TAB = null;
         window.CMS_CURRENT_CUSTOMER_ID = null;
         window.CMS_CURRENT_CUSTOMER_TAB = null;
+        window.CMS_CURRENT_ORGANIZATION_ID = null;
+        window.CMS_CURRENT_ORGANIZATION_TAB = null;
     }
     
     // Update active menu item based on URL IMMEDIATELY
@@ -532,6 +624,22 @@ function initializeCMS() {
             detailModule.loadCustomerDetailView(customerId, tabFromUrl);
         }).catch(error => {
             console.error('Error loading customer detail:', error);
+            loadModule(moduleFromUrl, false);
+        });
+    } else if (organizationId && moduleFromUrl === 'organizations' && !action) {
+        // Use tab from path or query (default to 'details')
+        // If no tab in path but organizationId exists, redirect to details tab
+        if (!organizationTab) {
+            const cleanUrl = `/cms/organizations/${organizationId}`;
+            window.history.replaceState({ module: 'organizations', organizationId, tab: 'details' }, '', cleanUrl);
+            organizationTab = 'details';
+        }
+        
+        // Load organization detail view with active tab
+        import('./modules/organization-detail-view.js').then(detailModule => {
+            detailModule.loadOrganizationDetailView(organizationId, organizationTab || 'details');
+        }).catch(error => {
+            console.error('Error loading organization detail:', error);
             loadModule(moduleFromUrl, false);
         });
     } else {

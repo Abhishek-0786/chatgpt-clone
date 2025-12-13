@@ -693,7 +693,7 @@ export function openAddOrganizationForm() {
                     </div>
                     <div class="checkbox-group">
                         <input type="checkbox" id="billingSameAsCompany" name="billingSameAsCompany" onchange="window.toggleBillingAddress()">
-                        <label for="billingSameAsCompany">Same as company address</label>
+                        <label for="billingSameAsCompany">Same as organization address</label>
                     </div>
                     <div id="billingAddressFields">
                         <div class="form-row">
@@ -893,6 +893,9 @@ function handleLogoUpload(event) {
 }
 
 // Remove logo
+// Global flag to track if logo should be removed
+let logoRemoved = false;
+
 function removeLogo() {
     const previewContainer = document.getElementById('logoPreviewContainer');
     const uploadContent = document.getElementById('logoUploadContent');
@@ -903,6 +906,7 @@ function removeLogo() {
     uploadContent.classList.remove('hidden');
     uploadArea.style.display = 'block';
     fileInput.value = ''; // Reset file input
+    logoRemoved = true; // Mark logo as removed
 }
 
 // Handle document file select - single file only
@@ -1110,18 +1114,18 @@ function toggleBillingAddress() {
     const inputs = fields.querySelectorAll('input, select, textarea');
     
     if (checkbox.checked) {
-        // Copy company address to billing address
-        const companyCountry = document.querySelector('select[name="addressCountry"]').value;
-        const companyPinCode = document.querySelector('input[name="addressPinCode"]').value;
-        const companyCity = document.querySelector('input[name="addressCity"]').value;
-        const companyState = document.querySelector('input[name="addressState"]').value;
-        const companyAddress = document.querySelector('textarea[name="fullAddress"]').value;
+        // Copy organization address to billing address
+        const organizationCountry = document.querySelector('select[name="addressCountry"]').value;
+        const organizationPinCode = document.querySelector('input[name="addressPinCode"]').value;
+        const organizationCity = document.querySelector('input[name="addressCity"]').value;
+        const organizationState = document.querySelector('input[name="addressState"]').value;
+        const organizationAddress = document.querySelector('textarea[name="fullAddress"]').value;
         
-        document.getElementById('billingCountry').value = companyCountry;
-        document.getElementById('billingPinCode').value = companyPinCode;
-        document.getElementById('billingCity').value = companyCity;
-        document.getElementById('billingState').value = companyState;
-        document.getElementById('billingFullAddress').value = companyAddress;
+        document.getElementById('billingCountry').value = organizationCountry;
+        document.getElementById('billingPinCode').value = organizationPinCode;
+        document.getElementById('billingCity').value = organizationCity;
+        document.getElementById('billingState').value = organizationState;
+        document.getElementById('billingFullAddress').value = organizationAddress;
         
         // Disable fields
         inputs.forEach(input => {
@@ -1186,12 +1190,12 @@ async function handleAddOrganizationSubmit(event) {
 export async function openEditOrganizationForm(organizationId) {
     try {
         const response = await getOrganization(organizationId);
-        if (!response.success || !response.organization) {
+        if (!response.success || !response.data || !response.data.organization) {
             showError('Failed to load organization data');
             return;
         }
         
-        const org = response.organization;
+        const org = response.data.organization;
         
         // Open the add form first
         openAddOrganizationForm();
@@ -1209,10 +1213,13 @@ export async function openEditOrganizationForm(organizationId) {
 
 // Fill form data for edit
 function fillEditFormData(org, organizationId) {
+    // Reset logo removal flag when loading edit form
+    logoRemoved = false;
+    
     // Change form title and submit button
     const formHeader = document.querySelector('.form-header h2');
     if (formHeader) {
-        formHeader.textContent = 'Edit Company';
+        formHeader.textContent = 'Edit Organization';
     }
     
     const form = document.getElementById('addOrganizationForm');
@@ -1226,7 +1233,7 @@ function fillEditFormData(org, organizationId) {
     
     const saveBtn = document.getElementById('saveOrganizationBtn');
     if (saveBtn) {
-        saveBtn.textContent = 'UPDATE COMPANY';
+        saveBtn.textContent = 'UPDATE ORGANIZATION';
     }
     
     // Fill in all form fields
@@ -1366,28 +1373,58 @@ async function handleUpdateOrganizationSubmit(event, organizationId) {
     try {
         const formData = new FormData(event.target);
         
-        // Add logo file if exists
+        // Handle logo - if removed, send empty string, if new file, send file, otherwise don't send
         const logoFile = document.getElementById('logoFileInput').files[0];
-        if (logoFile) {
+        if (logoRemoved) {
+            // Logo was removed - send empty string to indicate removal
+            formData.append('removeLogo', 'true');
+        } else if (logoFile) {
+            // New logo file uploaded
             formData.append('organizationLogo', logoFile);
         }
         
-        // Add documents
-        uploadedDocuments.forEach((doc, index) => {
-            if (doc.file) {
-                formData.append(`documents[${index}][file]`, doc.file);
-            }
-            formData.append(`documents[${index}][name]`, doc.name);
-            if (doc.path) {
-                formData.append(`documents[${index}][path]`, doc.path);
-            }
-        });
+        // Add documents - if empty array, send empty array to clear all documents
+        if (uploadedDocuments.length === 0) {
+            formData.append('clearDocuments', 'true');
+        } else {
+            uploadedDocuments.forEach((doc, index) => {
+                if (doc.file) {
+                    formData.append(`documents[${index}][file]`, doc.file);
+                }
+                formData.append(`documents[${index}][name]`, doc.name);
+                if (doc.path) {
+                    formData.append(`documents[${index}][path]`, doc.path);
+                }
+            });
+        }
         
         const response = await updateOrganization(organizationId, formData);
         
         if (response.success) {
             showSuccess('Organization updated successfully');
-            loadOrganizationsModule();
+            
+            // Check if we came from organization detail page by checking history state or URL
+            const historyState = window.history.state;
+            const currentPath = window.location.pathname;
+            const isFromDetailPage = (historyState && historyState.organizationId) || 
+                                    (currentPath.includes('/organizations/') && currentPath.split('/').length >= 4);
+            
+            if (isFromDetailPage) {
+                // Navigate back to organization detail page
+                const url = `/cms/organizations/${organizationId}/details`;
+                window.history.pushState({ module: 'organizations', organizationId, tab: 'details' }, '', url);
+                
+                // Import and load organization detail view
+                import('./organization-detail-view.js').then(detailModule => {
+                    detailModule.loadOrganizationDetailView(organizationId, 'details');
+                }).catch(error => {
+                    console.error('Error loading organization detail:', error);
+                    loadOrganizationsModule();
+                });
+            } else {
+                // Navigate back to organizations list
+                loadOrganizationsModule();
+            }
         } else {
             showError(response.message || 'Failed to update organization');
         }
@@ -1396,7 +1433,7 @@ async function handleUpdateOrganizationSubmit(event, organizationId) {
         showError(error.message || 'Failed to update organization');
     } finally {
         saveBtn.disabled = false;
-        saveBtn.textContent = 'UPDATE COMPANY';
+        saveBtn.textContent = 'UPDATE ORGANIZATION';
     }
 }
 

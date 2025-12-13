@@ -18,7 +18,7 @@ const cmsDashboardController = require('../controllers/cmsDashboardController');
 const cmsStationController = require('../controllers/cmsStationController');
 const organizationController = require('../controllers/organizationController');
 const { authenticateToken } = require('../middleware/auth');
-const { uploadLogo, uploadMultipleDocuments, logosDir, documentsDir } = require('../config/multer');
+const { uploadLogo, uploadMultipleDocuments, uploadMultipleGalleryImages, logosDir, documentsDir, galleryImagesDir } = require('../config/multer');
 const multer = require('multer');
 const path = require('path');
 
@@ -939,17 +939,22 @@ router.get('/stations/:stationId', cmsStationController.getStationById);
  * POST /api/cms/stations
  * Create new station
  */
-router.post('/stations', [
+router.post('/stations',
+  uploadMultipleGalleryImages,
+  [
   body('stationName')
     .notEmpty()
     .withMessage('Station name is required')
     .isLength({ min: 1, max: 255 })
     .withMessage('Station name must be between 1 and 255 characters'),
+  body('organizationId')
+    .optional()
+    .isInt()
+    .withMessage('Organization ID must be an integer'),
   body('organization')
-    .notEmpty()
-    .withMessage('Organization is required')
-    .isIn(['massive_mobility', '1c_ev_charging', 'genx'])
-    .withMessage('Organization must be massive_mobility, 1c_ev_charging, or genx'),
+    .optional()
+    .isString()
+    .withMessage('Organization must be a string'),
   body('status')
     .optional()
     .isIn(['Active', 'Inactive', 'Maintenance'])
@@ -997,130 +1002,15 @@ router.post('/stations', [
       }
       return true;
     })
-], async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({
-        success: false,
-        errors: errors.array()
-      });
-    }
-
-    const {
-      stationName,
-      organization,
-      status,
-      powerCapacity,
-      gridPhase,
-      pinCode,
-      city,
-      state,
-      country,
-      latitude,
-      longitude,
-      fullAddress,
-      openingTime,
-      closingTime,
-      open24Hours,
-      workingDays,
-      allDays,
-      contactNumber,
-      inchargeName,
-      ownerName,
-      ownerContact,
-      sessionStartStopSMS,
-      amenities,
-      createdBy
-    } = req.body;
-
-    // Generate unique stationId
-    let stationId;
-    let existingStation;
-    do {
-      const timestamp = Date.now();
-      const randomStr = Math.random().toString(36).substring(2, 8).toUpperCase();
-      stationId = `STN-${timestamp}-${randomStr}`;
-      existingStation = await Station.findOne({ where: { stationId } });
-    } while (existingStation);
-
-    // Create station
-    const station = await Station.create({
-      stationId,
-      stationName,
-      organization,
-      status: status || 'Active',
-      powerCapacity: powerCapacity ? parseFloat(powerCapacity) : null,
-      gridPhase,
-      pinCode: pinCode || null,
-      city: city || null,
-      state: state || null,
-      country,
-      latitude: latitude ? parseFloat(latitude) : null,
-      longitude: longitude ? parseFloat(longitude) : null,
-      fullAddress: fullAddress || null,
-      openingTime: openingTime || null,
-      closingTime: closingTime || null,
-      open24Hours: open24Hours || false,
-      workingDays: Array.isArray(workingDays) ? workingDays : [],
-      allDays: allDays || false,
-      contactNumber: contactNumber || null,
-      inchargeName: inchargeName || null,
-      ownerName: ownerName || null,
-      ownerContact: ownerContact || null,
-      sessionStartStopSMS: sessionStartStopSMS || false,
-      amenities: Array.isArray(amenities) ? amenities : [],
-      createdBy: createdBy || null,
-      deleted: false
-    });
-
-    // Publish CMS event to RabbitMQ (if enabled)
-    if (ENABLE_RABBITMQ && publishCMSEvent) {
-      try {
-        await publishCMSEvent({
-          type: 'cms.station.created',
-          data: {
-            stationId: station.stationId,
-            id: station.id,
-            stationName: station.stationName,
-            organization: station.organization,
-            createdBy: createdBy
-          }
-        });
-        console.log(`📤 [RABBITMQ] Published cms.station.created event for ${station.stationId}`);
-      } catch (rabbitmqError) {
-        console.warn('⚠️ [RABBITMQ] Failed to publish cms.station.created event:', rabbitmqError.message);
-        // Don't fail the request if RabbitMQ fails
-      }
-    }
-
-    res.status(201).json({
-      success: true,
-      message: 'Station created successfully',
-      station: {
-        id: station.id,
-        stationId: station.stationId,
-        stationName: station.stationName,
-        organization: station.organization,
-        status: station.status,
-        createdAt: station.createdAt
-      }
-    });
-  } catch (error) {
-    console.error('Error creating station:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to create station',
-      message: error.message
-    });
-  }
-});
+], cmsStationController.createStation);
 
 /**
  * PUT /api/cms/stations/:stationId
  * Update station
  */
-router.put('/stations/:stationId', [
+router.put('/stations/:stationId',
+  uploadMultipleGalleryImages,
+  [
   body('stationName')
     .optional()
     .isLength({ min: 1, max: 255 })

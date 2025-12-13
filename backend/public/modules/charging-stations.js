@@ -28,6 +28,21 @@ export function clearStationsRefreshInterval() {
 
 // Export main function to load module
 export function loadChargingStationsModule() {
+    // Clean up gallery modal if it exists (from detail page)
+    if (window.openGalleryImageModal) {
+        delete window.openGalleryImageModal;
+    }
+    if (window.closeGalleryImageModal) {
+        delete window.closeGalleryImageModal;
+    }
+    // Remove modal from DOM if it exists
+    const modal = document.getElementById('galleryModal');
+    if (modal) {
+        modal.remove();
+    }
+    // Restore body scroll
+    document.body.style.overflow = '';
+    
     const moduleContent = document.getElementById('moduleContent');
     moduleContent.innerHTML = `
         <style>

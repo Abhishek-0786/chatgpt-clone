@@ -423,13 +423,15 @@ This is an automated email. Please do not reply.`;
       const previousDateStrForNoSessions = previousDateForNoSessions.toISOString().split('T')[0];
       const noSessionsEmailSubject = `Daily Charging Sessions Report (${previousDateStrForNoSessions} - ${dateStr}) (No Sessions)`;
       
-      // Send notification email
-      await transporter.sendMail({
-        from: process.env.EMAIL_USER || process.env.EMAIL_FROM || 'noreply@genx.com',
-        to: recipients.join(', '),
-        subject: noSessionsEmailSubject,
-        text: noSessionsEmailBody
-      });
+      // Send individual emails to each recipient (privacy - each only sees their own email)
+      for (const recipient of recipients) {
+        await transporter.sendMail({
+          from: process.env.EMAIL_USER || process.env.EMAIL_FROM || 'noreply@genx.com',
+          to: recipient, // Each recipient gets their own email
+          subject: noSessionsEmailSubject,
+          text: noSessionsEmailBody
+        });
+      }
       
       console.log(`✅ No sessions notification sent to ${recipients.length} recipient(s): ${recipients.join(', ')}`);
       
@@ -471,24 +473,27 @@ If you have any questions or need additional information, please don't hesitate 
 
 This is an automated email. Please do not reply.`;
     
-    // Prepare email
-    const mailOptions = {
-      from: process.env.EMAIL_USER || process.env.EMAIL_FROM || 'noreply@genx.com',
-      to: recipients.join(', '),
-      subject: emailSubject,
-      text: emailBody,
-      attachments: [
-        {
-          filename: filename,
-          content: csvBuffer,
-          contentType: 'text/csv; charset=utf-8'
-        }
-      ]
-    };
-    
-    // Send email
+    // Send individual emails to each recipient (privacy - each only sees their own email)
     console.log(`📧 Sending report to ${recipients.length} recipient(s): ${recipients.join(', ')}`);
-    await transporter.sendMail(mailOptions);
+    
+    for (const recipient of recipients) {
+      const mailOptions = {
+        from: process.env.EMAIL_USER || process.env.EMAIL_FROM || 'noreply@genx.com',
+        to: recipient, // Each recipient gets their own email
+        subject: emailSubject,
+        text: emailBody,
+        attachments: [
+          {
+            filename: filename,
+            content: csvBuffer,
+            contentType: 'text/csv; charset=utf-8'
+          }
+        ]
+      };
+      
+      await transporter.sendMail(mailOptions);
+      console.log(`   ✓ Sent to ${recipient}`);
+    }
     
     console.log(`✅ Daily sessions report sent successfully`);
     console.log(`   - Total sessions: ${reportData.total}`);

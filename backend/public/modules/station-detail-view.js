@@ -317,6 +317,162 @@ export async function loadStationDetailView(stationId, activeTab = 'details') {
                 color: #007bff;
             }
             
+            .gallery-images-container {
+                width: 100%;
+            }
+            
+            .gallery-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+                gap: 20px;
+                margin-top: 10px;
+            }
+            
+            .gallery-item {
+                position: relative;
+                width: 100%;
+                padding-top: 75%; /* 4:3 aspect ratio */
+                border-radius: 8px;
+                overflow: hidden;
+                cursor: pointer;
+                border: 1px solid var(--border-color);
+                background-color: var(--bg-tertiary);
+                transition: all 0.3s;
+            }
+            
+            .gallery-item:hover {
+                transform: translateY(-4px);
+                box-shadow: 0 8px 16px rgba(0,0,0,0.15);
+                border-color: #007bff;
+            }
+            
+            .gallery-item img {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                transition: transform 0.3s;
+            }
+            
+            .gallery-item:hover img {
+                transform: scale(1.05);
+            }
+            
+            .gallery-item-overlay {
+                position: absolute;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                background: linear-gradient(to top, rgba(0,0,0,0.7), transparent);
+                padding: 12px;
+                opacity: 0;
+                transition: opacity 0.3s;
+            }
+            
+            .gallery-item:hover .gallery-item-overlay {
+                opacity: 1;
+            }
+            
+            .gallery-item-name {
+                color: white;
+                font-size: 13px;
+                font-weight: 600;
+                text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+            }
+            
+            /* Gallery Modal */
+            .gallery-modal {
+                display: none;
+                position: fixed;
+                z-index: 99999;
+                left: 0;
+                top: 0;
+                width: 100vw;
+                height: 100vh;
+                background-color: rgba(0,0,0,0.95);
+                animation: fadeIn 0.3s;
+                overflow: hidden;
+            }
+            
+            .gallery-modal.active {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            
+            .gallery-modal-content {
+                position: relative;
+                max-width: 90vw;
+                max-height: 90vh;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                padding: 20px;
+                box-sizing: border-box;
+            }
+            
+            .gallery-modal-content img {
+                max-width: 90vw;
+                max-height: 80vh;
+                width: auto;
+                height: auto;
+                object-fit: contain;
+                border-radius: 8px;
+                box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            }
+            
+            .gallery-modal-close {
+                position: absolute;
+                top: 20px;
+                right: 20px;
+                color: white;
+                font-size: 24px;
+                cursor: pointer;
+                transition: all 0.3s;
+                background-color: rgba(0,0,0,0.6);
+                width: 44px;
+                height: 44px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 50%;
+                z-index: 100000;
+                border: 2px solid rgba(255,255,255,0.3);
+                backdrop-filter: blur(10px);
+            }
+            
+            .gallery-modal-close:hover {
+                color: white;
+                background-color: rgba(220, 53, 69, 0.9);
+                border-color: rgba(255,255,255,0.5);
+                transform: scale(1.1) rotate(90deg);
+                box-shadow: 0 4px 12px rgba(220, 53, 69, 0.4);
+            }
+            
+            .gallery-modal-close i {
+                font-size: 20px;
+                line-height: 1;
+            }
+            
+            .gallery-modal-title {
+                color: white;
+                font-size: 18px;
+                font-weight: 600;
+                margin-top: 20px;
+                text-align: center;
+                padding: 10px 20px;
+                background-color: rgba(0,0,0,0.5);
+                border-radius: 8px;
+            }
+            
+            @keyframes fadeIn {
+                from { opacity: 0; }
+                to { opacity: 1; }
+            }
+            
             .table-wrapper {
                 background-color: var(--card-bg);
                 border: 1px solid var(--border-color);
@@ -535,6 +691,10 @@ export async function loadStationDetailView(stationId, activeTab = 'details') {
         }
         // Note: We don't pre-load the points tab if details is active to avoid unnecessary API calls
         
+        // Setup gallery modal functions only for detail page
+        window.openGalleryImageModal = openGalleryImageModal;
+        window.closeGalleryImageModal = closeGalleryImageModal;
+        
     } catch (error) {
         console.error('Error loading station detail view:', error);
         showError(error.message || 'Failed to load station details');
@@ -670,6 +830,14 @@ function generateDetailsTab(station) {
                 ${generateAmenities(station.amenities)}
             </div>
         </div>
+        
+        <!-- Gallery Images Card -->
+        <div class="detail-card">
+            <h3 class="detail-card-title">Gallery Images</h3>
+            <div class="gallery-images-container">
+                ${generateGalleryImages(station.galleryImages)}
+            </div>
+        </div>
     `;
 }
 
@@ -751,6 +919,27 @@ function generateAmenities(amenities) {
     }).join('');
 }
 
+function generateGalleryImages(galleryImages) {
+    if (!galleryImages || !Array.isArray(galleryImages) || galleryImages.length === 0) {
+        return '<div style="color: #999; font-style: italic; text-align: center; padding: 40px;">No gallery images available</div>';
+    }
+    
+    return `
+        <div class="gallery-grid">
+            ${galleryImages.map((img, index) => `
+                <div class="gallery-item">
+                    <img src="${img.path}" alt="${img.name || `Gallery Image ${index + 1}`}" 
+                         onclick="openGalleryImageModal('${img.path}', '${(img.name || `Image ${index + 1}`).replace(/'/g, "\\'")}')"
+                         onerror="this.onerror=null; this.src='data:image/svg+xml,%3Csvg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'200\\' height=\\'200\\'%3E%3Crect fill=\\'%23ddd\\' width=\\'200\\' height=\\'200\\'/%3E%3Ctext fill=\\'%23999\\' font-family=\\'sans-serif\\' font-size=\\'14\\' dy=\\'10.5\\' font-weight=\\'bold\\' x=\\'50%25\\' y=\\'50%25\\' text-anchor=\\'middle\\'%3EImage not found%3C/text%3E%3C/svg%3E';">
+                    <div class="gallery-item-overlay">
+                        <div class="gallery-item-name">${img.name || `Image ${index + 1}`}</div>
+                    </div>
+                </div>
+            `).join('')}
+        </div>
+    `;
+}
+
 // Helper function to get C.STATUS badge class
 function getCStatusClass(cStatus) {
     if (!cStatus) return 'c-status-unavailable';
@@ -760,6 +949,76 @@ function getCStatusClass(cStatus) {
     if (statusLower === 'faulted') return 'c-status-faulted';
     return 'c-status-unavailable';
 }
+
+// Gallery Modal Functions - Only available on station detail page
+function openGalleryImageModal(imagePath, imageName) {
+    // Check if we're on the detail page
+    const moduleContent = document.getElementById('moduleContent');
+    if (!moduleContent || !moduleContent.querySelector('.station-detail-view')) {
+        console.warn('Gallery modal can only be opened from station detail page');
+        return;
+    }
+    
+    // Prevent body scroll
+    document.body.style.overflow = 'hidden';
+    
+    // Create modal if it doesn't exist
+    let modal = document.getElementById('galleryModal');
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'galleryModal';
+        modal.className = 'gallery-modal';
+        modal.innerHTML = `
+            <div class="gallery-modal-content">
+                <button class="gallery-modal-close" onclick="closeGalleryImageModal()" type="button" aria-label="Close">
+                    <i class="fas fa-times"></i>
+                </button>
+                <img id="galleryModalImage" src="" alt="">
+                <div class="gallery-modal-title" id="galleryModalTitle"></div>
+            </div>
+        `;
+        document.body.appendChild(modal);
+        
+        // Don't close on background click - only X button closes
+        // Prevent clicks on modal background from closing
+        modal.addEventListener('click', (e) => {
+            // Only allow clicks on the close button to work
+            // Don't close on background click
+            e.stopPropagation();
+        });
+    }
+    
+    // Set image and title
+    const imgElement = document.getElementById('galleryModalImage');
+    const titleElement = document.getElementById('galleryModalTitle');
+    
+    if (imgElement) {
+        imgElement.src = imagePath;
+        imgElement.onerror = function() {
+            this.src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300"%3E%3Crect fill="%23ddd" width="400" height="300"/%3E%3Ctext fill="%23999" font-family="sans-serif" font-size="16" dy="10.5" font-weight="bold" x="50%25" y="50%25" text-anchor="middle"%3EImage not found%3C/text%3E%3C/svg%3E';
+        };
+    }
+    
+    if (titleElement) {
+        titleElement.textContent = imageName;
+    }
+    
+    // Show modal
+    modal.classList.add('active');
+}
+
+function closeGalleryImageModal() {
+    const modal = document.getElementById('galleryModal');
+    if (modal) {
+        modal.classList.remove('active');
+        // Don't remove the modal from DOM, just hide it
+        // This way it can be reused if needed
+    }
+    // Restore body scroll
+    document.body.style.overflow = '';
+}
+
+// Gallery modal functions will be set up only when detail view loads
 
 // Global variable to track refresh interval for charging points tab
 let stationPointsRefreshInterval = null;
@@ -1016,6 +1275,21 @@ export function goBackToStationsList() {
     if (stationPointsRefreshInterval) {
         clearInterval(stationPointsRefreshInterval);
         stationPointsRefreshInterval = null;
+    }
+    
+    // Remove gallery modal functions when leaving detail page
+    if (window.openGalleryImageModal) {
+        delete window.openGalleryImageModal;
+    }
+    if (window.closeGalleryImageModal) {
+        delete window.closeGalleryImageModal;
+    }
+    // Remove modal from DOM completely when leaving detail page
+    const modal = document.getElementById('galleryModal');
+    if (modal) {
+        modal.classList.remove('active');
+        modal.remove(); // Remove from DOM completely
+        document.body.style.overflow = '';
     }
     
     // Use clean URL for stations list (this will restart the auto-refresh)

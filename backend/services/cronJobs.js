@@ -27,7 +27,7 @@ function initializeCronJobs() {
     // Schedule: Daily at 2:00 PM (cron: "0 14 * * *")
     // Cron format: minute hour day month day-of-week
     const cronExpression = '0 14 * * *'; // Daily at 2:00 PM
-    
+      
     console.log(`⏰ Scheduling Daily Sessions Report cron job...`);
     console.log(`   - Schedule: Daily at 2:00 PM (${timezone})`);
     console.log(`   - Cron: ${cronExpression}`);

@@ -1,5 +1,6 @@
 const { Station, ChargingPoint, Connector, Tariff, ChargingSession } = require('../models');
 const { Op } = require('sequelize');
+const sequelize = require('../config/database');
 const Charger = require('../models/Charger');
 const ChargerData = require('../models/ChargerData');
 const Customer = require('../models/Customer');
@@ -733,12 +734,36 @@ async function getStationById(stationId) {
 
   console.log(`❌ [Cache] Station detail cache miss for ${stationId}, fetching from DB`);
 
-  const station = await Station.findOne({
-    where: {
-      stationId,
-      deleted: false
+  // Try to get station, handle missing galleryImages column gracefully
+  let station;
+  try {
+    station = await Station.findOne({
+      where: {
+        stationId,
+        deleted: false
+      }
+    });
+  } catch (error) {
+    // If error is about missing galleryImages column, try without it
+    if (error.message && error.message.includes('galleryImages')) {
+      console.warn('⚠️ galleryImages column not found, querying without it...');
+      station = await sequelize.query(
+        `SELECT * FROM stations WHERE "stationId" = :stationId AND deleted = false LIMIT 1`,
+        {
+          replacements: { stationId },
+          type: sequelize.QueryTypes.SELECT
+        }
+      );
+      if (station && station.length > 0) {
+        station = station[0];
+        station.galleryImages = []; // Set default empty array
+      } else {
+        station = null;
+      }
+    } else {
+      throw error;
     }
-  });
+  }
 
   if (!station) {
     return null;
@@ -856,6 +881,7 @@ async function getStationById(stationId) {
       ownerContact: station.ownerContact,
       sessionStartStopSMS: station.sessionStartStopSMS,
       amenities: Array.isArray(station.amenities) ? station.amenities : [], // Ensure it's always an array
+      galleryImages: (station.galleryImages && Array.isArray(station.galleryImages)) ? station.galleryImages : (station.galleryImages ? [station.galleryImages] : []), // Ensure it's always an array
       createdBy: station.createdBy,
       createdAt: station.createdAt,
       updatedAt: station.updatedAt
@@ -932,7 +958,8 @@ async function createStation(stationData) {
     ownerContact,
     sessionStartStopSMS,
     amenities,
-    createdBy
+    createdBy,
+    galleryImages
   } = stationData;
 
   // Generate unique stationId
@@ -975,11 +1002,12 @@ async function createStation(stationData) {
     inchargeName: inchargeName || null,
     ownerName: ownerName || null,
     ownerContact: ownerContact || null,
-    sessionStartStopSMS: sessionStartStopSMS || false,
-    amenities: Array.isArray(amenities) ? amenities : [],
-    createdBy: createdBy || null,
-    deleted: false
-  });
+      sessionStartStopSMS: sessionStartStopSMS || false,
+      amenities: Array.isArray(amenities) ? amenities : [],
+      galleryImages: Array.isArray(galleryImages) ? galleryImages : (galleryImages ? [galleryImages] : []),
+      createdBy: createdBy || null,
+      deleted: false
+    });
 
   // Publish CMS event to RabbitMQ (if enabled)
   if (ENABLE_RABBITMQ && publishCMSEvent) {
@@ -1023,12 +1051,36 @@ async function createStation(stationData) {
  */
 async function updateStation(stationId, updateData) {
   // Find station
-  const station = await Station.findOne({
-    where: {
-      stationId,
-      deleted: false
+  // Try to get station, handle missing galleryImages column gracefully
+  let station;
+  try {
+    station = await Station.findOne({
+      where: {
+        stationId,
+        deleted: false
+      }
+    });
+  } catch (error) {
+    // If error is about missing galleryImages column, try without it
+    if (error.message && error.message.includes('galleryImages')) {
+      console.warn('⚠️ galleryImages column not found, querying without it...');
+      station = await sequelize.query(
+        `SELECT * FROM stations WHERE "stationId" = :stationId AND deleted = false LIMIT 1`,
+        {
+          replacements: { stationId },
+          type: sequelize.QueryTypes.SELECT
+        }
+      );
+      if (station && station.length > 0) {
+        station = station[0];
+        station.galleryImages = []; // Set default empty array
+      } else {
+        station = null;
+      }
+    } else {
+      throw error;
     }
-  });
+  }
 
   if (!station) {
     return null;
@@ -1102,6 +1154,7 @@ async function updateStation(stationId, updateData) {
   if (updateData.ownerContact !== undefined) dataToUpdate.ownerContact = toNullIfEmpty(updateData.ownerContact);
   if (updateData.sessionStartStopSMS !== undefined) dataToUpdate.sessionStartStopSMS = Boolean(updateData.sessionStartStopSMS);
   if (updateData.amenities !== undefined) dataToUpdate.amenities = Array.isArray(updateData.amenities) ? updateData.amenities : [];
+  if (updateData.galleryImages !== undefined) dataToUpdate.galleryImages = Array.isArray(updateData.galleryImages) ? updateData.galleryImages : [];
 
   // Update station
   await station.update(dataToUpdate);
@@ -1140,6 +1193,7 @@ async function updateStation(stationId, updateData) {
       stationName: station.stationName,
       organization: station.organization,
       status: station.status,
+      galleryImages: Array.isArray(station.galleryImages) ? station.galleryImages : [],
       createdAt: station.createdAt,
       updatedAt: station.updatedAt
     }
@@ -1151,12 +1205,36 @@ async function updateStation(stationId, updateData) {
  */
 async function deleteStation(stationId) {
   // Find station
-  const station = await Station.findOne({
-    where: {
-      stationId,
-      deleted: false
+  // Try to get station, handle missing galleryImages column gracefully
+  let station;
+  try {
+    station = await Station.findOne({
+      where: {
+        stationId,
+        deleted: false
+      }
+    });
+  } catch (error) {
+    // If error is about missing galleryImages column, try without it
+    if (error.message && error.message.includes('galleryImages')) {
+      console.warn('⚠️ galleryImages column not found, querying without it...');
+      station = await sequelize.query(
+        `SELECT * FROM stations WHERE "stationId" = :stationId AND deleted = false LIMIT 1`,
+        {
+          replacements: { stationId },
+          type: sequelize.QueryTypes.SELECT
+        }
+      );
+      if (station && station.length > 0) {
+        station = station[0];
+        station.galleryImages = []; // Set default empty array
+      } else {
+        station = null;
+      }
+    } else {
+      throw error;
     }
-  });
+  }
 
   if (!station) {
     return null;

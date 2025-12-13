@@ -139,6 +139,14 @@ const Station = sequelize.define('Station', {
     allowNull: true,
     defaultValue: []
   },
+  // Gallery images (stored as JSON array of objects with path and optional name)
+  // Note: This field requires the database column to exist. Run migration: node backend/migrations/add-gallery-images-to-stations.js
+  galleryImages: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+    defaultValue: [],
+    // Skip this field in queries if column doesn't exist (handled in service layer)
+  },
   createdBy: {
     type: DataTypes.STRING(255),
     allowNull: true

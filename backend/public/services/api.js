@@ -446,12 +446,19 @@ export async function getCustomerWalletTransactions(customerId, params = {}) {
 // Create Charging Station API
 export async function createStation(formData) {
     try {
+        // Check if formData is FormData instance or plain object
+        const isFormData = formData instanceof FormData;
+        const headers = {};
+        
+        // Only set Content-Type for JSON, let browser set it for FormData (with boundary)
+        if (!isFormData) {
+            headers['Content-Type'] = 'application/json';
+        }
+        
         const response = await fetch(`${API_BASE_URL}/stations`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(formData)
+            headers: headers,
+            body: isFormData ? formData : JSON.stringify(formData)
         });
         
         if (!response.ok) {
@@ -521,12 +528,19 @@ export async function getChargingStation(stationId) {
 // Update Charging Station API
 export async function updateStation(stationId, formData) {
     try {
+        // Check if formData is FormData instance or plain object
+        const isFormData = formData instanceof FormData;
+        const headers = {};
+        
+        // Only set Content-Type for JSON, let browser set it for FormData (with boundary)
+        if (!isFormData) {
+            headers['Content-Type'] = 'application/json';
+        }
+        
         const response = await fetch(`${API_BASE_URL}/stations/${stationId}`, {
             method: 'PUT',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(formData)
+            headers: headers,
+            body: isFormData ? formData : JSON.stringify(formData)
         });
         
         if (!response.ok) {

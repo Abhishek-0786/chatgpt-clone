@@ -364,6 +364,225 @@ export function openAddStationForm() {
                 opacity: 1;
             }
             
+            .document-upload-section {
+                display: grid;
+                grid-template-columns: 300px 1fr;
+                gap: 20px;
+                align-items: start;
+                margin-bottom: 20px;
+            }
+            
+            .document-name-input {
+                display: flex;
+                flex-direction: column;
+            }
+            
+            .document-name-input label {
+                font-size: 14px;
+                font-weight: 600;
+                margin-bottom: 8px;
+                color: var(--text-primary);
+                font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+            }
+            
+            .document-name-input input {
+                padding: 12px 15px;
+                border: 1px solid var(--input-border);
+                background-color: var(--input-bg);
+                color: var(--text-primary);
+                border-radius: 4px;
+                font-size: 14px;
+                font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+                transition: border-color 0.2s, background-color 0.2s, color 0.2s;
+                width: 100%;
+            }
+            
+            .document-name-input input:focus {
+                outline: none;
+                border-color: #007bff;
+                box-shadow: 0 0 0 3px rgba(0,123,255,0.1);
+            }
+            
+            .document-upload-area {
+                min-height: 120px;
+            }
+            
+            .file-upload-area {
+                border: 2px dashed var(--border-color);
+                border-radius: 8px;
+                padding: 30px;
+                text-align: center;
+                cursor: pointer;
+                transition: all 0.2s;
+                background-color: var(--bg-tertiary);
+            }
+            
+            .file-upload-area:hover {
+                border-color: #007bff;
+                background-color: var(--hover-bg);
+            }
+            
+            .file-upload-icon {
+                font-size: 48px;
+                color: #007bff;
+                margin-bottom: 10px;
+            }
+            
+            .file-upload-text {
+                font-size: 14px;
+                font-weight: 600;
+                color: var(--text-primary);
+                margin-bottom: 5px;
+                font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+            }
+            
+            .file-upload-link {
+                font-size: 12px;
+                color: #007bff;
+                text-decoration: underline;
+                cursor: pointer;
+            }
+            
+            .file-upload-input {
+                display: none;
+            }
+            
+            .document-add-button-wrapper {
+                grid-column: 1 / -1;
+                display: flex;
+                justify-content: flex-start;
+                margin-top: 10px;
+            }
+            
+            .add-document-btn {
+                padding: 12px 30px;
+                background-color: #dc3545;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-weight: 600;
+                font-size: 16px;
+                transition: background-color 0.2s;
+                font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+                white-space: nowrap;
+            }
+            
+            .add-document-btn::before {
+                content: '+';
+                font-size: 22px;
+                font-weight: bold;
+                margin-right: 6px;
+                vertical-align: middle;
+                line-height: 1;
+            }
+            
+            .add-document-btn:hover {
+                background-color: #c82333;
+            }
+            
+            .document-preview-container {
+                position: relative;
+                display: none;
+                margin-top: 15px;
+            }
+            
+            .document-preview-small {
+                position: relative;
+                display: inline-block;
+                width: 120px;
+                height: 120px;
+                border: 1px solid var(--border-color);
+                border-radius: 8px;
+                overflow: hidden;
+                background-color: var(--bg-tertiary);
+            }
+            
+            .document-preview-image-small {
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+                display: block;
+            }
+            
+            .document-remove-preview-btn-small {
+                position: absolute;
+                top: 5px;
+                right: 5px;
+                background-color: #dc3545;
+                color: white;
+                border: 2px solid white;
+                border-radius: 50%;
+                width: 24px;
+                height: 24px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                font-size: 12px;
+                transition: all 0.2s;
+                z-index: 10;
+                padding: 0;
+            }
+            
+            .document-remove-preview-btn-small:hover {
+                background-color: #c82333;
+                transform: scale(1.1);
+            }
+            
+            .documents-table {
+                width: 100%;
+                border-collapse: collapse;
+                margin-top: 20px;
+            }
+            
+            .documents-table thead {
+                background-color: var(--bg-tertiary);
+            }
+            
+            .documents-table th {
+                padding: 12px;
+                text-align: left;
+                font-weight: 600;
+                font-size: 14px;
+                color: var(--text-primary);
+                border-bottom: 2px solid var(--border-color);
+                font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+            }
+            
+            .documents-table td {
+                padding: 12px;
+                border-bottom: 1px solid var(--border-color);
+                font-size: 14px;
+                color: var(--text-primary);
+                font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+            }
+            
+            .documents-table tbody tr:hover {
+                background-color: var(--hover-bg);
+            }
+            
+            .documents-table td img {
+                width: 60px;
+                height: 60px;
+                object-fit: cover;
+                border-radius: 4px;
+            }
+            
+            .action-btn {
+                background: none;
+                border: none;
+                color: #dc3545;
+                cursor: pointer;
+                font-size: 16px;
+                padding: 5px 10px;
+                transition: color 0.2s;
+            }
+            
+            .action-btn:hover {
+                color: #c82333;
+            }
+            
             .hidden {
                 display: none;
             }
@@ -654,6 +873,38 @@ export function openAddStationForm() {
                     </div>
                 </div>
                 
+                <!-- Gallery Images Section -->
+                <div class="form-section">
+                    <div class="section-header">
+                        <i class="fas fa-images section-icon"></i>
+                        <h3 class="section-title">Gallery Images (optional)</h3>
+                    </div>
+                    <div class="document-upload-section" style="grid-template-columns: 1fr;">
+                        <div class="document-upload-area">
+                            <div class="file-upload-area" id="galleryImageUploadArea" onclick="document.getElementById('galleryImageFileInput').click()">
+                                <i class="fas fa-cloud-upload-alt file-upload-icon"></i>
+                                <div class="file-upload-text">Upload your images</div>
+                                <div class="file-upload-text" style="font-size: 12px; font-weight: 400; margin-top: 5px;">You can select multiple images at once</div>
+                                <a class="file-upload-link" onclick="event.stopPropagation(); document.getElementById('galleryImageFileInput').click()">click to browse</a>
+                                <input type="file" id="galleryImageFileInput" class="file-upload-input" accept="image/*" multiple onchange="window.handleGalleryImageFileSelect(event)">
+                            </div>
+                        </div>
+                    </div>
+                    <table class="documents-table" id="galleryImagesTable" style="display: none;">
+                        <thead>
+                            <tr>
+                                <th>S.No</th>
+                                <th>Date</th>
+                                <th>Image Name</th>
+                                <th>Preview</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="galleryImagesTableBody">
+                        </tbody>
+                    </table>
+                </div>
+                
                 <!-- Form Actions -->
                 <div class="form-actions">
                     <button type="submit" class="save-btn" id="saveStationBtn">
@@ -671,7 +922,20 @@ export function openAddStationForm() {
     
     // Load organizations into dropdown
     loadOrganizations();
+    
+    // Initialize gallery images
+    uploadedGalleryImages = [];
+    
+    // Setup global functions for gallery images
+    window.handleGalleryImageFileSelect = handleGalleryImageFileSelect;
+    window.removeGalleryImage = removeGalleryImage;
+    
+    // Initialize drag and drop for gallery images
+    initializeGalleryImageDragAndDrop();
 }
+
+// Global variables for gallery image management
+let uploadedGalleryImages = [];
 
 // Load organizations into dropdown
 async function loadOrganizations() {
@@ -785,6 +1049,7 @@ export async function handleAddStationSubmit(event) {
         closingTime: formData.get('closingTime'),
         open24Hours: formData.has('open24Hours'),
         workingDays: formData.getAll('workingDays'), // Now it's an array of selected days
+        
         allDays: formData.has('allDays'),
         contactNumber: formData.get('contactNumber'),
         inchargeName: formData.get('inchargeName'),
@@ -805,8 +1070,44 @@ export async function handleAddStationSubmit(event) {
     saveBtn.textContent = 'Saving...';
     
     try {
-        // Call API
-        const response = await createStation(stationData);
+        // Convert to FormData for file uploads (gallery images)
+        const formDataToSend = new FormData();
+        
+        // Add all station data fields
+        Object.keys(stationData).forEach(key => {
+            if (key !== 'galleryImages' && key !== 'amenities' && key !== 'workingDays') {
+                if (stationData[key] !== null && stationData[key] !== undefined) {
+                    formDataToSend.append(key, stationData[key]);
+                }
+            }
+        });
+        
+        // Add arrays
+        if (stationData.amenities && stationData.amenities.length > 0) {
+            stationData.amenities.forEach(amenity => {
+                formDataToSend.append('amenities[]', amenity);
+            });
+        }
+        
+        if (stationData.workingDays && stationData.workingDays.length > 0) {
+            stationData.workingDays.forEach(day => {
+                formDataToSend.append('workingDays[]', day);
+            });
+        }
+        
+        // Add gallery images
+        uploadedGalleryImages.forEach((img, index) => {
+            if (img.file) {
+                formDataToSend.append(`galleryImages[${index}][file]`, img.file);
+            }
+            formDataToSend.append(`galleryImages[${index}][name]`, img.name);
+            if (img.path) {
+                formDataToSend.append(`galleryImages[${index}][path]`, img.path);
+            }
+        });
+        
+        // Call API with FormData
+        const response = await createStation(formDataToSend);
         
         if (response.success) {
             showSuccess('Station added successfully!');
@@ -1187,6 +1488,18 @@ function fillEditFormData(station, stationId) {
         const allAmenityCheckboxes = document.querySelectorAll('input[name="amenities"]');
         allAmenityCheckboxes.forEach(cb => cb.checked = false);
     }
+    
+    // Load existing gallery images
+    uploadedGalleryImages = [];
+    if (station.galleryImages && Array.isArray(station.galleryImages)) {
+        uploadedGalleryImages = station.galleryImages.map((img, index) => ({
+            id: img.id || Date.now() + index,
+            name: img.name || `Image ${index + 1}`,
+            date: img.date || new Date().toLocaleDateString(),
+            path: img.path
+        }));
+        renderGalleryImagesTable();
+    }
 }
 
 // Handle update form submission
@@ -1221,31 +1534,93 @@ export async function handleUpdateStationSubmit(event, stationId) {
     }
     
     // Get all form values
-    const stationData = {
-        stationName: formData.get('stationName'),
-        organizationId: parseInt(organization), // Send as organizationId since dropdown value is the ID
-        status: status,
-        powerCapacity: formData.get('powerCapacity') ? parseFloat(formData.get('powerCapacity')) : null,
-        gridPhase: gridPhase,
-        pinCode: formData.get('pinCode') || null,
-        city: formData.get('city') || null,
-        state: formData.get('state') || null,
-        country: country,
-        latitude: formData.get('latitude') ? parseFloat(formData.get('latitude')) : null,
-        longitude: formData.get('longitude') ? parseFloat(formData.get('longitude')) : null,
-        fullAddress: formData.get('fullAddress') || null,
-        openingTime: formData.get('openingTime') || null,
-        closingTime: formData.get('closingTime') || null,
-        open24Hours: formData.has('open24Hours'),
-        workingDays: formData.getAll('workingDays'),
-        allDays: formData.has('allDays'),
-        contactNumber: formData.get('contactNumber') || null,
-        inchargeName: formData.get('inchargeName') || null,
-        ownerName: formData.get('ownerName') || null,
-        ownerContact: formData.get('ownerContact') || null,
-        sessionStartStopSMS: formData.has('sessionStartStopSMS'),
-        amenities: formData.getAll('amenities')
-    };
+    // Convert to FormData for file uploads (gallery images)
+    const formDataToSend = new FormData();
+    
+    // Add all station data fields
+    formDataToSend.append('stationName', formData.get('stationName'));
+    formDataToSend.append('organizationId', parseInt(organization));
+    formDataToSend.append('status', status);
+    
+    const powerCapacity = formData.get('powerCapacity');
+    if (powerCapacity) {
+        formDataToSend.append('powerCapacity', parseFloat(powerCapacity));
+    }
+    
+    formDataToSend.append('gridPhase', gridPhase);
+    
+    const pinCode = formData.get('pinCode');
+    if (pinCode) formDataToSend.append('pinCode', pinCode);
+    
+    const city = formData.get('city');
+    if (city) formDataToSend.append('city', city);
+    
+    const state = formData.get('state');
+    if (state) formDataToSend.append('state', state);
+    
+    formDataToSend.append('country', country);
+    
+    const latitude = formData.get('latitude');
+    if (latitude) formDataToSend.append('latitude', parseFloat(latitude));
+    
+    const longitude = formData.get('longitude');
+    if (longitude) formDataToSend.append('longitude', parseFloat(longitude));
+    
+    const fullAddress = formData.get('fullAddress');
+    if (fullAddress) formDataToSend.append('fullAddress', fullAddress);
+    
+    const openingTime = formData.get('openingTime');
+    if (openingTime) formDataToSend.append('openingTime', openingTime);
+    
+    const closingTime = formData.get('closingTime');
+    if (closingTime) formDataToSend.append('closingTime', closingTime);
+    
+    formDataToSend.append('open24Hours', formData.has('open24Hours') ? 'true' : 'false');
+    
+    const workingDays = formData.getAll('workingDays');
+    if (workingDays.length > 0) {
+        workingDays.forEach(day => {
+            formDataToSend.append('workingDays[]', day);
+        });
+    }
+    
+    formDataToSend.append('allDays', formData.has('allDays') ? 'true' : 'false');
+    
+    const contactNumber = formData.get('contactNumber');
+    if (contactNumber) formDataToSend.append('contactNumber', contactNumber);
+    
+    const inchargeName = formData.get('inchargeName');
+    if (inchargeName) formDataToSend.append('inchargeName', inchargeName);
+    
+    const ownerName = formData.get('ownerName');
+    if (ownerName) formDataToSend.append('ownerName', ownerName);
+    
+    const ownerContact = formData.get('ownerContact');
+    if (ownerContact) formDataToSend.append('ownerContact', ownerContact);
+    
+    formDataToSend.append('sessionStartStopSMS', formData.has('sessionStartStopSMS') ? 'true' : 'false');
+    
+    const amenities = formData.getAll('amenities');
+    if (amenities.length > 0) {
+        amenities.forEach(amenity => {
+            formDataToSend.append('amenities[]', amenity);
+        });
+    }
+    
+    // Add gallery images - if empty array, send empty array to clear all images
+    if (uploadedGalleryImages.length === 0) {
+        formDataToSend.append('clearGalleryImages', 'true');
+    } else {
+        uploadedGalleryImages.forEach((img, index) => {
+            if (img.file) {
+                formDataToSend.append(`galleryImages[${index}][file]`, img.file);
+            }
+            formDataToSend.append(`galleryImages[${index}][name]`, img.name);
+            if (img.path) {
+                formDataToSend.append(`galleryImages[${index}][path]`, img.path);
+            }
+        });
+    }
     
     // Disable submit button
     const saveBtn = document.getElementById('saveStationBtn') || document.querySelector('#editStationForm button[type="submit"]');
@@ -1255,7 +1630,7 @@ export async function handleUpdateStationSubmit(event, stationId) {
     }
     
     try {
-        const response = await updateStation(stationId, stationData);
+        const response = await updateStation(stationId, formDataToSend);
         
         if (response.success) {
             showSuccess('Station updated successfully!');
@@ -1274,6 +1649,124 @@ export async function handleUpdateStationSubmit(event, stationId) {
     }
 }
 
+// Handle gallery image file select - multiple files
+function handleGalleryImageFileSelect(event) {
+    const files = Array.from(event.target.files);
+    if (!files || files.length === 0) {
+        return;
+    }
+    
+    // Validate all files are images
+    const invalidFiles = files.filter(file => !file.type.startsWith('image/'));
+    if (invalidFiles.length > 0) {
+        showError('Please select only image files');
+        event.target.value = '';
+        return;
+    }
+    
+    // Add all selected images to the list directly
+    files.forEach((file, index) => {
+        const imageName = file.name.replace(/\.[^/.]+$/, ''); // Remove extension for name
+        const imageItem = {
+            id: Date.now() + index,
+            file: file,
+            name: imageName || `Image ${uploadedGalleryImages.length + index + 1}`,
+            date: new Date().toLocaleDateString()
+        };
+        uploadedGalleryImages.push(imageItem);
+    });
+    
+    // Render the table
+    renderGalleryImagesTable();
+    
+    // Clear the file input
+    event.target.value = '';
+    
+    // Scroll to table if it's visible
+    setTimeout(() => {
+        const galleryImagesTable = document.getElementById('galleryImagesTable');
+        if (galleryImagesTable && galleryImagesTable.style.display !== 'none') {
+            galleryImagesTable.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    }, 100);
+}
+
+
+// Remove gallery image from list
+function removeGalleryImage(id) {
+    uploadedGalleryImages = uploadedGalleryImages.filter(img => img.id !== id);
+    renderGalleryImagesTable();
+}
+
+// Render gallery images table
+function renderGalleryImagesTable() {
+    const table = document.getElementById('galleryImagesTable');
+    const tbody = document.getElementById('galleryImagesTableBody');
+    
+    if (uploadedGalleryImages.length === 0) {
+        if (table) table.style.display = 'none';
+        return;
+    }
+    
+    if (table) table.style.display = 'table';
+    if (tbody) {
+        tbody.innerHTML = uploadedGalleryImages.map((img, index) => {
+            const previewUrl = img.file ? URL.createObjectURL(img.file) : (img.path || '');
+            return `
+                <tr>
+                    <td>${index + 1}</td>
+                    <td>${img.date}</td>
+                    <td>${img.name}</td>
+                    <td>
+                        ${img.file || img.path ? `<img src="${previewUrl}" alt="${img.name}" style="width: 60px; height: 60px; object-fit: cover; border-radius: 4px;">` : '-'}
+                    </td>
+                    <td>
+                        <button type="button" class="action-btn" onclick="window.removeGalleryImage(${img.id})" title="Remove">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+}
+
+// Initialize drag and drop for gallery images
+function initializeGalleryImageDragAndDrop() {
+    const galleryImageArea = document.getElementById('galleryImageUploadArea');
+    
+    if (galleryImageArea) {
+        galleryImageArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            galleryImageArea.classList.add('dragover');
+        });
+        
+        galleryImageArea.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            galleryImageArea.classList.remove('dragover');
+        });
+        
+        galleryImageArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            galleryImageArea.classList.remove('dragover');
+            
+            const files = Array.from(e.dataTransfer.files).filter(file => file.type.startsWith('image/'));
+            if (files.length > 0) {
+                const input = document.getElementById('galleryImageFileInput');
+                const dataTransfer = new DataTransfer();
+                files.forEach(file => dataTransfer.items.add(file));
+                input.files = dataTransfer.files;
+                handleGalleryImageFileSelect({ target: input });
+            } else {
+                showError('Please drop only image files');
+            }
+        });
+    }
+}
+
 // Make functions globally available
 window.openAddStationForm = openAddStationForm;
 window.openEditStationForm = openEditStationForm;
@@ -1283,4 +1776,6 @@ window.handleUpdateStationSubmit = handleUpdateStationSubmit;
 window.toggleWorkingDaysDropdown = toggleWorkingDaysDropdown;
 window.updateWorkingDaysDisplay = updateWorkingDaysDisplay;
 window.toggleAllDays = toggleAllDays;
+window.handleGalleryImageFileSelect = handleGalleryImageFileSelect;
+window.removeGalleryImage = removeGalleryImage;
 

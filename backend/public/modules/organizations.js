@@ -599,6 +599,7 @@ function setupGlobalFunctions() {
     window.editOrganization = editOrganization;
     window.deleteOrganizationHandler = deleteOrganizationHandler;
     window.viewOrganizationDetail = viewOrganizationDetail;
+    window.loadOrganizationsModule = loadOrganizationsModule; // Export for breadcrumb navigation
 }
 
 // View organization detail
@@ -662,7 +663,7 @@ function renderOrganizationsTable(organizations) {
     tbody.innerHTML = organizations.map((org, index) => {
         const serialNo = (currentPage - 1) * currentLimit + index + 1;
         return `
-            <tr class="clickable-row" onclick="window.viewOrganizationDetail(${org.id});">
+            <tr class="clickable-row" onclick="window.viewOrganizationDetail('${org.organizationId || org.id}');">
                 <td>${serialNo}</td>
                 <td>
                     ${org.organizationName || '-'}
@@ -675,10 +676,10 @@ function renderOrganizationsTable(organizations) {
                 <td>${formatDate(org.createdAt)}</td>
                 <td class="action-column" onclick="event.stopPropagation();">
                     <div class="action-buttons">
-                        <button class="action-btn btn-outline-primary" onclick="window.editOrganization(${org.id}, '${org.organizationName.replace(/'/g, "\\'")}'); return false;" title="Edit">
+                        <button class="action-btn btn-outline-primary" onclick="window.editOrganization('${org.organizationId || org.id}', '${org.organizationName.replace(/'/g, "\\'")}'); return false;" title="Edit">
                             <i class="fas fa-edit"></i>
                         </button>
-                        <button class="action-btn btn-outline-danger" onclick="window.deleteOrganizationHandler(${org.id}, '${org.organizationName.replace(/'/g, "\\'")}'); return false;" title="Delete">
+                        <button class="action-btn btn-outline-danger" onclick="window.deleteOrganizationHandler('${org.organizationId || org.id}', '${org.organizationName.replace(/'/g, "\\'")}'); return false;" title="Delete">
                             <i class="fas fa-trash"></i>
                         </button>
                     </div>

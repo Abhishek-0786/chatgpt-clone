@@ -90,7 +90,9 @@ exports.getOrganizationById = async (req, res) => {
       });
     }
 
-    const result = await organizationService.getOrganizationById(parseInt(id));
+    // Pass id as-is (could be organizationId string or numeric id)
+    // Don't parse it here - let the service handle both cases
+    const result = await organizationService.getOrganizationById(id);
     
     if (!result) {
       return res.status(404).json({
@@ -520,7 +522,9 @@ exports.getOrganizationStations = async (req, res) => {
       limit: parseInt(req.query.limit) || 10
     };
 
-    const result = await organizationService.getOrganizationStations(parseInt(id), filters, pagination);
+    // Pass id as-is (could be organizationId string or numeric id)
+    // Don't parse it here - let the service handle both cases
+    const result = await organizationService.getOrganizationStations(id, filters, pagination);
     
     if (!result) {
       return res.status(404).json({
@@ -564,7 +568,9 @@ exports.getOrganizationSessions = async (req, res) => {
       limit: parseInt(req.query.limit) || 10
     };
 
-    const result = await organizationService.getOrganizationSessions(parseInt(id), type, filters, pagination);
+    // Pass id as-is (could be organizationId string or numeric id)
+    // Don't parse it here - let the service handle both cases
+    const result = await organizationService.getOrganizationSessions(id, type, filters, pagination);
     
     if (!result) {
       return res.status(404).json({

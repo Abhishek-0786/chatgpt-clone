@@ -6,6 +6,21 @@ const { Sequelize } = require('sequelize');
 const cacheController = require('../libs/redis/cacheController');
 const redisClient = require('../libs/redis/redisClient');
 
+/**
+ * Generate unique organizationId
+ */
+async function generateUniqueOrganizationId() {
+  let organizationId;
+  let existingOrg;
+  do {
+    const timestamp = Date.now();
+    const randomStr = Math.random().toString(36).substring(2, 8).toUpperCase();
+    organizationId = `ORG-${timestamp}-${randomStr}`;
+    existingOrg = await Organization.findOne({ where: { organizationId } });
+  } while (existingOrg);
+  return organizationId;
+}
+
 // RabbitMQ producer (optional - only if enabled)
 const ENABLE_RABBITMQ = process.env.ENABLE_RABBITMQ === 'true';
 let publishCMSEvent = null;
@@ -16,6 +31,21 @@ if (ENABLE_RABBITMQ) {
   } catch (error) {
     console.warn('⚠️ RabbitMQ producer not available:', error.message);
   }
+}
+
+/**
+ * Generate unique organizationId
+ */
+async function generateUniqueOrganizationId() {
+  let organizationId;
+  let existingOrg;
+  do {
+    const timestamp = Date.now();
+    const randomStr = Math.random().toString(36).substring(2, 8).toUpperCase();
+    organizationId = `ORG-${timestamp}-${randomStr}`;
+    existingOrg = await Organization.findOne({ where: { organizationId } });
+  } while (existingOrg);
+  return organizationId;
 }
 
 /**
@@ -199,6 +229,7 @@ async function getAllOrganizations(filters, pagination) {
 
       return {
         id: org.id,
+        organizationId: org.organizationId,
         organizationName: org.organizationName,
         stations: stationCount,
         chargers: chargerCount,
@@ -276,16 +307,45 @@ async function getOrganizationsDropdown() {
 }
 
 /**
- * Get single organization by id
+ * Get single organization by organizationId or id (for backward compatibility)
  */
-async function getOrganizationById(id) {
-  const organization = await Organization.findOne({
-    where: {
-      id,
-      deleted: false
+async function getOrganizationById(organizationIdOrId) {
+  // Validate input - must be a string or number
+  if (!organizationIdOrId || (typeof organizationIdOrId !== 'string' && typeof organizationIdOrId !== 'number')) {
+    return null;
+  }
+  
+  // Convert to string for comparison
+  const idString = String(organizationIdOrId).trim();
+  if (!idString || idString === 'NaN' || idString === 'undefined' || idString === 'null') {
+    return null;
+  }
+  
+  let organization = null;
+  
+  // Try to find by organizationId first (if it looks like an organizationId format: ORG-...)
+  if (idString.startsWith('ORG-')) {
+    organization = await Organization.findOne({
+      where: {
+        organizationId: idString,
+        deleted: false
+      }
+    });
+  }
+  
+  // If not found by organizationId, try by numeric id (for backward compatibility)
+  if (!organization) {
+    const numericId = parseInt(idString);
+    if (!isNaN(numericId) && numericId > 0) {
+      organization = await Organization.findOne({
+        where: {
+          id: numericId,
+          deleted: false
+        }
+      });
     }
-  });
-
+  }
+  
   if (!organization) {
     return null;
   }
@@ -324,6 +384,7 @@ async function getOrganizationById(id) {
   // Return all organization fields
   return {
     id: organization.id,
+    organizationId: organization.organizationId,
     organizationName: organization.organizationName,
     gstin: organization.gstin,
     organizationType: organization.organizationType,
@@ -407,8 +468,12 @@ async function createOrganization(organizationData) {
     throw new Error('Organization with this name already exists');
   }
 
+  // Generate unique organizationId
+  const organizationId = await generateUniqueOrganizationId();
+
   // Create organization with all fields
   const organization = await Organization.create({
+    organizationId,
     organizationName,
     gstin: gstin || null,
     organizationType: organizationType || null,
@@ -454,6 +519,7 @@ async function createOrganization(organizationData) {
 
   return {
     id: organization.id,
+    organizationId: organization.organizationId,
     organizationName: organization.organizationName,
     stations: 0,
     chargers: 0,
@@ -464,7 +530,7 @@ async function createOrganization(organizationData) {
 /**
  * Update organization
  */
-async function updateOrganization(id, updateData) {
+async function updateOrganization(organizationIdOrId, updateData) {
   const {
     organizationName,
     gstin,
@@ -489,13 +555,23 @@ async function updateOrganization(id, updateData) {
     documents
   } = updateData;
 
-  // Find organization
-  const organization = await Organization.findOne({
+  // Find organization by organizationId first, then fall back to id
+  let organization = await Organization.findOne({
     where: {
-      id,
+      organizationId: organizationIdOrId,
       deleted: false
     }
   });
+  
+  // If not found by organizationId, try by id (for backward compatibility)
+  if (!organization && !isNaN(parseInt(organizationIdOrId))) {
+    organization = await Organization.findOne({
+      where: {
+        id: parseInt(organizationIdOrId),
+        deleted: false
+      }
+    });
+  }
 
   if (!organization) {
     return {
@@ -639,14 +715,24 @@ async function updateOrganization(id, updateData) {
 /**
  * Soft delete organization (set deleted = true)
  */
-async function deleteOrganization(id) {
-  // Find organization
-  const organization = await Organization.findOne({
+async function deleteOrganization(organizationIdOrId) {
+  // Find organization by organizationId first, then fall back to id
+  let organization = await Organization.findOne({
     where: {
-      id,
+      organizationId: organizationIdOrId,
       deleted: false
     }
   });
+  
+  // If not found by organizationId, try by id (for backward compatibility)
+  if (!organization && !isNaN(parseInt(organizationIdOrId))) {
+    organization = await Organization.findOne({
+      where: {
+        id: parseInt(organizationIdOrId),
+        deleted: false
+      }
+    });
+  }
 
   if (!organization) {
     return null;
@@ -730,19 +816,51 @@ async function calculateStationSessionStats(deviceId) {
 /**
  * Get all stations for an organization
  */
-async function getOrganizationStations(organizationId, filters, pagination) {
+async function getOrganizationStations(organizationIdOrId, filters, pagination) {
+  // Validate input - must be a string or number
+  if (!organizationIdOrId || (typeof organizationIdOrId !== 'string' && typeof organizationIdOrId !== 'number')) {
+    return null;
+  }
+  
+  // Convert to string for comparison
+  const idString = String(organizationIdOrId).trim();
+  if (!idString || idString === 'NaN' || idString === 'undefined' || idString === 'null') {
+    return null;
+  }
+  
   const page = pagination.page || 1;
   const limit = pagination.limit || 10;
   const offset = (page - 1) * limit;
   const { search, status, fromDate, toDate, sort } = filters;
 
-  // Get organization
-  const organization = await Organization.findOne({
-    where: {
-      id: organizationId,
-      deleted: false
+  let organization = null;
+  
+  // Try to find by organizationId first (if it looks like an organizationId format: ORG-...)
+  if (idString.startsWith('ORG-')) {
+    organization = await Organization.findOne({
+      where: {
+        organizationId: idString,
+        deleted: false
+      }
+    });
+  }
+  
+  // If not found by organizationId, try by numeric id (for backward compatibility)
+  if (!organization) {
+    const numericId = parseInt(idString);
+    if (!isNaN(numericId) && numericId > 0) {
+      organization = await Organization.findOne({
+        where: {
+          id: numericId,
+          deleted: false
+        }
+      });
     }
-  });
+  }
+  
+  if (!organization) {
+    return null;
+  }
 
   if (!organization) {
     return null;
@@ -925,19 +1043,51 @@ async function getOrganizationStations(organizationId, filters, pagination) {
 /**
  * Get all sessions for an organization
  */
-async function getOrganizationSessions(organizationId, type, filters, pagination) {
-    const page = pagination.page || 1;
-    const limit = pagination.limit || 10;
-    const offset = (page - 1) * limit;
-    const { search, fromDate, toDate } = filters;
+async function getOrganizationSessions(organizationIdOrId, type, filters, pagination) {
+  // Validate input - must be a string or number
+  if (!organizationIdOrId || (typeof organizationIdOrId !== 'string' && typeof organizationIdOrId !== 'number')) {
+    return null;
+  }
+  
+  // Convert to string for comparison
+  const idString = String(organizationIdOrId).trim();
+  if (!idString || idString === 'NaN' || idString === 'undefined' || idString === 'null') {
+    return null;
+  }
+  
+  const page = pagination.page || 1;
+  const limit = pagination.limit || 10;
+  const offset = (page - 1) * limit;
+  const { search, fromDate, toDate } = filters;
 
-  // Get organization
-  const organization = await Organization.findOne({
-    where: {
-      id: organizationId,
-      deleted: false
+  let organization = null;
+  
+  // Try to find by organizationId first (if it looks like an organizationId format: ORG-...)
+  if (idString.startsWith('ORG-')) {
+    organization = await Organization.findOne({
+      where: {
+        organizationId: idString,
+        deleted: false
+      }
+    });
+  }
+  
+  // If not found by organizationId, try by numeric id (for backward compatibility)
+  if (!organization) {
+    const numericId = parseInt(idString);
+    if (!isNaN(numericId) && numericId > 0) {
+      organization = await Organization.findOne({
+        where: {
+          id: numericId,
+          deleted: false
+        }
+      });
     }
-  });
+  }
+  
+  if (!organization) {
+    return null;
+  }
 
   if (!organization) {
     return null;

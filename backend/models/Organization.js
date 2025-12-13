@@ -7,6 +7,14 @@ const Organization = sequelize.define('Organization', {
     primaryKey: true,
     autoIncrement: true
   },
+  organizationId: {
+    type: DataTypes.STRING(255),
+    allowNull: false,
+    unique: true,
+    validate: {
+      notEmpty: true
+    }
+  },
   organizationName: {
     type: DataTypes.STRING(255),
     allowNull: false,
@@ -119,6 +127,10 @@ const Organization = sequelize.define('Organization', {
   createdAt: 'createdAt',
   updatedAt: 'updatedAt',
   indexes: [
+    {
+      unique: true,
+      fields: ['organizationId']
+    },
     {
       unique: true,
       fields: ['organizationName']

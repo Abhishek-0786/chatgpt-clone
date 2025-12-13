@@ -547,7 +547,7 @@ export async function loadOrganizationDetailView(organizationId, activeTab = 'de
                     </div>
                 </div>
                 <div class="organization-header-right">
-                    <button class="header-btn btn-edit" onclick="window.editOrganizationDetails(${organizationId})">
+                    <button class="header-btn btn-edit" onclick="window.editOrganizationDetails('${organizationId}')">
                         <i class="fas fa-edit"></i> Edit
                     </button>
                 </div>
@@ -556,9 +556,9 @@ export async function loadOrganizationDetailView(organizationId, activeTab = 'de
             <!-- Tabs -->
             <div class="tabs-container">
                 <ul class="tabs-list">
-                    <li class="tab-item ${activeTab === 'details' ? 'active' : ''}" data-tab="details" onclick="window.switchOrganizationTab('details', ${organizationId})">DETAILS</li>
-                    <li class="tab-item ${activeTab === 'stations' ? 'active' : ''}" data-tab="stations" onclick="window.switchOrganizationTab('stations', ${organizationId})">CHARGING STATIONS</li>
-                    <li class="tab-item ${activeTab === 'sessions' ? 'active' : ''}" data-tab="sessions" onclick="window.switchOrganizationTab('sessions', ${organizationId})">SESSIONS</li>
+                    <li class="tab-item ${activeTab === 'details' ? 'active' : ''}" data-tab="details" onclick="window.switchOrganizationTab('details', '${organizationId}')">DETAILS</li>
+                    <li class="tab-item ${activeTab === 'stations' ? 'active' : ''}" data-tab="stations" onclick="window.switchOrganizationTab('stations', '${organizationId}')">CHARGING STATIONS</li>
+                    <li class="tab-item ${activeTab === 'sessions' ? 'active' : ''}" data-tab="sessions" onclick="window.switchOrganizationTab('sessions', '${organizationId}')">SESSIONS</li>
                 </ul>
             </div>
             
@@ -1491,8 +1491,8 @@ function renderOrganizationSessionsUI(organizationId, sessionType = 'active') {
         </style>
         
         <div class="organization-sessions-sub-tabs">
-            <button class="organization-sessions-sub-tab ${isActive ? 'active' : ''}" data-subtab="active" onclick="window.switchOrganizationSessionsSubTab('active', ${organizationId})">ACTIVE</button>
-            <button class="organization-sessions-sub-tab ${!isActive ? 'active' : ''}" data-subtab="completed" onclick="window.switchOrganizationSessionsSubTab('completed', ${organizationId})">COMPLETED</button>
+            <button class="organization-sessions-sub-tab ${isActive ? 'active' : ''}" data-subtab="active" onclick="window.switchOrganizationSessionsSubTab('active', '${organizationId}')">ACTIVE</button>
+            <button class="organization-sessions-sub-tab ${!isActive ? 'active' : ''}" data-subtab="completed" onclick="window.switchOrganizationSessionsSubTab('completed', '${organizationId}')">COMPLETED</button>
         </div>
         
         <!-- Active Sessions Content -->

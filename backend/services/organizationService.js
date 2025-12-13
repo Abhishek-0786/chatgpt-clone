@@ -185,18 +185,12 @@ async function getAllOrganizations(filters, pagination) {
       const stationIds = stations.map(s => s.id);
       let chargerCount = 0;
       if (stationIds.length > 0) {
+        // Count charging points directly by stationId (simpler and more accurate)
         chargerCount = await ChargingPoint.count({
-          include: [
-            {
-              model: Station,
-              as: 'station',
-              where: {
-                id: { [Op.in]: stationIds },
-                deleted: false
-              },
-              required: true
-            }
-          ]
+          where: {
+            stationId: { [Op.in]: stationIds },
+            deleted: false
+          }
         });
       }
 
@@ -318,18 +312,12 @@ async function getOrganizationById(id) {
   const stationIds = stations.map(s => s.id);
   let chargerCount = 0;
   if (stationIds.length > 0) {
+    // Count charging points directly by stationId (simpler and more accurate)
     chargerCount = await ChargingPoint.count({
-      include: [
-        {
-          model: Station,
-          as: 'station',
-          where: {
-            id: { [Op.in]: stationIds },
-            deleted: false
-          },
-          required: true
-        }
-      ]
+      where: {
+        stationId: { [Op.in]: stationIds },
+        deleted: false
+      }
     });
   }
 
@@ -589,18 +577,12 @@ async function updateOrganization(id, updateData) {
   const stationIds = stations.map(s => s.id);
   let chargerCount = 0;
   if (stationIds.length > 0) {
+    // Count charging points directly by stationId (simpler and more accurate)
     chargerCount = await ChargingPoint.count({
-      include: [
-        {
-          model: Station,
-          as: 'station',
-          where: {
-            id: { [Op.in]: stationIds },
-            deleted: false
-          },
-          required: true
-        }
-      ]
+      where: {
+        stationId: { [Op.in]: stationIds },
+        deleted: false
+      }
     });
   }
 

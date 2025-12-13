@@ -26,9 +26,8 @@ const Station = sequelize.define('Station', {
   organization: {
     type: DataTypes.STRING(100),
     allowNull: true, // Changed to allowNull: true for backward compatibility
-    validate: {
-      isIn: [['massive_mobility', '1c_ev_charging', 'genx']]
-    }
+    // Removed isIn validation to allow dynamic organization names
+    // Organization names are converted to lowercase with underscores (e.g., "Massive Mobility" -> "massive_mobility")
   },
   // organizationId: Temporarily commented out until database migration adds the column
   // {

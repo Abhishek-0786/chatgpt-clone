@@ -96,6 +96,11 @@ export async function loadOrganizationDetailView(organizationId, activeTab = 'de
                 box-sizing: border-box;
             }
             
+            .organization-logo-circle:has(.organization-logo-placeholder) {
+                padding: 0;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            }
+            
             .organization-logo-circle img {
                 width: 100%;
                 height: 100%;
@@ -103,20 +108,14 @@ export async function loadOrganizationDetailView(organizationId, activeTab = 'de
                 object-position: center;
             }
             
+            [data-theme="dark"] .organization-logo-circle img {
+                filter: brightness(0) invert(1);
+            }
+            
             .organization-logo-placeholder {
                 width: 100%;
                 height: 100%;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }
-            
-            .organization-logo-placeholder::before {
-                content: '';
-                width: 40px;
-                height: 40px;
-                background-color: rgba(255, 255, 255, 0.3);
+                background: transparent;
                 border-radius: 50%;
             }
             
@@ -538,7 +537,7 @@ export async function loadOrganizationDetailView(organizationId, activeTab = 'de
                 <div class="organization-header-left">
                     <div class="organization-logo-circle">
                         ${organization.organizationLogo ? 
-                            `<img src="${organization.organizationLogo}" alt="${organization.organizationName || 'Organization'}" />` :
+                            `<img src="${organization.organizationLogo}" alt="${organization.organizationName || 'Organization'}" onerror="this.onerror=null; this.parentElement.innerHTML='<div class=\\'organization-logo-placeholder\\'></div>';" />` :
                             `<div class="organization-logo-placeholder"></div>`
                         }
                     </div>

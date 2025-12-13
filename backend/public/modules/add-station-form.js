@@ -1189,7 +1189,7 @@ export async function handleUpdateStationSubmit(event, stationId) {
     // Get all form values
     const stationData = {
         stationName: formData.get('stationName'),
-        organization: organization,
+        organizationId: parseInt(organization), // Send as organizationId since dropdown value is the ID
         status: status,
         powerCapacity: formData.get('powerCapacity') ? parseFloat(formData.get('powerCapacity')) : null,
         gridPhase: gridPhase,

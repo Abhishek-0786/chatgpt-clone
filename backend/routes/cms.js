@@ -1127,8 +1127,12 @@ router.put('/stations/:stationId', [
     .withMessage('Station name must be between 1 and 255 characters'),
   body('organization')
     .optional()
-    .isIn(['massive_mobility', '1c_ev_charging', 'genx'])
-    .withMessage('Organization must be massive_mobility, 1c_ev_charging, or genx'),
+    .isString()
+    .withMessage('Organization must be a string'),
+  body('organizationId')
+    .optional()
+    .isInt()
+    .withMessage('Organization ID must be an integer'),
   body('status')
     .optional()
     .isIn(['Active', 'Inactive', 'Maintenance'])

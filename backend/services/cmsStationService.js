@@ -998,17 +998,29 @@ async function updateStation(stationId, updateData) {
   
   const dataToUpdate = {};
   if (updateData.stationName !== undefined) dataToUpdate.stationName = updateData.stationName;
-  if (updateData.organization !== undefined) dataToUpdate.organization = updateData.organization;
   
-  // Handle organizationId - if provided, fetch organization name and update organization field
-  if (updateData.organizationId !== undefined) {
+  // Handle organizationId FIRST - if provided, fetch organization name and update organization field
+  // This must be done before checking updateData.organization to avoid validation errors
+  if (updateData.organizationId !== undefined && updateData.organizationId !== null && updateData.organizationId !== '') {
     // Fetch organization name and convert to format used in stations.organization
     const Organization = require('../models/Organization');
     const org = await Organization.findByPk(parseInt(updateData.organizationId));
     if (org) {
       dataToUpdate.organization = org.organizationName.toLowerCase().replace(/\s+/g, '_');
+      // Explicitly remove organization from updateData to prevent it from being set to the ID
+      delete updateData.organization;
+    } else {
+      throw new Error(`Organization with ID ${updateData.organizationId} not found`);
     }
     // Note: organizationId column will be added later via migration
+  } else if (updateData.organization !== undefined && updateData.organization !== null && updateData.organization !== '') {
+    // Only set organization directly if organizationId was not provided
+    // Make sure it's a valid organization string, not an ID
+    const orgString = String(updateData.organization);
+    if (!/^\d+$/.test(orgString)) {
+      // Only set if it's not a number (not an ID)
+      dataToUpdate.organization = updateData.organization;
+    }
   }
   
   if (updateData.status !== undefined) dataToUpdate.status = updateData.status;

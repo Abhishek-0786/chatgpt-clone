@@ -785,6 +785,47 @@ async function getStationById(stationId) {
   // Determine station status: Online if at least 1 CP is online, otherwise Offline
   const stationStatus = onlineCPs >= 1 ? 'Online' : 'Offline';
 
+  // Get organizationId if organization name is provided
+  let organizationId = null;
+  if (station.organization) {
+    try {
+      const Organization = require('../models/Organization');
+      // Convert station.organization (e.g., "massive_mobility") to organization name format
+      // "massive_mobility" -> "Massive Mobility"
+      const orgNameParts = station.organization.split('_').map(part => 
+        part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()
+      );
+      const orgName = orgNameParts.join(' ');
+      
+      // Try exact match first
+      let org = await Organization.findOne({
+        where: {
+          organizationName: orgName,
+          deleted: false
+        },
+        attributes: ['id']
+      });
+      
+      // If not found, try case-insensitive search
+      if (!org) {
+        const allOrgs = await Organization.findAll({
+          where: { deleted: false },
+          attributes: ['id', 'organizationName']
+        });
+        org = allOrgs.find(o => {
+          const orgNameForMatch = o.organizationName.toLowerCase().replace(/\s+/g, '_');
+          return orgNameForMatch === station.organization.toLowerCase();
+        });
+      }
+      
+      if (org) {
+        organizationId = org.id;
+      }
+    } catch (error) {
+      console.error('Error finding organization ID:', error);
+    }
+  }
+
   const result = {
     success: true,
     station: {
@@ -792,6 +833,7 @@ async function getStationById(stationId) {
       stationId: station.stationId,
       stationName: station.stationName,
       organization: station.organization,
+      organizationId: organizationId, // Add organizationId for dropdown
       status: stationStatus, // Return real-time calculated status (Online/Offline) for display
       storedStatus: station.status || 'Active', // Store the original status (Active/Inactive/Maintenance) for editing
       powerCapacity: station.powerCapacity ? parseFloat(station.powerCapacity) : null,

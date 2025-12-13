@@ -967,18 +967,52 @@ function fillEditFormData(station, stationId) {
         if (input) input.value = station.stationName;
     }
     
-    if (station.organizationId) {
-        const select = document.getElementById('organizationSelect');
-        if (select) {
+    // Set organization dropdown - handle both organizationId and organization string
+    const select = document.getElementById('organizationSelect');
+    if (select) {
+        if (station.organizationId) {
+            // If organizationId is provided, use it directly
             select.value = station.organizationId;
-        }
-    } else if (station.organization) {
-        // Fallback for old data - try to find organization by name
-        const select = document.getElementById('organizationSelect');
-        if (select) {
-            // This is a fallback - ideally all stations should have organizationId
-            // For now, we'll just log a warning
-            console.warn('Station has organization string instead of organizationId:', station.organization);
+        } else if (station.organization) {
+            // If only organization string is provided, find matching organization ID
+            // Convert station.organization (e.g., "massive_mobility") to match organization name
+            const orgString = station.organization.toLowerCase();
+            
+            // Try to find matching organization in dropdown options
+            for (let i = 0; i < select.options.length; i++) {
+                const option = select.options[i];
+                if (option.value && option.value !== '') {
+                    // Get organization name from option text and convert to format
+                    const orgName = option.textContent.toLowerCase().replace(/\s+/g, '_');
+                    if (orgName === orgString) {
+                        select.value = option.value;
+                        break;
+                    }
+                }
+            }
+            
+            // If still not found, try to fetch organizations and match
+            if (!select.value || select.value === '') {
+                // Wait a bit more for organizations to load, then try again
+                setTimeout(async () => {
+                    try {
+                        const { getOrganizationsDropdown } = await import('../services/api.js');
+                        const orgResponse = await getOrganizationsDropdown();
+                        if (orgResponse.success && orgResponse.data && orgResponse.data.organizations) {
+                            const matchingOrg = orgResponse.data.organizations.find(org => {
+                                const orgNameForMatch = org.organizationName.toLowerCase().replace(/\s+/g, '_');
+                                return orgNameForMatch === orgString;
+                            });
+                            
+                            if (matchingOrg) {
+                                select.value = matchingOrg.id;
+                            }
+                        }
+                    } catch (error) {
+                        console.error('Error fetching organizations for matching:', error);
+                    }
+                }, 500);
+            }
         }
     }
     

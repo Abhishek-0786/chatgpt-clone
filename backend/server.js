@@ -182,11 +182,23 @@ app.use((req, res) => {
 // Graceful shutdown handler
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received, closing connections...');
+  try {
+    const { stopCronJobs } = require('./services/cronJobs');
+    stopCronJobs();
+  } catch (error) {
+    console.error('Error stopping cron jobs:', error);
+  }
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   console.log('SIGINT received, closing connections...');
+  try {
+    const { stopCronJobs } = require('./services/cronJobs');
+    stopCronJobs();
+  } catch (error) {
+    console.error('Error stopping cron jobs:', error);
+  }
   process.exit(0);
 });
 
@@ -260,6 +272,16 @@ const startServer = async () => {
       }
     } else {
       console.log('ℹ️ RabbitMQ is disabled (set ENABLE_RABBITMQ=true in .env to enable)');
+    }
+
+    // Initialize Cron Jobs (after database is ready)
+    try {
+      const { initializeCronJobs } = require('./services/cronJobs');
+      initializeCronJobs();
+      console.log('✅ Cron jobs initialized');
+    } catch (cronError) {
+      console.warn('⚠️ Failed to initialize cron jobs:', cronError.message);
+      // Don't exit - continue without cron jobs
     }
 
     

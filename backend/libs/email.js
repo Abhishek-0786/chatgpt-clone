@@ -104,6 +104,16 @@ const sendPasswordResetEmail = async (email, resetLink) => {
   }
 };
 
+/**
+ * Create email transporter (reusable function)
+ * Can be used by other services that need to send emails
+ */
+const getEmailTransporter = () => {
+  return createTransporter();
+};
+
 module.exports = {
-  sendPasswordResetEmail
+  sendPasswordResetEmail,
+  createTransporter,
+  getEmailTransporter
 };

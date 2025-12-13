@@ -717,6 +717,8 @@ function getOrganizationIcon(organization) {
     const orgNameMap = {
         'Massive Mobility': 'massive_mobility',
         '1C EV Charging': '1c_ev_charging',
+        'Statiq': 'statiq',
+        'Chargetrip': 'chargetrip',
         'GenX': 'genx'
     };
     
@@ -736,6 +738,16 @@ function getOrganizationIcon(organization) {
         'massive_mobility': {
             type: 'image',
             value: '/user-panel/images/organization-logos/massive-mobility', // Will try .png and .jpg
+            extensions: ['.png', '.jpg', '.jpeg']
+        },
+        'statiq': {
+            type: 'image',
+            value: '/user-panel/images/organization-logos/statiq_logo', // Will try .png and .jpg
+            extensions: ['.png', '.jpg', '.jpeg']
+        },
+        'chargetrip': {
+            type: 'image',
+            value: '/user-panel/images/organization-logos/chargetrip_logo', // Will try .png and .jpg
             extensions: ['.png', '.jpg', '.jpeg']
         }
     };
@@ -762,8 +774,16 @@ function createMarkerIconFromStation(station) {
         centerContent = '<text x="22.5" y="28" font-size="16" font-weight="700" fill="white" text-anchor="middle" font-family="Arial, sans-serif" style="text-shadow: 0 1px 2px rgba(0,0,0,0.3);">🤖</text>';
     } else if (orgIcon.type === 'image') {
         // Organization logos - use text representation
-        const orgText = orgValue.includes('1c') || orgValue.includes('1C') ? '1C' : 
-                       orgValue.includes('massive') || orgValue.includes('1S') ? '1S' : 'III';
+        let orgText = 'III'; // Default
+        if (orgValue.includes('1c') || orgValue.includes('1C')) {
+            orgText = '1C';
+        } else if (orgValue.includes('massive') || orgValue.includes('1S')) {
+            orgText = '1S';
+        } else if (orgValue.includes('statiq') || orgValue.includes('Statiq')) {
+            orgText = 'ST';
+        } else if (orgValue.includes('chargetrip') || orgValue.includes('Chargetrip')) {
+            orgText = 'CT';
+        }
         centerContent = `<text x="22.5" y="28" font-size="14" font-weight="700" fill="white" text-anchor="middle" font-family="Arial, sans-serif" style="text-shadow: 0 1px 2px rgba(0,0,0,0.3);">${orgText}</text>`;
     } else {
         centerContent = '<text x="22.5" y="28" font-size="14" font-weight="700" fill="white" text-anchor="middle" font-family="Arial, sans-serif" style="text-shadow: 0 1px 2px rgba(0,0,0,0.3);">III</text>';
@@ -834,6 +854,16 @@ class GenXMarkerOverlay extends google.maps.OverlayView {
         const orgValue = this.station.organization || this.station.organizationDisplay || 'genx';
         const orgIcon = getOrganizationIcon(orgValue);
         
+        // Normalize organization value to check if it needs white filter
+        const orgNameMap = {
+            'Massive Mobility': 'massive_mobility',
+            '1C EV Charging': '1c_ev_charging',
+            'Statiq': 'statiq',
+            'Chargetrip': 'chargetrip',
+            'GenX': 'genx'
+        };
+        const normalizedOrg = orgNameMap[orgValue] || orgValue || 'genx';
+        
         // Create icon HTML based on type
         let iconHTML = '';
         if (orgIcon.type === 'image') {
@@ -842,7 +872,8 @@ class GenXMarkerOverlay extends google.maps.OverlayView {
             const extensions = orgIcon.extensions || ['.png', '.jpg', '.jpeg'];
             iconHTML = `<img src="${imagePath}" 
                              alt="${this.station.organization || orgValue}" 
-                             class="genx-marker-logo"
+                             class="${logoClass}"
+                             ${combinedStyle}
                              onerror="(function(img,exts){var s=img.src,b=s.substring(0,s.lastIndexOf('.'));var t=exts.findIndex(function(e){return s.endsWith(e)});if(t<exts.length-1){img.src=b+exts[t+1]}else{img.style.display='none';img.parentElement.innerHTML='<i class=\\'fas fa-robot genx-marker-icon\\'></i>'}})(this,${JSON.stringify(extensions)})">
                         `;
         } else {

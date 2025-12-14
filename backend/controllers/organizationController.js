@@ -259,6 +259,28 @@ exports.createOrganization = async (req, res) => {
 exports.updateOrganization = async (req, res) => {
   try {
     const { id } = req.params;
+    
+    // Validate id parameter
+    // organizationId can be either:
+    // 1. A string organizationId (e.g., "ORG-1234567890-ABCDEF") - most common
+    // 2. A numeric id (e.g., 1, 2, 3) - for backward compatibility
+    if (!id || id === 'undefined' || id === 'null') {
+      return res.status(400).json({
+        success: false,
+        message: 'Organization ID is required'
+      });
+    }
+    
+    // Check if it's an empty string
+    if (typeof id === 'string' && id.trim() === '') {
+      return res.status(400).json({
+        success: false,
+        message: 'Organization ID is required'
+      });
+    }
+    
+    // Pass it as-is to the service, which will handle both string and numeric IDs
+    const organizationIdOrId = id;
     const {
       organizationName,
       gstin,
@@ -280,13 +302,6 @@ exports.updateOrganization = async (req, res) => {
       billingState,
       billingFullAddress
     } = req.body;
-
-    if (!id || id.trim() === '') {
-      return res.status(400).json({
-        success: false,
-        message: 'Organization id is required'
-      });
-    }
 
     if (!organizationName || organizationName.trim() === '') {
       return res.status(400).json({
@@ -340,6 +355,7 @@ exports.updateOrganization = async (req, res) => {
       
       console.log('Document files found:', documentFiles.length);
       console.log('Request body keys:', req.body ? Object.keys(req.body) : 'no body');
+      console.log('Request body full:', JSON.stringify(req.body, null, 2));
       
       if (hasDocumentFields) {
       const documentData = {};
@@ -357,42 +373,84 @@ exports.updateOrganization = async (req, res) => {
         }
       });
       
-      // Get document names and paths from body
+      // Get document names, paths, and dates from body
+      // Multer should parse text fields into req.body, but nested brackets might be flattened
+      // Check both req.body and req.body.documents if it exists
       if (req.body) {
+        console.log('Scanning req.body for document fields...');
+        console.log('All req.body keys:', Object.keys(req.body));
+        
+        // Try to parse nested structure if multer flattened it
+        // Sometimes multer creates req.body['documents[0][name]'] instead of nested structure
         Object.keys(req.body).forEach(key => {
+          console.log(`  Checking key: "${key}", value:`, req.body[key]);
+          
+          // Handle both formats: "documents[0][name]" and nested "documents[0][name]"
           const nameMatch = key.match(/documents\[(\d+)\]\[name\]/);
           const pathMatch = key.match(/documents\[(\d+)\]\[path\]/);
+          const dateMatch = key.match(/documents\[(\d+)\]\[date\]/);
+          
           if (nameMatch) {
             const index = nameMatch[1];
             if (!documentData[index]) {
               documentData[index] = {};
             }
             documentData[index].name = req.body[key];
-            console.log(`Found document name at index ${index}:`, req.body[key]);
+            console.log(`✓ Found document name at index ${index}:`, req.body[key]);
           } else if (pathMatch) {
             const index = pathMatch[1];
             if (!documentData[index]) {
               documentData[index] = {};
             }
             documentData[index].path = req.body[key];
-            console.log(`Found document path at index ${index}:`, req.body[key]);
+            console.log(`✓ Found document path at index ${index}:`, req.body[key]);
+          } else if (dateMatch) {
+            const index = dateMatch[1];
+            if (!documentData[index]) {
+              documentData[index] = {};
+            }
+            documentData[index].date = req.body[key];
+            console.log(`✓ Found document date at index ${index}:`, req.body[key]);
           }
         });
+        
+        // Also check if documents is a nested object (unlikely with multer, but just in case)
+        if (req.body.documents && typeof req.body.documents === 'object') {
+          console.log('Found nested documents object in req.body');
+          Object.keys(req.body.documents).forEach(index => {
+            const doc = req.body.documents[index];
+            if (doc && typeof doc === 'object') {
+              if (!documentData[index]) {
+                documentData[index] = {};
+              }
+              if (doc.name) documentData[index].name = doc.name;
+              if (doc.path) documentData[index].path = doc.path;
+              if (doc.date) documentData[index].date = doc.date;
+            }
+          });
+        }
       }
+      
+      console.log('Document data after parsing:', JSON.stringify(documentData, null, 2));
+      console.log('Document data indices found:', Object.keys(documentData));
       
       // Build documents array from all document data
       documents = [];
-      Object.keys(documentData).sort((a, b) => parseInt(a) - parseInt(b)).forEach(index => {
+      const sortedIndices = Object.keys(documentData).sort((a, b) => parseInt(a) - parseInt(b));
+      console.log('Processing documents in order:', sortedIndices);
+      
+      sortedIndices.forEach(index => {
         const doc = documentData[index];
-        console.log(`Processing document at index ${index}:`, doc);
+        console.log(`Processing document at index ${index}:`, JSON.stringify(doc, null, 2));
         if (doc.file) {
           // New file uploaded - use file name as document name if name not provided
           const docName = doc.name || doc.file.originalname || `Document ${index}`;
           documents.push({
             name: docName,
             path: `/uploads/organizations/documents/${doc.file.filename}`,
-            date: new Date().toLocaleDateString()
+            date: doc.date || new Date().toLocaleDateString()
           });
+          console.log(`✓ Added new document at index ${index}:`, docName);
         } else if (doc.path && doc.name) {
           // Existing document (no new file, just keeping it)
           documents.push({
@@ -400,6 +458,9 @@ exports.updateOrganization = async (req, res) => {
             path: doc.path,
             date: doc.date || new Date().toLocaleDateString()
           });
+          console.log(`✓ Added existing document at index ${index}:`, doc.name);
+        } else {
+          console.warn(`⚠ Skipping document at index ${index} - missing required fields:`, doc);
         }
       });
       
@@ -431,7 +492,7 @@ exports.updateOrganization = async (req, res) => {
       documents: documents
     };
 
-    const result = await organizationService.updateOrganization(parseInt(id), updateData);
+    const result = await organizationService.updateOrganization(organizationIdOrId, updateData);
     
     if (!result) {
       return res.status(404).json({

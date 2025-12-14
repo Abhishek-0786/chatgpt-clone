@@ -302,6 +302,41 @@ async function getStationById(stationId) {
     };
     const organization = orgMap[station.organization] || station.organization;
 
+    // Parse gallery images (handle JSONB objects, JSON strings, and arrays)
+    let galleryImages = [];
+    try {
+      // Get galleryImages from Sequelize model
+      let rawGalleryImages = station.galleryImages || 
+                            (station.dataValues && station.dataValues.galleryImages) || 
+                            (station.get ? station.get('galleryImages') : null);
+      
+      // If still not found, try toJSON()
+      if (!rawGalleryImages && station.toJSON) {
+        const stationPlain = station.toJSON();
+        rawGalleryImages = stationPlain.galleryImages;
+      }
+      
+      // Process galleryImages based on its type
+      if (rawGalleryImages !== undefined && rawGalleryImages !== null) {
+        if (typeof rawGalleryImages === 'string') {
+          try {
+            galleryImages = JSON.parse(rawGalleryImages);
+            if (!Array.isArray(galleryImages)) {
+              galleryImages = [];
+            }
+          } catch (e) {
+            console.error('[Station Service] Error parsing galleryImages JSON string:', e);
+            galleryImages = [];
+          }
+        } else if (Array.isArray(rawGalleryImages)) {
+          galleryImages = rawGalleryImages;
+        }
+      }
+    } catch (error) {
+      console.error('[Station Service] Error processing gallery images:', error);
+      galleryImages = [];
+    }
+
     return {
       success: true,
       station: {
@@ -329,6 +364,8 @@ async function getStationById(stationId) {
         allDays: station.allDays,
         // Additional info
         amenities: station.amenities || [],
+        // Gallery Images
+        galleryImages: galleryImages,
         contactNumber: station.contactNumber,
         onlineCPs: onlineCPs,
         totalCPs: chargingPoints.length,

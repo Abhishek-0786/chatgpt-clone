@@ -4,7 +4,7 @@ import { getStationChargingPoints, getActiveSession, getStationDetails, getVehic
 import { startCharging } from '../services/api.js';
 import { showError, showSuccess } from '../../utils/notifications.js';
 
-let currentTab = 'details'; // 'details' or 'charger'
+let currentTab = 'details'; // 'details', 'gallery', or 'charger'
 let allChargers = [];
 let filteredChargers = [];
 let currentFilters = {
@@ -41,6 +41,14 @@ export async function loadStationDetail(stationId, stationName) {
         const station = stationResponse.success ? stationResponse.station : null;
         const chargingPoints = pointsResponse.success && pointsResponse.points ? pointsResponse.points : [];
         const userActiveSession = sessionResponse.success ? sessionResponse.session : null;
+        
+        // Store gallery images globally for modal navigation
+        currentGalleryImages = station?.galleryImages || [];
+        currentGalleryIndex = 0;
+        
+        // Debug: Log gallery images
+        console.log('[Station Detail] Station data:', station);
+        console.log('[Station Detail] Gallery Images:', currentGalleryImages);
         
         // Station name is displayed in the page content, no need to update page title
         
@@ -130,21 +138,8 @@ export async function loadStationDetail(stationId, stationName) {
                     <span>Back to Stations</span>
                 </button>
                 
-                <!-- Station Image Banner -->
-                <div style="width: 100%; height: 180px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); margin-bottom: 16px; border-radius: 16px; position: relative; overflow: hidden; box-shadow: 0 4px 15px rgba(102, 126, 234, 0.25);">
-                    ${station?.image || station?.photo ? `
-                        <img src="${station.image || station.photo}" 
-                             alt="${displayStationName}" 
-                             style="width: 100%; height: 100%; object-fit: cover;"
-                             onerror="this.style.display='none'; this.parentElement.style.background='linear-gradient(135deg, #667eea 0%, #764ba2 100%)';">
-                    ` : `
-                        <div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); position: relative;">
-                            <div style="position: absolute; width: 200px; height: 200px; background: rgba(255, 255, 255, 0.1); border-radius: 50%; top: -50px; right: -50px;"></div>
-                            <div style="position: absolute; width: 150px; height: 150px; background: rgba(255, 255, 255, 0.08); border-radius: 50%; bottom: -30px; left: -30px;"></div>
-                            <i class="fas fa-charging-station" style="font-size: 56px; color: rgba(255, 255, 255, 0.4); position: relative; z-index: 1;"></i>
-                        </div>
-                    `}
-                </div>
+                <!-- Station Image Banner with Gallery -->
+                ${renderStationImageBanner(station, displayStationName)}
                 
                 <!-- Station Header Card - Modern -->
                 <div style="background: white; border: 1px solid #e9ecef; border-radius: 16px; padding: 18px; margin-bottom: 16px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05); margin-top: -50px; position: relative; z-index: 10;">
@@ -173,13 +168,13 @@ export async function loadStationDetail(stationId, stationName) {
                     </div>
                 </div>
                 
-                <!-- Toggle Tabs - Smooth Toggle -->
+                <!-- Toggle Tabs - Three Tabs: Details, Gallery, Charger -->
                 <div class="station-tabs-toggle" 
                      style="background: #f8f9fa; border-radius: 16px; padding: 6px; margin-bottom: 16px; display: flex; position: relative; box-shadow: 0 2px 8px rgba(0,0,0,0.04);">
                     <!-- Sliding Indicator -->
                     <div id="tabIndicator" 
-                         style="position: absolute; top: 6px; bottom: 6px; left: ${currentTab === 'details' ? '6px' : '50%'}; 
-                                width: calc(50% - 6px); background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                         style="position: absolute; top: 6px; bottom: 6px; left: ${currentTab === 'details' ? '6px' : currentTab === 'gallery' ? 'calc(33.333% + 2px)' : 'calc(66.666% - 2px)'}; 
+                                width: calc(33.333% - 4px); background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
                                 border-radius: 12px; transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1); 
                                 box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3); z-index: 1;"></div>
                     <button class="station-tab-toggle ${currentTab === 'details' ? 'active' : ''}" 
@@ -190,6 +185,15 @@ export async function loadStationDetail(stationId, stationName) {
                                    font-size: 14px; cursor: pointer; transition: color 0.3s ease; 
                                    position: relative; z-index: 2;">
                         Details
+                    </button>
+                    <button class="station-tab-toggle ${currentTab === 'gallery' ? 'active' : ''}" 
+                            onclick="window.switchStationTab('gallery')"
+                            style="flex: 1; padding: 12px 16px; border: none; background: transparent; 
+                                   color: ${currentTab === 'gallery' ? 'white' : '#6c757d'}; 
+                                   font-weight: ${currentTab === 'gallery' ? '700' : '500'}; 
+                                   font-size: 14px; cursor: pointer; transition: color 0.3s ease; 
+                                   position: relative; z-index: 2;">
+                        Gallery
                     </button>
                     <button class="station-tab-toggle ${currentTab === 'charger' ? 'active' : ''}" 
                             onclick="window.switchStationTab('charger')"
@@ -204,9 +208,9 @@ export async function loadStationDetail(stationId, stationName) {
                 
                 <!-- Tab Content -->
                 <div id="stationTabContent">
-                    ${currentTab === 'details' ? renderDetailsTab(station) : renderChargerTab()}
+                    ${currentTab === 'details' ? renderDetailsTab(station) : currentTab === 'gallery' ? renderGalleryTab(station) : renderChargerTab()}
                 </div>
-                                        </div>
+            </div>
         `;
         
         // Attach event listeners for charger tab
@@ -219,6 +223,207 @@ export async function loadStationDetail(stationId, stationName) {
         showError('Failed to load station details');
     }
 }
+
+// Render Station Image Banner - Cover Photo Only
+function renderStationImageBanner(station, displayStationName) {
+    // Get gallery images
+    const galleryImages = station?.galleryImages || [];
+    
+    // Ensure galleryImages is an array
+    const galleryImagesArray = Array.isArray(galleryImages) ? galleryImages : [];
+    
+    const firstImage = galleryImagesArray.length > 0 ? galleryImagesArray[0] : null;
+    const totalImages = galleryImagesArray.length;
+    
+    // Determine cover image source - use first gallery image, or fallback to default gradient
+    const coverImageSrc = firstImage?.path || station?.image || station?.photo || null;
+    
+    return `
+        <div style="margin-bottom: 20px;">
+            <!-- Cover Image Banner - First Gallery Image as Cover Photo -->
+            <div id="stationCoverImage" 
+                 style="width: 100%; height: 220px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 20px; position: relative; overflow: hidden; box-shadow: 0 8px 24px rgba(102, 126, 234, 0.3); cursor: ${coverImageSrc ? 'pointer' : 'default'}; transition: transform 0.3s ease;"
+                 onclick="${coverImageSrc && totalImages > 0 ? `window.switchStationTab('gallery')` : ''}"
+                 onmouseover="${coverImageSrc ? 'this.style.transform=\'scale(1.02)\'' : ''}"
+                 onmouseout="${coverImageSrc ? 'this.style.transform=\'scale(1)\'' : ''}">
+                ${coverImageSrc ? `
+                    <img src="${coverImageSrc}" 
+                         alt="${displayStationName}" 
+                         style="width: 100%; height: 100%; object-fit: cover; transition: transform 0.3s ease;"
+                         onerror="this.style.display='none'; this.parentElement.style.background='linear-gradient(135deg, #667eea 0%, #764ba2 100%)';"
+                         onmouseover="this.style.transform='scale(1.05)'"
+                         onmouseout="this.style.transform='scale(1)'">
+                ` : `
+                    <div style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); position: relative;">
+                        <div style="position: absolute; width: 200px; height: 200px; background: rgba(255, 255, 255, 0.1); border-radius: 50%; top: -50px; right: -50px;"></div>
+                        <div style="position: absolute; width: 150px; height: 150px; background: rgba(255, 255, 255, 0.08); border-radius: 50%; bottom: -30px; left: -30px;"></div>
+                        <i class="fas fa-charging-station" style="font-size: 64px; color: rgba(255, 255, 255, 0.4); position: relative; z-index: 1;"></i>
+                    </div>
+                `}
+            </div>
+        </div>
+        
+        <!-- Gallery Modal - Enhanced Design -->
+        <div id="galleryModal" 
+             style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.96); z-index: 10000; align-items: center; justify-content: center; padding: 0; backdrop-filter: blur(10px);">
+            <!-- Close Button - Top Right of Modal -->
+            <button onclick="window.closeGalleryModal()" 
+                    style="position: absolute; top: 15px; right: 15px; background: rgba(255, 255, 255, 0.95); border: 1px solid rgba(255, 255, 255, 1); color: #212529; font-size: 16px; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.3s ease; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); z-index: 10002; font-weight: 600;"
+                    onmouseover="this.style.background='rgba(255, 255, 255, 1)'; this.style.transform='scale(1.1)'; this.style.boxShadow='0 4px 12px rgba(0, 0, 0, 0.3)'"
+                    onmouseout="this.style.background='rgba(255, 255, 255, 0.95)'; this.style.transform='scale(1)'; this.style.boxShadow='0 2px 8px rgba(0, 0, 0, 0.2)'">
+                <i class="fas fa-times"></i>
+            </button>
+            
+            <!-- Image Container Wrapper - Full Width -->
+            <div style="position: relative; width: 100%; height: 100vh; display: flex; align-items: center; justify-content: center;">
+                <!-- Previous Button - On Image -->
+                <button id="galleryPrevBtn" 
+                        onclick="window.prevGalleryImage()" 
+                        style="position: absolute; left: 20px; top: 50%; transform: translateY(-50%); background: rgba(255, 255, 255, 0.9); border: 1px solid rgba(255, 255, 255, 1); color: #212529; font-size: 18px; width: 50px; height: 50px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.3s ease; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); z-index: 10001;"
+                        onmouseover="this.style.background='rgba(255, 255, 255, 1)'; this.style.transform='translateY(-50%) translateX(-5px)'; this.style.boxShadow='0 4px 12px rgba(0, 0, 0, 0.3)'"
+                        onmouseout="this.style.background='rgba(255, 255, 255, 0.9)'; this.style.transform='translateY(-50%) translateX(0)'; this.style.boxShadow='0 2px 8px rgba(0, 0, 0, 0.2)'">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                
+                <!-- Next Button - On Image -->
+                <button id="galleryNextBtn" 
+                        onclick="window.nextGalleryImage()" 
+                        style="position: absolute; right: 20px; top: 50%; transform: translateY(-50%); background: rgba(255, 255, 255, 0.9); border: 1px solid rgba(255, 255, 255, 1); color: #212529; font-size: 18px; width: 50px; height: 50px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.3s ease; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); z-index: 10001;"
+                        onmouseover="this.style.background='rgba(255, 255, 255, 1)'; this.style.transform='translateY(-50%) translateX(5px)'; this.style.boxShadow='0 4px 12px rgba(0, 0, 0, 0.3)'"
+                        onmouseout="this.style.background='rgba(255, 255, 255, 0.9)'; this.style.transform='translateY(-50%) translateX(0)'; this.style.boxShadow='0 2px 8px rgba(0, 0, 0, 0.2)'">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+                
+                <!-- Image Container - Full Width -->
+                <img id="galleryModalImage" 
+                     src="" 
+                     alt="Gallery image" 
+                     style="width: 100%; height: 100vh; object-fit: contain; display: block;">
+                
+                <!-- Image Counter - Bottom Center -->
+                <div id="galleryImageCounter" 
+                     style="position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); color: white; font-size: 14px; font-weight: 600; background: rgba(0, 0, 0, 0.7); padding: 8px 16px; border-radius: 20px; backdrop-filter: blur(20px); border: 1px solid rgba(255, 255, 255, 0.1); z-index: 10001;">
+                    <i class="fas fa-image" style="margin-right: 6px; font-size: 12px;"></i>
+                    <span id="galleryCounterText">1 / ${totalImages}</span>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+// Store gallery images globally for modal navigation
+let currentGalleryImages = [];
+let currentGalleryIndex = 0;
+
+// Open Gallery Modal
+window.openGalleryModal = function(index) {
+    const modal = document.getElementById('galleryModal');
+    if (!modal) return;
+    
+    if (currentGalleryImages.length === 0) {
+        // No gallery images, don't open modal
+        return;
+    }
+    
+    // Set current index (validate it)
+    currentGalleryIndex = index >= 0 && index < currentGalleryImages.length ? index : 0;
+    
+    // Show modal
+    modal.style.display = 'flex';
+    document.body.style.overflow = 'hidden';
+    
+    // Update modal content
+    updateGalleryModalContent();
+};
+
+// Close Gallery Modal
+window.closeGalleryModal = function() {
+    const modal = document.getElementById('galleryModal');
+    if (modal) {
+        modal.style.display = 'none';
+        document.body.style.overflow = '';
+    }
+};
+
+// Previous Gallery Image
+window.prevGalleryImage = function() {
+    if (currentGalleryImages.length === 0) return;
+    currentGalleryIndex = (currentGalleryIndex - 1 + currentGalleryImages.length) % currentGalleryImages.length;
+    updateGalleryModalContent();
+};
+
+// Next Gallery Image
+window.nextGalleryImage = function() {
+    if (currentGalleryImages.length === 0) return;
+    currentGalleryIndex = (currentGalleryIndex + 1) % currentGalleryImages.length;
+    updateGalleryModalContent();
+};
+
+// Update Gallery Modal Content
+function updateGalleryModalContent() {
+    const modalImage = document.getElementById('galleryModalImage');
+    const imageCounter = document.getElementById('galleryImageCounter');
+    const prevBtn = document.getElementById('galleryPrevBtn');
+    const nextBtn = document.getElementById('galleryNextBtn');
+    
+    if (!modalImage || currentGalleryImages.length === 0) return;
+    
+    const currentImage = currentGalleryImages[currentGalleryIndex];
+    if (currentImage && currentImage.path) {
+        // Set full width and height for consistent sizing
+        modalImage.style.width = '100%';
+        modalImage.style.height = '100vh';
+        modalImage.style.objectFit = 'contain';
+        modalImage.style.display = 'block';
+        
+        // Set the source
+        modalImage.src = currentImage.path;
+        modalImage.alt = `Gallery image ${currentGalleryIndex + 1}`;
+    }
+    
+    if (imageCounter) {
+        const counterText = imageCounter.querySelector('#galleryCounterText');
+        if (counterText) {
+            counterText.textContent = `${currentGalleryIndex + 1} / ${currentGalleryImages.length}`;
+        } else {
+            imageCounter.innerHTML = `<i class="fas fa-image" style="margin-right: 6px; font-size: 12px;"></i><span id="galleryCounterText">${currentGalleryIndex + 1} / ${currentGalleryImages.length}</span>`;
+        }
+    }
+    
+    // Show/hide navigation buttons based on image count
+    if (prevBtn) {
+        if (currentGalleryImages.length > 1) {
+            prevBtn.style.display = 'flex';
+            prevBtn.style.visibility = 'visible';
+            prevBtn.style.opacity = '1';
+        } else {
+            prevBtn.style.display = 'none';
+        }
+    }
+    if (nextBtn) {
+        if (currentGalleryImages.length > 1) {
+            nextBtn.style.display = 'flex';
+            nextBtn.style.visibility = 'visible';
+            nextBtn.style.opacity = '1';
+        } else {
+            nextBtn.style.display = 'none';
+        }
+    }
+}
+
+// Add keyboard navigation for gallery modal
+document.addEventListener('keydown', function(e) {
+    const modal = document.getElementById('galleryModal');
+    if (!modal || modal.style.display === 'none') return;
+    
+    if (e.key === 'Escape') {
+        window.closeGalleryModal();
+    } else if (e.key === 'ArrowLeft') {
+        window.prevGalleryImage();
+    } else if (e.key === 'ArrowRight') {
+        window.nextGalleryImage();
+    }
+});
 
 // Render Details Tab
 function renderDetailsTab(station) {
@@ -366,6 +571,75 @@ function renderDetailsTab(station) {
                     </div>
                 </div>
                 ` : ''}
+        </div>
+    `;
+}
+
+// Render Gallery Tab
+function renderGalleryTab(station) {
+    if (!station) {
+        return '<div style="background: white; border: 1px solid #e9ecef; border-radius: 16px; padding: 40px 20px; text-align: center; color: #6c757d;">Gallery not available</div>';
+    }
+    
+    // Get gallery images
+    const galleryImages = station?.galleryImages || [];
+    const galleryImagesArray = Array.isArray(galleryImages) ? galleryImages : [];
+    
+    if (galleryImagesArray.length === 0) {
+        return `
+            <div style="background: white; border: 1px solid #e9ecef; border-radius: 16px; padding: 60px 20px; text-align: center; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);">
+                <div style="width: 80px; height: 80px; background: linear-gradient(135deg, #667eea15 0%, #667eea25 100%); border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 20px;">
+                    <i class="fas fa-images" style="font-size: 36px; color: #667eea;"></i>
+                </div>
+                <h3 style="margin: 0 0 8px 0; font-size: 18px; font-weight: 600; color: #212529;">No Images Available</h3>
+                <p style="margin: 0; font-size: 14px; color: #6c757d;">This station doesn't have any gallery images yet.</p>
+            </div>
+        `;
+    }
+    
+    // Calculate grid columns based on number of images
+    const numImages = galleryImagesArray.length;
+    let gridCols = 2;
+    let maxWidth = '100%';
+    if (numImages === 1) {
+        gridCols = 1;
+        maxWidth = '300px'; // Limit single image size
+    } else if (numImages === 2) {
+        gridCols = 2;
+    } else if (numImages <= 4) {
+        gridCols = 2;
+    } else if (numImages <= 6) {
+        gridCols = 3;
+    } else {
+        gridCols = 3;
+    }
+    
+    return `
+        <div class="gallery-tab-content">
+            <div style="display: grid; grid-template-columns: repeat(${gridCols}, 1fr); gap: 12px; ${numImages === 1 ? 'justify-items: center;' : ''}">
+                ${galleryImagesArray.map((img, index) => `
+                    <div style="aspect-ratio: 1; border-radius: 16px; overflow: hidden; position: relative; cursor: pointer; box-shadow: 0 4px 12px rgba(0,0,0,0.15); transition: all 0.3s ease; background: #f0f0f0; ${numImages === 1 ? `max-width: ${maxWidth}; width: 100%;` : 'width: 100%;'}"
+                         onclick="window.openGalleryModal(${index})"
+                         onmouseover="this.style.transform='translateY(-4px)'; this.style.boxShadow='0 8px 20px rgba(0,0,0,0.25)'"
+                         onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 12px rgba(0,0,0,0.15)'">
+                        <img src="${img.path}" 
+                             alt="Gallery image ${index + 1}" 
+                             style="width: 100%; height: 100%; object-fit: cover; transition: transform 0.3s ease;"
+                             onerror="this.style.display='none'; this.parentElement.style.background='#f0f0f0'; this.parentElement.innerHTML='<div style=\\'width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: #6c757d;\\'><i class=\\'fas fa-image\\' style=\\'font-size: 32px;\\'></i></div>';"
+                             onmouseover="this.style.transform='scale(1.1)'"
+                             onmouseout="this.style.transform='scale(1)'">
+                        <div style="position: absolute; inset: 0; background: linear-gradient(to top, rgba(0,0,0,0.3), transparent); opacity: 0; transition: opacity 0.3s;"
+                             onmouseover="this.style.opacity='1'"
+                             onmouseout="this.style.opacity='0'"></div>
+                        ${index === 0 ? `
+                            <div style="position: absolute; top: 8px; left: 8px; background: rgba(102, 126, 234, 0.9); color: white; padding: 4px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; backdrop-filter: blur(10px);">
+                                <i class="fas fa-star" style="font-size: 9px; margin-right: 4px;"></i>
+                                Cover
+                            </div>
+                        ` : ''}
+                    </div>
+                `).join('')}
+            </div>
         </div>
     `;
 }
@@ -607,10 +881,16 @@ window.switchStationTab = function(tab) {
     const appMain = document.getElementById('appMain');
     if (!appMain) return;
     
-    // Update sliding indicator
+    // Update sliding indicator for 3 tabs
     const indicator = appMain.querySelector('#tabIndicator');
     if (indicator) {
-        indicator.style.left = tab === 'details' ? '6px' : '50%';
+        if (tab === 'details') {
+            indicator.style.left = '6px';
+        } else if (tab === 'gallery') {
+            indicator.style.left = 'calc(33.333% + 2px)';
+        } else if (tab === 'charger') {
+            indicator.style.left = 'calc(66.666% - 2px)';
+        }
     }
     
     // Update toggle tabs
@@ -638,6 +918,16 @@ window.switchStationTab = function(tab) {
                 getStationDetails(stationId).then(response => {
                     if (response.success) {
                         content.innerHTML = renderDetailsTab(response.station);
+                    }
+                });
+            }
+        } else if (tab === 'gallery') {
+            // Re-fetch station details for gallery
+            const stationId = sessionStorage.getItem('lastStationId');
+            if (stationId) {
+                getStationDetails(stationId).then(response => {
+                    if (response.success) {
+                        content.innerHTML = renderGalleryTab(response.station);
                     }
                 });
             }

@@ -350,6 +350,29 @@ async function getOrganizationById(organizationIdOrId) {
     return null;
   }
 
+  // Parse documents if it's a string (JSONB can sometimes be returned as string)
+  let documents = [];
+  console.log('[getOrganizationById] Raw organization.documents:', organization.documents, 'Type:', typeof organization.documents);
+  if (organization.documents) {
+    if (typeof organization.documents === 'string') {
+      try {
+        documents = JSON.parse(organization.documents);
+        console.log('[getOrganizationById] Parsed documents from string:', documents);
+      } catch (e) {
+        console.warn('[getOrganizationById] Failed to parse documents JSON:', e);
+        documents = [];
+      }
+    } else if (Array.isArray(organization.documents)) {
+      documents = organization.documents;
+      console.log('[getOrganizationById] Documents is already an array:', documents);
+    } else {
+      console.log('[getOrganizationById] Documents is not string or array, type:', typeof organization.documents);
+    }
+  } else {
+    console.log('[getOrganizationById] No documents field or it is null/undefined');
+  }
+  console.log('[getOrganizationById] Final documents array:', documents);
+
   // Get counts - convert organization name to format used in stations.organization
   const orgNameForStation = organization.organizationName.toLowerCase().replace(/\s+/g, '_');
   
@@ -405,7 +428,7 @@ async function getOrganizationById(organizationIdOrId) {
     billingCity: organization.billingCity,
     billingState: organization.billingState,
     billingFullAddress: organization.billingFullAddress,
-    documents: organization.documents || [],
+    documents: documents,
     stations: stationCount,
     chargers: chargerCount,
     createdAt: organization.createdAt,
@@ -531,6 +554,26 @@ async function createOrganization(organizationData) {
  * Update organization
  */
 async function updateOrganization(organizationIdOrId, updateData) {
+  // Validate organizationIdOrId
+  // Can be either string (organizationId like "ORG-...") or number (id)
+  if (organizationIdOrId === undefined || organizationIdOrId === null || organizationIdOrId === 'undefined' || organizationIdOrId === 'null') {
+    return {
+      success: false,
+      error: 'Organization ID is required'
+    };
+  }
+  
+  // Check if it's an empty string
+  if (typeof organizationIdOrId === 'string' && organizationIdOrId.trim() === '') {
+    return {
+      success: false,
+      error: 'Organization ID is required'
+    };
+  }
+  
+  // Note: We don't validate if it's NaN here because organizationId can be a string
+  // The database query will handle validation by checking if the organization exists
+  
   const {
     organizationName,
     gstin,
@@ -556,21 +599,34 @@ async function updateOrganization(organizationIdOrId, updateData) {
   } = updateData;
 
   // Find organization by organizationId first, then fall back to id
-  let organization = await Organization.findOne({
-    where: {
-      organizationId: organizationIdOrId,
-      deleted: false
-    }
-  });
+  // organizationIdOrId could be:
+  // 1. A string organizationId (e.g., "ORG-1234567890-ABCDEF")
+  // 2. A numeric id (e.g., 1, 2, 3)
+  // 3. NaN (invalid) - should have been caught by validation, but handle gracefully
   
-  // If not found by organizationId, try by id (for backward compatibility)
-  if (!organization && !isNaN(parseInt(organizationIdOrId))) {
+  let organization = null;
+  
+  // First, try as string organizationId (most common case)
+  if (typeof organizationIdOrId === 'string' || (typeof organizationIdOrId !== 'number' && !isNaN(organizationIdOrId))) {
     organization = await Organization.findOne({
       where: {
-        id: parseInt(organizationIdOrId),
+        organizationId: organizationIdOrId,
         deleted: false
       }
     });
+  }
+  
+  // If not found by organizationId, try by numeric id (for backward compatibility)
+  if (!organization) {
+    const numericId = typeof organizationIdOrId === 'number' ? organizationIdOrId : parseInt(organizationIdOrId);
+    if (!isNaN(numericId) && numericId > 0) {
+      organization = await Organization.findOne({
+        where: {
+          id: numericId,
+          deleted: false
+        }
+      });
+    }
   }
 
   if (!organization) {
@@ -586,7 +642,7 @@ async function updateOrganization(organizationIdOrId, updateData) {
       where: {
         organizationName,
         deleted: false,
-        id: { [Op.ne]: id }
+        id: { [Op.ne]: organization.id }
       }
     });
 
@@ -623,13 +679,23 @@ async function updateOrganization(organizationIdOrId, updateData) {
   if (billingCity !== undefined) updateFields.billingCity = billingCity;
   if (billingState !== undefined) updateFields.billingState = billingState;
   if (billingFullAddress !== undefined) updateFields.billingFullAddress = billingFullAddress;
-  if (documents !== undefined) updateFields.documents = documents;
+  if (documents !== undefined) {
+    console.log('[updateOrganization] Setting documents:', documents.length, documents);
+    updateFields.documents = documents;
+  } else {
+    console.log('[updateOrganization] documents is undefined, not updating documents field');
+  }
+
+  console.log('[updateOrganization] Update fields:', JSON.stringify(updateFields, null, 2));
 
   // Update organization
   await organization.update(updateFields);
+  
+  console.log('[updateOrganization] Organization updated, reloading...');
 
   // Reload to get updated data
   await organization.reload();
+  console.log('[updateOrganization] Organization reloaded, documents:', organization.documents);
 
   // Get counts - convert organization name to format used in stations.organization
   const orgNameForStation = organization.organizationName.toLowerCase().replace(/\s+/g, '_');

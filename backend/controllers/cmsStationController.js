@@ -167,6 +167,13 @@ exports.updateStation = async (req, res) => {
   try {
     const { stationId } = req.params;
     
+    // Debug: Log all request data
+    console.log(`[Update Station Backend] ===== START UPDATE REQUEST =====`);
+    console.log(`[Update Station Backend] Station ID: ${stationId}`);
+    console.log(`[Update Station Backend] req.files:`, req.files ? req.files.map(f => ({ fieldname: f.fieldname, originalname: f.originalname })) : 'null');
+    console.log(`[Update Station Backend] req.body keys:`, Object.keys(req.body || {}));
+    console.log(`[Update Station Backend] Gallery-related body keys:`, Object.keys(req.body || {}).filter(k => k.includes('galleryImages')));
+    
     // Handle gallery images from FormData
     let galleryImages = undefined;
     
@@ -189,6 +196,11 @@ exports.updateStation = async (req, res) => {
       if (hasGalleryFields) {
         const galleryData = {};
         
+        console.log(`[Update Station Backend] Received ${galleryFiles.length} gallery files`);
+        galleryFiles.forEach(file => {
+          console.log(`[Update Station Backend] File fieldname: ${file.fieldname}`);
+        });
+        
         // Group files by index
         galleryFiles.forEach(file => {
           const match = file.fieldname.match(/galleryImages\[(\d+)\]\[file\]/);
@@ -198,53 +210,125 @@ exports.updateStation = async (req, res) => {
               galleryData[index] = {};
             }
             galleryData[index].file = file;
+            console.log(`[Update Station Backend] Added file for index ${index}: ${file.originalname}`);
           }
         });
         
-        // Get gallery image names and paths from body
+        // Get gallery image names, paths, and dates from body
+        // FormData with array notation might be parsed as nested objects or flat keys
+        console.log(`[Update Station Backend] Processing req.body keys:`, Object.keys(req.body).filter(k => k.includes('galleryImages')));
+        console.log(`[Update Station Backend] Full req.body sample:`, JSON.stringify(req.body).substring(0, 500));
+        
         if (req.body) {
+          // First, try flat keys (galleryImages[0][name], etc.)
           Object.keys(req.body).forEach(key => {
             const nameMatch = key.match(/galleryImages\[(\d+)\]\[name\]/);
             const pathMatch = key.match(/galleryImages\[(\d+)\]\[path\]/);
+            const dateMatch = key.match(/galleryImages\[(\d+)\]\[date\]/);
             if (nameMatch) {
               const index = nameMatch[1];
               if (!galleryData[index]) {
                 galleryData[index] = {};
               }
               galleryData[index].name = req.body[key];
+              console.log(`[Update Station Backend] Added name for index ${index}: ${req.body[key]}`);
             } else if (pathMatch) {
               const index = pathMatch[1];
               if (!galleryData[index]) {
                 galleryData[index] = {};
               }
               galleryData[index].path = req.body[key];
+              console.log(`[Update Station Backend] Added path for index ${index}: ${req.body[key]}`);
+            } else if (dateMatch) {
+              const index = dateMatch[1];
+              if (!galleryData[index]) {
+                galleryData[index] = {};
+              }
+              galleryData[index].date = req.body[key];
+              console.log(`[Update Station Backend] Added date for index ${index}: ${req.body[key]}`);
             }
           });
+          
+          // Also check if body parser created nested objects (galleryImages: { 0: { name: ... } })
+          if (req.body.galleryImages && typeof req.body.galleryImages === 'object') {
+            console.log(`[Update Station Backend] Found nested galleryImages object in req.body`);
+            Object.keys(req.body.galleryImages).forEach(index => {
+              const imgData = req.body.galleryImages[index];
+              if (imgData && typeof imgData === 'object') {
+                if (!galleryData[index]) {
+                  galleryData[index] = {};
+                }
+                if (imgData.name) galleryData[index].name = imgData.name;
+                if (imgData.path) galleryData[index].path = imgData.path;
+                if (imgData.date) galleryData[index].date = imgData.date;
+                console.log(`[Update Station Backend] Added nested data for index ${index}:`, imgData);
+              }
+            });
+          }
         }
         
+        console.log(`[Update Station Backend] Gallery data indices:`, Object.keys(galleryData));
+        Object.keys(galleryData).forEach(index => {
+          console.log(`[Update Station Backend] Index ${index}:`, {
+            hasFile: !!galleryData[index].file,
+            hasPath: !!galleryData[index].path,
+            name: galleryData[index].name
+          });
+        });
+        
         // Build gallery images array from all gallery data
+        // IMPORTANT: Preserve existing images and add new ones
+        // The frontend should send ALL images (both existing and new), so we use what's sent
         galleryImages = [];
-        Object.keys(galleryData).sort((a, b) => parseInt(a) - parseInt(b)).forEach(index => {
+        const sortedIndices = Object.keys(galleryData).sort((a, b) => parseInt(a) - parseInt(b));
+        console.log(`[Update Station Backend] Processing ${sortedIndices.length} gallery data entries with indices:`, sortedIndices);
+        
+        sortedIndices.forEach(index => {
           const img = galleryData[index];
+          console.log(`[Update Station Backend] Processing index ${index}:`, {
+            hasFile: !!img.file,
+            hasPath: !!img.path,
+            name: img.name,
+            date: img.date
+          });
+          
           if (img.file) {
-            // New file uploaded
-            const imgName = img.name || img.file.originalname || `Image ${index}`;
-            galleryImages.push({
+            // New file uploaded - use new file path
+            const imgName = img.name || img.file.originalname.replace(/\.[^/.]+$/, '') || `Image ${index}`;
+            const imageObj = {
               name: imgName,
               path: `/uploads/stations/gallery/${img.file.filename}`,
-              date: new Date().toLocaleDateString()
-            });
+              date: img.date || new Date().toLocaleDateString()
+            };
+            galleryImages.push(imageObj);
+            console.log(`[Update Station Backend] Added new image for index ${index}:`, imageObj);
           } else if (img.path) {
             // Existing image (no new file, just keeping it)
             // Use provided name or generate from path
             const imageName = img.name || img.path.split('/').pop().replace(/\.[^/.]+$/, '') || `Image ${index}`;
-            galleryImages.push({
+            const imageObj = {
               name: imageName,
               path: img.path,
               date: img.date || new Date().toLocaleDateString()
-            });
+            };
+            galleryImages.push(imageObj);
+            console.log(`[Update Station Backend] Added existing image for index ${index}:`, imageObj);
+          } else {
+            console.warn(`[Update Station Backend] Skipping index ${index} - no file or path`);
           }
         });
+        
+        console.log(`[Update Station Backend] Final gallery images array length: ${galleryImages.length}`);
+        console.log(`[Update Station Backend] Final gallery images:`, galleryImages.map((img, idx) => ({
+          index: idx,
+          name: img.name,
+          path: img.path,
+          date: img.date
+        })));
+      } else {
+        // No gallery fields in request - preserve existing images by not setting galleryImages
+        // This means galleryImages will remain undefined and won't be updated
+        console.log('[Update Station] No gallery images in request - preserving existing images');
       }
     }
     
@@ -277,6 +361,11 @@ exports.updateStation = async (req, res) => {
       galleryImages: galleryImages
     };
     
+    // Debug: Log what we're sending to service
+    console.log(`[Update Station Backend] Sending to service - galleryImages:`, galleryImages);
+    console.log(`[Update Station Backend] galleryImages length:`, galleryImages ? galleryImages.length : 'undefined');
+    console.log(`[Update Station Backend] galleryImages content:`, galleryImages);
+    
     const result = await cmsStationService.updateStation(stationId, updateData);
 
     if (!result) {
@@ -285,6 +374,11 @@ exports.updateStation = async (req, res) => {
         message: 'Station not found'
       });
     }
+
+    // Debug: Log what service returned
+    console.log(`[Update Station Backend] Service returned - galleryImages:`, result.station?.galleryImages);
+    console.log(`[Update Station Backend] Service returned - galleryImages length:`, result.station?.galleryImages?.length || 0);
+    console.log(`[Update Station Backend] ===== END UPDATE REQUEST =====`);
 
     res.status(200).json(result);
   } catch (error) {

@@ -923,8 +923,13 @@ export function openAddStationForm() {
     // Load organizations into dropdown
     loadOrganizations();
     
-    // Initialize gallery images
-    uploadedGalleryImages = [];
+    // Initialize gallery images - only reset if not in edit mode
+    // (When editing, fillEditFormData will load existing images, so don't reset here)
+    // We'll check if we're in edit mode by checking if the form already has an ID of 'editStationForm'
+    const isEditMode = document.getElementById('editStationForm') !== null;
+    if (!isEditMode) {
+        uploadedGalleryImages = [];
+    }
     
     // Setup global functions for gallery images
     window.handleGalleryImageFileSelect = handleGalleryImageFileSelect;
@@ -1490,15 +1495,40 @@ function fillEditFormData(station, stationId) {
     }
     
     // Load existing gallery images
-    uploadedGalleryImages = [];
-    if (station.galleryImages && Array.isArray(station.galleryImages)) {
-        uploadedGalleryImages = station.galleryImages.map((img, index) => ({
-            id: img.id || Date.now() + index,
-            name: img.name || `Image ${index + 1}`,
-            date: img.date || new Date().toLocaleDateString(),
-            path: img.path
-        }));
+    // IMPORTANT: Always preserve any new images that might have been added before this function runs
+    const newImages = uploadedGalleryImages.filter(img => img.file); // New images have files
+    const existingImagePaths = station.galleryImages && Array.isArray(station.galleryImages) 
+        ? station.galleryImages.map(img => img.path).filter(Boolean)
+        : [];
+    
+    // Start fresh but preserve new uploads
+    uploadedGalleryImages = [...newImages];
+    
+    // Load existing images from station
+    if (station.galleryImages && Array.isArray(station.galleryImages) && station.galleryImages.length > 0) {
+        station.galleryImages.forEach((img, index) => {
+            // Only add if it's not already in the array (avoid duplicates)
+            const alreadyExists = uploadedGalleryImages.some(existing => 
+                existing.path === img.path || (existing.file && existing.name === img.name)
+            );
+            if (!alreadyExists) {
+                uploadedGalleryImages.push({
+                    id: img.id || `existing-${Date.now()}-${index}-${Math.random()}`,
+                    name: img.name || `Image ${uploadedGalleryImages.length + 1}`,
+                    date: img.date || new Date().toLocaleDateString(),
+                    path: img.path
+                });
+            }
+        });
+        console.log(`[Edit Form] Loaded ${station.galleryImages.length} existing gallery images. Total now: ${uploadedGalleryImages.length}`);
+    }
+    
+    if (uploadedGalleryImages.length > 0) {
         renderGalleryImagesTable();
+    } else {
+        // Hide table if no images
+        const table = document.getElementById('galleryImagesTable');
+        if (table) table.style.display = 'none';
     }
 }
 
@@ -1607,19 +1637,46 @@ export async function handleUpdateStationSubmit(event, stationId) {
         });
     }
     
-    // Add gallery images - if empty array, send empty array to clear all images
-    if (uploadedGalleryImages.length === 0) {
+    // Add gallery images - preserve existing images and add new ones
+    // If empty array, send empty array to clear all images
+    console.log(`[Update Station] Preparing to send ${uploadedGalleryImages.length} gallery images`);
+    
+    // Validate that we have images to send
+    const imagesToSend = uploadedGalleryImages.filter(img => img.file || img.path);
+    console.log(`[Update Station] Valid images to send: ${imagesToSend.length} (filtered from ${uploadedGalleryImages.length} total)`);
+    
+    if (imagesToSend.length === 0) {
         formDataToSend.append('clearGalleryImages', 'true');
+        console.log('[Update Station] No valid images - clearing gallery');
     } else {
-        uploadedGalleryImages.forEach((img, index) => {
+        // Send all images (both existing with paths and new with files)
+        imagesToSend.forEach((img, index) => {
+            // If it's a new file upload, append the file (don't send old path for new uploads)
             if (img.file) {
                 formDataToSend.append(`galleryImages[${index}][file]`, img.file);
+                console.log(`[Update Station] Appending new file for index ${index}:`, img.file.name);
             }
-            formDataToSend.append(`galleryImages[${index}][name]`, img.name);
-            if (img.path) {
+            // Always append name
+            formDataToSend.append(`galleryImages[${index}][name]`, img.name || `Image ${index + 1}`);
+            // CRITICAL: Only send path if it's an existing image (has path but NO file)
+            // This preserves existing images when no new file is uploaded for that image
+            if (img.path && !img.file) {
                 formDataToSend.append(`galleryImages[${index}][path]`, img.path);
+                console.log(`[Update Station] Appending existing path for index ${index}:`, img.path);
+            }
+            // If it has a date, preserve it
+            if (img.date) {
+                formDataToSend.append(`galleryImages[${index}][date]`, img.date);
             }
         });
+        console.log(`[Update Station] Sent ${imagesToSend.length} images to backend`);
+        console.log(`[Update Station] Final images breakdown:`, imagesToSend.map((img, idx) => ({
+            index: idx,
+            name: img.name,
+            hasFile: !!img.file,
+            hasPath: !!img.path,
+            path: img.path
+        })));
     }
     
     // Disable submit button
@@ -1665,16 +1722,27 @@ function handleGalleryImageFileSelect(event) {
     }
     
     // Add all selected images to the list directly
+    // IMPORTANT: This preserves existing images and adds new ones
+    const imagesBefore = uploadedGalleryImages.length;
     files.forEach((file, index) => {
         const imageName = file.name.replace(/\.[^/.]+$/, ''); // Remove extension for name
         const imageItem = {
-            id: Date.now() + index,
+            id: Date.now() + Math.random() + index, // More unique ID to avoid conflicts
             file: file,
             name: imageName || `Image ${uploadedGalleryImages.length + index + 1}`,
             date: new Date().toLocaleDateString()
         };
         uploadedGalleryImages.push(imageItem);
     });
+    
+    console.log(`[Gallery] Added ${files.length} new image(s). Images before: ${imagesBefore}, Total now: ${uploadedGalleryImages.length}`);
+    console.log(`[Gallery] Current images breakdown:`, uploadedGalleryImages.map((img, idx) => ({
+        index: idx,
+        name: img.name,
+        hasFile: !!img.file,
+        hasPath: !!img.path,
+        id: img.id
+    })));
     
     // Render the table
     renderGalleryImagesTable();

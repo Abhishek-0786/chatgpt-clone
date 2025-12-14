@@ -7,8 +7,12 @@ import { showSuccess, showError, showWarning } from '../utils/notifications.js';
 let uploadedDocuments = [];
 
 // Export function to open add organization form
-export function openAddOrganizationForm() {
-    uploadedDocuments = [];
+// preserveDocuments: if true, don't reset uploadedDocuments (used when opening for edit)
+export function openAddOrganizationForm(preserveDocuments = false) {
+    // Only reset uploadedDocuments if we're starting fresh (not preserving for edit mode)
+    if (!preserveDocuments) {
+        uploadedDocuments = [];
+    }
     const moduleContent = document.getElementById('moduleContent');
     moduleContent.innerHTML = `
         <style>
@@ -1087,6 +1091,13 @@ function renderDocumentsTable() {
     const table = document.getElementById('documentsTable');
     const tbody = document.getElementById('documentsTableBody');
     
+    if (!table || !tbody) {
+        console.warn('[renderDocumentsTable] Table elements not found in DOM');
+        return;
+    }
+    
+    console.log('[renderDocumentsTable] Rendering', uploadedDocuments.length, 'documents');
+    
     if (uploadedDocuments.length === 0) {
         table.style.display = 'none';
         return;
@@ -1197,10 +1208,19 @@ export async function openEditOrganizationForm(organizationId) {
         
         const org = response.data.organization;
         
-        // Open the add form first
-        openAddOrganizationForm();
+        // Preserve any new documents that were added before opening edit form
+        const existingNewDocuments = uploadedDocuments.filter(doc => doc.file); // New documents with files
+        
+        // Open the add form first, but preserve documents so fillEditFormData can merge them
+        openAddOrganizationForm(true); // Pass true to preserve documents
+        
+        // Restore any new documents that were added before opening edit form
+        if (existingNewDocuments.length > 0) {
+            uploadedDocuments = [...existingNewDocuments];
+        }
         
         // Wait for DOM to be ready, then fill in the values
+        // fillEditFormData will merge organization documents with any existing new documents
         setTimeout(() => {
             fillEditFormData(org, organizationId);
         }, 200);
@@ -1350,15 +1370,40 @@ function fillEditFormData(org, organizationId) {
         if (textarea) textarea.value = org.billingFullAddress;
     }
     
-    // Load existing documents
+    // Load existing documents - merge with any new documents that might have been added
     if (org.documents && Array.isArray(org.documents)) {
-        uploadedDocuments = org.documents.map((doc, index) => ({
-            id: doc.id || Date.now() + index,
-            name: doc.name,
-            date: doc.date || new Date().toLocaleDateString(),
-            path: doc.path
-        }));
-        renderDocumentsTable();
+        console.log('[Fill Edit Form] Organization documents:', org.documents);
+        console.log('[Fill Edit Form] Current uploadedDocuments before merge:', uploadedDocuments);
+        
+        // Get existing document paths to avoid duplicates
+        const existingPaths = new Set(uploadedDocuments.filter(doc => doc.path).map(doc => doc.path));
+        
+        // Add existing documents from the organization, but don't overwrite if they already exist
+        org.documents.forEach((doc, index) => {
+            // Only add if this document path doesn't already exist in uploadedDocuments
+            if (!existingPaths.has(doc.path)) {
+                uploadedDocuments.push({
+                    id: doc.id || Date.now() + index,
+                    name: doc.name,
+                    date: doc.date || new Date().toLocaleDateString(),
+                    path: doc.path
+                });
+            }
+        });
+        
+        console.log('[Fill Edit Form] Final uploadedDocuments after merge:', uploadedDocuments);
+        
+        // Ensure DOM is ready before rendering table
+        setTimeout(() => {
+            renderDocumentsTable();
+            console.log('[Fill Edit Form] Documents table rendered with', uploadedDocuments.length, 'documents');
+        }, 50);
+    } else {
+        console.log('[Fill Edit Form] No documents in organization or not an array');
+        // Still render the table in case there are new documents added
+        setTimeout(() => {
+            renderDocumentsTable();
+        }, 50);
     }
 }
 
@@ -1384,18 +1429,47 @@ async function handleUpdateOrganizationSubmit(event, organizationId) {
         }
         
         // Add documents - if empty array, send empty array to clear all documents
+        console.log('[Update Organization] Uploaded documents count:', uploadedDocuments.length);
+        console.log('[Update Organization] Documents:', uploadedDocuments);
+        
         if (uploadedDocuments.length === 0) {
             formData.append('clearDocuments', 'true');
         } else {
-            uploadedDocuments.forEach((doc, index) => {
+            // Filter out invalid documents (must have either file or path, and must have name)
+            const validDocuments = uploadedDocuments.filter(doc => doc.name && (doc.file || doc.path));
+            console.log('[Update Organization] Valid documents count:', validDocuments.length);
+            
+            validDocuments.forEach((doc, index) => {
+                console.log(`[Update Organization] Appending document at index ${index}:`, {
+                    hasFile: !!doc.file,
+                    name: doc.name,
+                    hasPath: !!doc.path,
+                    path: doc.path,
+                    date: doc.date
+                });
+                
                 if (doc.file) {
                     formData.append(`documents[${index}][file]`, doc.file);
+                    console.log(`[Update Organization] Appended file for index ${index}`);
                 }
                 formData.append(`documents[${index}][name]`, doc.name);
+                console.log(`[Update Organization] Appended name for index ${index}:`, doc.name);
+                
                 if (doc.path) {
                     formData.append(`documents[${index}][path]`, doc.path);
+                    console.log(`[Update Organization] Appended path for index ${index}:`, doc.path);
+                }
+                if (doc.date) {
+                    formData.append(`documents[${index}][date]`, doc.date);
+                    console.log(`[Update Organization] Appended date for index ${index}:`, doc.date);
                 }
             });
+            
+            // Log all FormData entries for debugging
+            console.log('[Update Organization] FormData entries:');
+            for (let pair of formData.entries()) {
+                console.log(`  ${pair[0]}:`, pair[1]);
+            }
         }
         
         const response = await updateOrganization(organizationId, formData);

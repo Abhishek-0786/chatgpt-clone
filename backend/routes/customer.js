@@ -12,6 +12,7 @@ const walletService = require('../services/walletService');
 // Import remaining models and services for routes not yet refactored
 const { Customer, Station, ChargingPoint, Connector, Tariff, Vehicle, Wallet, WalletTransaction, ChargingSession } = require('../models');
 const { Op } = require('sequelize');
+const sequelize = require('../config/database');
 const Charger = require('../models/Charger');
 const ChargerData = require('../models/ChargerData');
 const axios = require('axios');
@@ -955,17 +956,47 @@ router.get('/stations', async (req, res) => {
 /**
  * GET /api/user/stations/:stationId
  * Get single station by stationId
+ * NOTE: This route is handled by stationController.getStationById (line 415)
+ * Keeping this as a comment for reference - the actual handler is in the controller
  */
+/* DUPLICATE ROUTE - REMOVED - Using stationController.getStationById instead
 router.get('/stations/:stationId', async (req, res) => {
   try {
     const { stationId } = req.params;
 
-    const station = await Station.findOne({
-      where: {
-        stationId,
-        deleted: false
+    let station;
+    try {
+      // First try with all attributes (default behavior)
+      station = await Station.findOne({
+        where: {
+          stationId,
+          deleted: false
+        }
+        // Don't specify attributes - get all columns including galleryImages
+      });
+    } catch (dbError) {
+      // If error is about missing column, try raw query
+      if (dbError.message && dbError.message.includes('galleryImages')) {
+        console.log('GalleryImages column error, trying raw query...');
+        const [results] = await sequelize.query(
+          `SELECT * FROM "stations" WHERE "stationId" = :stationId AND "deleted" = false`,
+          {
+            replacements: { stationId },
+            type: sequelize.QueryTypes.SELECT
+          }
+        );
+        if (results && results.length > 0) {
+          // Create a station-like object from raw query
+          station = { dataValues: results[0] };
+          // Copy properties to station object
+          Object.keys(results[0]).forEach(key => {
+            station[key] = results[0][key];
+          });
+        }
+      } else {
+        throw dbError;
       }
-    });
+    }
 
     if (!station) {
       return res.status(404).json({
@@ -1019,43 +1050,136 @@ router.get('/stations/:stationId', async (req, res) => {
     };
     const organization = orgMap[station.organization] || station.organization;
 
+    // Parse gallery images (handle JSONB objects, JSON strings, and arrays)
+    let galleryImages = [];
+    try {
+      // Get galleryImages from Sequelize model - try multiple access methods
+      let rawGalleryImages = station.galleryImages || 
+                            (station.dataValues && station.dataValues.galleryImages) || 
+                            (station.get ? station.get('galleryImages') : null);
+      
+      // If still not found, try toJSON()
+      if (!rawGalleryImages && station.toJSON) {
+        const stationPlain = station.toJSON();
+        rawGalleryImages = stationPlain.galleryImages;
+      }
+      
+      console.log(`[Station Detail API] Station ${stationId} - Raw galleryImages:`, rawGalleryImages);
+      console.log(`[Station Detail API] Station ${stationId} - Type:`, typeof rawGalleryImages);
+      console.log(`[Station Detail API] Station ${stationId} - Is Array:`, Array.isArray(rawGalleryImages));
+      
+      // Process galleryImages based on its type
+      if (rawGalleryImages !== undefined && rawGalleryImages !== null) {
+        if (typeof rawGalleryImages === 'string') {
+          // If it's a string, try to parse it as JSON
+          try {
+            galleryImages = JSON.parse(rawGalleryImages);
+            // Ensure it's an array
+            if (!Array.isArray(galleryImages)) {
+              galleryImages = [];
+            }
+          } catch (e) {
+            console.error('[Station Detail API] Error parsing galleryImages JSON string:', e);
+            galleryImages = [];
+          }
+        } else if (Array.isArray(rawGalleryImages)) {
+          // If it's already an array, use it directly
+          galleryImages = rawGalleryImages;
+        } else if (typeof rawGalleryImages === 'object') {
+          // If it's an object but not an array, try to convert
+          // This shouldn't happen with JSONB, but handle it just in case
+          galleryImages = [];
+        }
+      } else {
+        // If galleryImages is null/undefined, try raw query as fallback
+        console.log(`[Station Detail API] galleryImages is null/undefined, trying raw query fallback...`);
+        try {
+          const [results] = await sequelize.query(
+            `SELECT "galleryImages" FROM "stations" WHERE "stationId" = :stationId AND "deleted" = false`,
+            {
+              replacements: { stationId },
+              type: sequelize.QueryTypes.SELECT
+            }
+          );
+          
+          if (results && results.length > 0 && results[0].galleryImages) {
+            const dbGalleryImages = results[0].galleryImages;
+            if (Array.isArray(dbGalleryImages)) {
+              galleryImages = dbGalleryImages;
+            } else if (typeof dbGalleryImages === 'string') {
+              try {
+                galleryImages = JSON.parse(dbGalleryImages);
+                if (!Array.isArray(galleryImages)) galleryImages = [];
+              } catch (e) {
+                galleryImages = [];
+              }
+            }
+          }
+        } catch (rawQueryError) {
+          console.error('[Station Detail API] Raw query fallback error:', rawQueryError.message);
+        }
+      }
+      
+      console.log(`[Station Detail API] Final Gallery Images for Station ${stationId}:`, JSON.stringify(galleryImages));
+      console.log(`[Station Detail API] Gallery Images count:`, galleryImages.length);
+    } catch (error) {
+      console.error('[Station Detail API] Error processing gallery images:', error);
+      console.error('[Station Detail API] Error stack:', error.stack);
+      galleryImages = [];
+    }
+
+    // Ensure galleryImages is always an array (never undefined or null)
+    if (!Array.isArray(galleryImages)) {
+      console.warn(`[Station Detail API] galleryImages is not an array, converting to empty array. Type: ${typeof galleryImages}, Value:`, galleryImages);
+      galleryImages = [];
+    }
+
+    // Build response object
+    const stationResponse = {
+      id: station.id,
+      stationId: station.stationId,
+      stationName: station.stationName,
+      organization: organization,
+      status: stationStatus,
+      // Specifications
+      powerCapacity: station.powerCapacity ? parseFloat(station.powerCapacity) : null,
+      gridPhase: station.gridPhase,
+      // Location
+      pinCode: station.pinCode,
+      city: station.city,
+      state: station.state,
+      country: station.country,
+      latitude: station.latitude ? parseFloat(station.latitude) : null,
+      longitude: station.longitude ? parseFloat(station.longitude) : null,
+      fullAddress: station.fullAddress,
+      // General / Other Details
+      openingTime: station.openingTime,
+      closingTime: station.closingTime,
+      open24Hours: station.open24Hours,
+      workingDays: station.workingDays || [],
+      allDays: station.allDays,
+      contactNumber: station.contactNumber,
+      inchargeName: station.inchargeName,
+      ownerName: station.ownerName,
+      ownerContact: station.ownerContact,
+      sessionStartStopSMS: station.sessionStartStopSMS,
+      // Amenities
+      amenities: station.amenities || [],
+      // Gallery Images - ALWAYS include this field
+      galleryImages: galleryImages,
+      // Metadata
+      createdBy: station.createdBy,
+      createdAt: station.createdAt,
+      updatedAt: station.updatedAt
+    };
+
+    console.log(`[Station Detail API] Sending response for Station ${stationId}`);
+    console.log(`[Station Detail API] Response includes galleryImages:`, 'galleryImages' in stationResponse);
+    console.log(`[Station Detail API] galleryImages value in response:`, JSON.stringify(stationResponse.galleryImages));
+
     res.json({
       success: true,
-      station: {
-        id: station.id,
-        stationId: station.stationId,
-        stationName: station.stationName,
-        organization: organization,
-        status: stationStatus,
-        // Specifications
-        powerCapacity: station.powerCapacity ? parseFloat(station.powerCapacity) : null,
-        gridPhase: station.gridPhase,
-        // Location
-        pinCode: station.pinCode,
-        city: station.city,
-        state: station.state,
-        country: station.country,
-        latitude: station.latitude ? parseFloat(station.latitude) : null,
-        longitude: station.longitude ? parseFloat(station.longitude) : null,
-        fullAddress: station.fullAddress,
-        // General / Other Details
-        openingTime: station.openingTime,
-        closingTime: station.closingTime,
-        open24Hours: station.open24Hours,
-        workingDays: station.workingDays || [],
-        allDays: station.allDays,
-        contactNumber: station.contactNumber,
-        inchargeName: station.inchargeName,
-        ownerName: station.ownerName,
-        ownerContact: station.ownerContact,
-        sessionStartStopSMS: station.sessionStartStopSMS,
-        // Amenities
-        amenities: station.amenities || [],
-        // Metadata
-        createdBy: station.createdBy,
-        createdAt: station.createdAt,
-        updatedAt: station.updatedAt
-      }
+      station: stationResponse
     });
   } catch (error) {
     console.error('Error fetching station:', error);

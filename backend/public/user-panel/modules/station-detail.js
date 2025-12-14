@@ -27,6 +27,9 @@ export async function loadStationDetail(stationId, stationName) {
     
     const appMain = document.getElementById('appMain');
     
+    // Scroll to top immediately when loading station detail
+    window.scrollTo({ top: 0, behavior: 'instant' });
+    
     // Refresh wallet balance
     await refreshWalletBalance();
     
@@ -217,6 +220,11 @@ export async function loadStationDetail(stationId, stationName) {
         if (currentTab === 'charger') {
             attachChargerTabListeners();
         }
+        
+        // Ensure scroll to top after content is loaded
+        setTimeout(() => {
+            window.scrollTo({ top: 0, behavior: 'instant' });
+        }, 0);
         
     } catch (error) {
         console.error('Error loading station detail:', error);
@@ -1110,15 +1118,31 @@ window.openChargingPopup = async function(chargingPointId, connectorId, deviceId
         }
         
         // CRITICAL: Reset all form fields and button state when reopening modal
-        const vehicleSelect = document.getElementById(`popup-vehicle-select-${chargingPointId}-${connectorId}`);
+        const vehicleSelectId = `popup-vehicle-select-${chargingPointId}-${connectorId}`;
+        const hiddenInput = document.getElementById(vehicleSelectId);
+        const vehicleButtonText = document.getElementById(`custom-vehicle-text-${vehicleSelectId}`);
+        const vehicleButton = document.getElementById(`custom-vehicle-btn-${vehicleSelectId}`);
         const amountInput = document.getElementById(`popup-amount-input-${chargingPointId}-${connectorId}`);
         const startBtn = document.getElementById(`popup-start-btn-${chargingPointId}-${connectorId}`);
         const estimatedCost = document.getElementById(`estimated-cost-${modalId}`);
         
-        // Reset vehicle selection
-        if (vehicleSelect) {
-            vehicleSelect.value = '';
-            vehicleSelect.style.borderColor = '#e0e0e0';
+        // Reset vehicle selection (custom dropdown)
+        if (hiddenInput) {
+            hiddenInput.value = '';
+        }
+        if (vehicleButtonText) {
+            vehicleButtonText.textContent = 'Select Vehicle';
+        }
+        if (vehicleButton) {
+            vehicleButton.style.borderColor = '#e0e0e0';
+        }
+        const vehicleOptions = document.getElementById(`custom-vehicle-options-${vehicleSelectId}`);
+        if (vehicleOptions) {
+            vehicleOptions.style.display = 'none';
+        }
+        const vehicleArrow = document.getElementById(`custom-vehicle-arrow-${vehicleSelectId}`);
+        if (vehicleArrow) {
+            vehicleArrow.style.transform = 'translateY(-50%) rotate(0deg)';
         }
         
         // Reset amount input
@@ -1151,13 +1175,39 @@ window.openChargingPopup = async function(chargingPointId, connectorId, deviceId
         <div id="${modalId}" class="charging-popup-modal" data-charging-point-id="${chargingPointId}" data-connector-id="${connectorId}" 
              style="position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.5); 
                     z-index: 10000; display: flex; align-items: center; justify-content: center; 
-                    padding: 20px;"
+                    padding: 20px; overflow: hidden;"
              onclick="if(event.target.id === '${modalId}') window.closeChargingPopup('${modalId}')">
             <div class="charging-popup-content" data-charging-point-id="${chargingPointId}" data-connector-id="${connectorId}" 
                  data-wallet-balance="${walletBalance}"
                  style="background: white; border-radius: 16px; padding: 24px; width: 100%; max-width: 400px; 
-                        max-height: 90vh; overflow-y: auto; position: relative;"
+                        max-height: 90vh; overflow-y: auto; overflow-x: hidden; position: relative; box-sizing: border-box;"
                  onclick="event.stopPropagation()">
+                <style>
+                    /* Fix dropdown overflow in charging popup */
+                    #${modalId} {
+                        overflow: hidden !important;
+                        contain: layout style paint !important;
+                    }
+                    #${modalId} .charging-popup-content {
+                        overflow-x: hidden !important;
+                        overflow-y: auto !important;
+                        contain: layout style paint !important;
+                        position: relative !important;
+                    }
+                    #${modalId} select {
+                        width: 100% !important;
+                        max-width: 100% !important;
+                        box-sizing: border-box !important;
+                        word-wrap: break-word !important;
+                        overflow-wrap: break-word !important;
+                    }
+                    #${modalId} select option {
+                        max-width: 100% !important;
+                        word-wrap: break-word !important;
+                        overflow-wrap: break-word !important;
+                        white-space: normal !important;
+                    }
+                </style>
                 <!-- Close Button -->
                 <button onclick="window.closeChargingPopup('${modalId}')" 
                         style="position: absolute; top: 16px; right: 16px; background: none; border: none; 
@@ -1190,25 +1240,40 @@ window.openChargingPopup = async function(chargingPointId, connectorId, deviceId
                     </div>
                 </div>
                 
-                <!-- Vehicle Selection -->
-                <div style="margin-bottom: 16px;">
+                <!-- Vehicle Selection - Custom Dropdown -->
+                <div style="margin-bottom: 16px; position: relative; width: 100%; max-width: 100%;">
                     <label style="display: block; font-size: 13px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px;">
                         Select Vehicle
                     </label>
-                    <select id="${vehicleSelectId}" 
-                            style="width: 100%; padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px; background: white; color: var(--text-primary); outline: none; transition: border-color 0.2s;"
-                            onchange="this.style.borderColor='var(--primary-color)'; window.onVehicleSelectedInPopup('${modalId}', '${chargingPointId}', '${connectorId}')"
-                            onfocus="this.style.borderColor='var(--primary-color)'"
-                            onblur="this.style.borderColor='#e0e0e0'">
-                        <option value="">Select Vehicle</option>
-                        ${vehicles.length === 0 ? `
-                            <option value="" disabled>No vehicles found. Add a vehicle first.</option>
-                        ` : vehicles.map(vehicle => `
-                            <option value="${vehicle.id}">
-                                ${vehicle.vehicleNumber || 'Vehicle'} ${vehicle.vehicleType ? `(${vehicle.vehicleType})` : ''}
-                            </option>
-                        `).join('')}
-                    </select>
+                    <div id="custom-vehicle-dropdown-${vehicleSelectId}" 
+                         style="position: relative; width: 100%; max-width: 100%;">
+                        <!-- Custom Dropdown Button -->
+                        <button type="button" 
+                                id="custom-vehicle-btn-${vehicleSelectId}"
+                                onclick="window.toggleCustomVehicleDropdown('${vehicleSelectId}', '${modalId}', '${chargingPointId}', '${connectorId}')"
+                                style="width: 100%; padding: 12px 40px 12px 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px; background: white; color: var(--text-primary); outline: none; transition: border-color 0.2s; box-sizing: border-box; text-align: left; cursor: pointer; position: relative; min-height: 44px; display: flex; align-items: center;">
+                            <span id="custom-vehicle-text-${vehicleSelectId}" style="flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Select Vehicle</span>
+                            <i class="fas fa-chevron-down" style="position: absolute; right: 12px; top: 50%; transform: translateY(-50%); font-size: 12px; color: #6c757d; transition: transform 0.2s;" id="custom-vehicle-arrow-${vehicleSelectId}"></i>
+                        </button>
+                        <!-- Custom Dropdown Options -->
+                        <div id="custom-vehicle-options-${vehicleSelectId}" 
+                             style="display: none; position: absolute; top: 100%; left: 0; right: 0; background: white; border: 2px solid #e0e0e0; border-radius: 8px; margin-top: 4px; max-height: 200px; overflow-y: auto; z-index: 10001; box-shadow: 0 4px 12px rgba(0,0,0,0.15); width: 100%; box-sizing: border-box;">
+                            ${vehicles.length === 0 ? `
+                                <div style="padding: 12px; color: #6c757d; font-size: 14px; text-align: center;">No vehicles found. Add a vehicle first.</div>
+                            ` : vehicles.map(vehicle => `
+                                <div class="custom-vehicle-option" 
+                                     data-value="${vehicle.id}"
+                                     onclick="window.selectCustomVehicle('${vehicleSelectId}', '${vehicle.id}', '${(vehicle.vehicleNumber || 'Vehicle')} ${vehicle.vehicleType ? `(${vehicle.vehicleType})` : ''}', '${modalId}', '${chargingPointId}', '${connectorId}')"
+                                     onmouseover="this.style.background='#f8f9fa'"
+                                     onmouseout="this.style.background='white'"
+                                     style="padding: 12px; cursor: pointer; font-size: 14px; color: var(--text-primary); border-bottom: 1px solid #f0f0f0; transition: background 0.2s; word-wrap: break-word; overflow-wrap: break-word;">
+                                    ${vehicle.vehicleNumber || 'Vehicle'} ${vehicle.vehicleType ? `(${vehicle.vehicleType})` : ''}
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                    <!-- Hidden input to store selected value -->
+                    <input type="hidden" id="${vehicleSelectId}" value="">
                 </div>
                 
                 <!-- Amount Input -->
@@ -1250,8 +1315,33 @@ window.openChargingPopup = async function(chargingPointId, connectorId, deviceId
     // Append modal to body
     document.body.insertAdjacentHTML('beforeend', modalHTML);
     
-    // Add input restriction after modal is added to DOM
+    // Initialize custom dropdown after modal is added to DOM
     setTimeout(() => {
+        const customDropdown = document.getElementById(`custom-vehicle-dropdown-${vehicleSelectId}`);
+        const modalContent = document.getElementById(modalId)?.querySelector('.charging-popup-content');
+        
+        if (customDropdown && modalContent) {
+            // Ensure dropdown doesn't exceed modal width
+            customDropdown.style.maxWidth = '100%';
+            
+            // Close dropdown when clicking outside
+            document.addEventListener('click', function closeDropdownOnOutsideClick(e) {
+                const optionsDiv = document.getElementById(`custom-vehicle-options-${vehicleSelectId}`);
+                const button = document.getElementById(`custom-vehicle-btn-${vehicleSelectId}`);
+                
+                if (optionsDiv && button && !customDropdown.contains(e.target)) {
+                    optionsDiv.style.display = 'none';
+                    const arrow = document.getElementById(`custom-vehicle-arrow-${vehicleSelectId}`);
+                    if (arrow) {
+                        arrow.style.transform = 'translateY(-50%) rotate(0deg)';
+                    }
+                    // Remove listener after closing
+                    document.removeEventListener('click', closeDropdownOnOutsideClick);
+                }
+            });
+        }
+        
+        // Add input restriction
         const amountInput = document.getElementById(amountInputId);
         if (amountInput) {
             // Restrict input to wallet balance
@@ -1284,6 +1374,13 @@ window.openChargingPopup = async function(chargingPointId, connectorId, deviceId
 window.closeChargingPopup = function(modalId) {
     const modal = document.getElementById(modalId);
     if (modal) {
+        // Clean up ResizeObserver if it exists
+        if (window.chargingModalObservers && window.chargingModalObservers.has(modalId)) {
+            const observer = window.chargingModalObservers.get(modalId);
+            observer.disconnect();
+            window.chargingModalObservers.delete(modalId);
+        }
+        
         // Get chargingPointId and connectorId from data attributes on modal content (more reliable than parsing modalId)
         const modalContent = modal.querySelector('.charging-popup-content');
         const chargingPointId = modalContent?.dataset.chargingPointId;
@@ -1291,14 +1388,31 @@ window.closeChargingPopup = function(modalId) {
         
         if (chargingPointId && connectorId) {
             // Reset form fields when closing modal
-            const vehicleSelect = document.getElementById(`popup-vehicle-select-${chargingPointId}-${connectorId}`);
+            const vehicleSelectId = `popup-vehicle-select-${chargingPointId}-${connectorId}`;
+            const hiddenInput = document.getElementById(vehicleSelectId);
+            const vehicleButtonText = document.getElementById(`custom-vehicle-text-${vehicleSelectId}`);
+            const vehicleButton = document.getElementById(`custom-vehicle-btn-${vehicleSelectId}`);
             const amountInput = document.getElementById(`popup-amount-input-${chargingPointId}-${connectorId}`);
             const startBtn = document.getElementById(`popup-start-btn-${chargingPointId}-${connectorId}`);
             const estimatedCost = document.getElementById(`estimated-cost-${modalId}`);
             
-            if (vehicleSelect) {
-                vehicleSelect.value = '';
-                vehicleSelect.style.borderColor = '#e0e0e0';
+            // Reset vehicle selection (custom dropdown)
+            if (hiddenInput) {
+                hiddenInput.value = '';
+            }
+            if (vehicleButtonText) {
+                vehicleButtonText.textContent = 'Select Vehicle';
+            }
+            if (vehicleButton) {
+                vehicleButton.style.borderColor = '#e0e0e0';
+            }
+            const vehicleOptions = document.getElementById(`custom-vehicle-options-${vehicleSelectId}`);
+            if (vehicleOptions) {
+                vehicleOptions.style.display = 'none';
+            }
+            const vehicleArrow = document.getElementById(`custom-vehicle-arrow-${vehicleSelectId}`);
+            if (vehicleArrow) {
+                vehicleArrow.style.transform = 'translateY(-50%) rotate(0deg)';
             }
             if (amountInput) {
                 amountInput.value = '';
@@ -1321,9 +1435,93 @@ window.closeChargingPopup = function(modalId) {
 };
 
 // Handle vehicle selection in popup
+// Toggle custom vehicle dropdown
+window.toggleCustomVehicleDropdown = function(vehicleSelectId, modalId, chargingPointId, connectorId) {
+    const optionsDiv = document.getElementById(`custom-vehicle-options-${vehicleSelectId}`);
+    const arrow = document.getElementById(`custom-vehicle-arrow-${vehicleSelectId}`);
+    const button = document.getElementById(`custom-vehicle-btn-${vehicleSelectId}`);
+    
+    if (!optionsDiv || !arrow || !button) return;
+    
+    const isOpen = optionsDiv.style.display === 'block';
+    
+    if (isOpen) {
+        optionsDiv.style.display = 'none';
+        arrow.style.transform = 'translateY(-50%) rotate(0deg)';
+        button.style.borderColor = '#e0e0e0';
+    } else {
+        // Close any other open dropdowns
+        document.querySelectorAll('[id^="custom-vehicle-options-"]').forEach(opt => {
+            if (opt.id !== `custom-vehicle-options-${vehicleSelectId}`) {
+                opt.style.display = 'none';
+                const otherArrow = document.getElementById(opt.id.replace('options-', 'arrow-'));
+                if (otherArrow) {
+                    otherArrow.style.transform = 'translateY(-50%) rotate(0deg)';
+                }
+            }
+        });
+        
+        optionsDiv.style.display = 'block';
+        arrow.style.transform = 'translateY(-50%) rotate(180deg)';
+        button.style.borderColor = 'var(--primary-color)';
+        
+        // Ensure dropdown stays within modal bounds
+        const modalContent = document.getElementById(modalId)?.querySelector('.charging-popup-content');
+        if (modalContent) {
+            const dropdownRect = optionsDiv.getBoundingClientRect();
+            const modalRect = modalContent.getBoundingClientRect();
+            
+            // Adjust if dropdown would overflow bottom
+            if (dropdownRect.bottom > modalRect.bottom) {
+                const maxHeight = modalRect.bottom - dropdownRect.top - 10;
+                optionsDiv.style.maxHeight = `${Math.min(200, maxHeight)}px`;
+            } else {
+                optionsDiv.style.maxHeight = '200px';
+            }
+        }
+    }
+};
+
+// Select vehicle from custom dropdown
+window.selectCustomVehicle = function(vehicleSelectId, vehicleId, vehicleText, modalId, chargingPointId, connectorId) {
+    // Update hidden input
+    const hiddenInput = document.getElementById(vehicleSelectId);
+    if (hiddenInput) {
+        hiddenInput.value = vehicleId;
+    }
+    
+    // Update button text
+    const buttonText = document.getElementById(`custom-vehicle-text-${vehicleSelectId}`);
+    if (buttonText) {
+        buttonText.textContent = vehicleText;
+    }
+    
+    // Update button border color
+    const button = document.getElementById(`custom-vehicle-btn-${vehicleSelectId}`);
+    if (button) {
+        button.style.borderColor = 'var(--primary-color)';
+    }
+    
+    // Close dropdown
+    const optionsDiv = document.getElementById(`custom-vehicle-options-${vehicleSelectId}`);
+    const arrow = document.getElementById(`custom-vehicle-arrow-${vehicleSelectId}`);
+    if (optionsDiv) {
+        optionsDiv.style.display = 'none';
+    }
+    if (arrow) {
+        arrow.style.transform = 'translateY(-50%) rotate(0deg)';
+    }
+    
+    // Trigger vehicle selection handler
+    window.onVehicleSelectedInPopup(modalId, chargingPointId, connectorId);
+};
+
 window.onVehicleSelectedInPopup = function(modalId, chargingPointId, connectorId) {
-    const vehicleSelect = document.getElementById(`popup-vehicle-select-${chargingPointId}-${connectorId}`);
-    if (!vehicleSelect || !vehicleSelect.value || vehicleSelect.value === '') {
+    const vehicleSelectId = `popup-vehicle-select-${chargingPointId}-${connectorId}`;
+    const hiddenInput = document.getElementById(vehicleSelectId);
+    const vehicleId = hiddenInput ? hiddenInput.value : '';
+    
+    if (!vehicleId || vehicleId === '') {
         // Reset amount and button
         const amountInput = document.getElementById(`popup-amount-input-${chargingPointId}-${connectorId}`);
         const startBtn = document.getElementById(`popup-start-btn-${chargingPointId}-${connectorId}`);
@@ -1347,16 +1545,17 @@ window.onVehicleSelectedInPopup = function(modalId, chargingPointId, connectorId
 window.onAmountEnteredInPopup = function(modalId, chargingPointId, connectorId) {
     const amountInput = document.getElementById(`popup-amount-input-${chargingPointId}-${connectorId}`);
     const startBtn = document.getElementById(`popup-start-btn-${chargingPointId}-${connectorId}`);
-    const vehicleSelect = document.getElementById(`popup-vehicle-select-${chargingPointId}-${connectorId}`);
+    const vehicleSelectId = `popup-vehicle-select-${chargingPointId}-${connectorId}`;
+    const hiddenInput = document.getElementById(vehicleSelectId);
     
-    if (!amountInput || !startBtn || !vehicleSelect) return;
+    if (!amountInput || !startBtn || !hiddenInput) return;
     
     // Get wallet balance from modal
     const modalContent = document.getElementById(modalId)?.querySelector('.charging-popup-content');
     const walletBalance = modalContent ? parseFloat(modalContent.dataset.walletBalance || 0) : 0;
     
     const amount = parseFloat(amountInput.value);
-    const vehicleId = vehicleSelect.value;
+    const vehicleId = hiddenInput.value;
     
     // Validate amount against wallet balance
     if (amount && amount >= 1 && amount <= walletBalance && vehicleId) {
@@ -1468,13 +1667,14 @@ window.calculateEstimatedCostInPopup = function(modalId, pricePerKwh) {
 
 // Start charging from popup
 window.startChargingFromPopup = async function(modalId, chargingPointId, connectorId, deviceId, pricePerKwh) {
-    // Get selected vehicle
-    const vehicleSelect = document.getElementById(`popup-vehicle-select-${chargingPointId}-${connectorId}`);
-    if (!vehicleSelect || !vehicleSelect.value) {
+    // Get selected vehicle from hidden input
+    const vehicleSelectId = `popup-vehicle-select-${chargingPointId}-${connectorId}`;
+    const hiddenInput = document.getElementById(vehicleSelectId);
+    if (!hiddenInput || !hiddenInput.value) {
         showError('Please select a vehicle');
         return;
     }
-    const vehicleId = parseInt(vehicleSelect.value);
+    const vehicleId = parseInt(hiddenInput.value);
     
     // Get amount
     const amountInput = document.getElementById(`popup-amount-input-${chargingPointId}-${connectorId}`);
@@ -1520,9 +1720,10 @@ window.startChargingFromPopup = async function(modalId, chargingPointId, connect
             showSuccess(`Charging started! Amount deducted: ₹${amount.toFixed(2)}`);
             
             // Reset form fields before closing
-            const vehicleSelect = document.getElementById(`popup-vehicle-select-${chargingPointId}-${connectorId}`);
+            const vehicleSelectId = `popup-vehicle-select-${chargingPointId}-${connectorId}`;
+            const hiddenInput = document.getElementById(vehicleSelectId);
             const amountInput = document.getElementById(`popup-amount-input-${chargingPointId}-${connectorId}`);
-            if (vehicleSelect) vehicleSelect.value = '';
+            if (hiddenInput) hiddenInput.value = '';
             if (amountInput) amountInput.value = '';
             
             // Close popup

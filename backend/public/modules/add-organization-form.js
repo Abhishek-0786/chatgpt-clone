@@ -1200,6 +1200,10 @@ async function handleAddOrganizationSubmit(event) {
 // Export function to open edit organization form
 export async function openEditOrganizationForm(organizationId) {
     try {
+        // IMPORTANT: Clear uploadedDocuments when switching to a different organization
+        // This prevents documents from one organization appearing in another
+        uploadedDocuments = [];
+        
         const response = await getOrganization(organizationId);
         if (!response.success || !response.data || !response.data.organization) {
             showError('Failed to load organization data');
@@ -1208,19 +1212,11 @@ export async function openEditOrganizationForm(organizationId) {
         
         const org = response.data.organization;
         
-        // Preserve any new documents that were added before opening edit form
-        const existingNewDocuments = uploadedDocuments.filter(doc => doc.file); // New documents with files
-        
-        // Open the add form first, but preserve documents so fillEditFormData can merge them
-        openAddOrganizationForm(true); // Pass true to preserve documents
-        
-        // Restore any new documents that were added before opening edit form
-        if (existingNewDocuments.length > 0) {
-            uploadedDocuments = [...existingNewDocuments];
-        }
+        // Open the add form (now with empty uploadedDocuments)
+        openAddOrganizationForm(true); // Pass true to preserve (empty) documents
         
         // Wait for DOM to be ready, then fill in the values
-        // fillEditFormData will merge organization documents with any existing new documents
+        // fillEditFormData will load ONLY this organization's documents
         setTimeout(() => {
             fillEditFormData(org, organizationId);
         }, 200);
